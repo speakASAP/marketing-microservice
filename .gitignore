@@ -1,1 +1,5 @@
 k8s/secret.yaml
+# Local credential files (never commit)
+secrets/
+**/client_secret*.json
+**/*.apps.googleusercontent.com.json
