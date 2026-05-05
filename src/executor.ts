@@ -67,6 +67,33 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+async function sendOne(
+  contact: Contact,
+  campaign: Campaign,
+  effectiveChannel: Contact["preferredChannel"],
+  notificationUrl: string,
+  requestHeaders: Record<string, string> | undefined
+): Promise<void> {
+  const payload: Record<string, unknown> = {
+    recipient: contact.email ?? contact.phone ?? "",
+    message: campaign.message.body,
+    type: "custom",
+    channel: effectiveChannel,
+    service: "marketing-microservice",
+    purpose: campaign.purpose,
+  };
+  if (campaign.message.subject) {
+    payload.subject = campaign.message.subject;
+  }
+  if (campaign.channelKey) {
+    payload.channelKey = campaign.channelKey;
+  }
+  await axios.post(`${notificationUrl}/notifications/send`, payload, {
+    timeout: 5000,
+    headers: requestHeaders,
+  });
+}
+
 async function sendChunk(
   campaign: Campaign,
   runId: string,
@@ -76,17 +103,6 @@ async function sendChunk(
 ): Promise<DeliveryResult[]> {
   const started = Date.now();
   const notificationUrl = process.env.NOTIFICATION_SERVICE_URL;
-  const sendEndpoint = notificationUrl ? `${notificationUrl}/notifications/send` : "";
-  const requestPayload = {
-    purpose: campaign.purpose,
-    channelKey: campaign.channelKey,
-    notifications: batch.map((c) => ({
-      recipientId: c.id,
-      to: c.email,
-      message: campaign.message,
-      channel: channelSelection.get(c.id)?.channel ?? c.preferredChannel
-    }))
-  };
   const notificationServiceToken = process.env.NOTIFICATION_SERVICE_TOKEN;
   const requestHeaders = notificationServiceToken
     ? { Authorization: `Bearer ${notificationServiceToken}` }
@@ -122,60 +138,69 @@ async function sendChunk(
     runId,
     chunkIndex,
     chunkSize: batch.length,
-    endpoint: sendEndpoint
+    endpoint: `${notificationUrl}/notifications/send`
   });
 
-  try {
-    await axios.post(sendEndpoint, requestPayload, {
-      timeout: 5000,
-      headers: requestHeaders
-    });
-    const duration_ms = Date.now() - started;
+  const results: DeliveryResult[] = await Promise.all(
+    batch.map(async (c) => {
+      const effectiveChannel = channelSelection.get(c.id)?.channel ?? c.preferredChannel;
+      try {
+        await sendOne(c, campaign, effectiveChannel, notificationUrl, requestHeaders);
+        return {
+          deliveryId: crypto.randomUUID(),
+          campaignId: campaign.campaignId,
+          recipientRef: toRecipientRef(c),
+          recipientSource: c.owner,
+          recipientAddress: c.email ?? c.phone ?? "",
+          requestedChannel: campaign.primaryChannel,
+          effectiveChannel,
+          status: "sent" as const,
+          decisionReason: "sent_via_notifications",
+          processedAt: nowIso(),
+          duration_ms: Date.now() - started
+        };
+      } catch (error) {
+        return {
+          deliveryId: crypto.randomUUID(),
+          campaignId: campaign.campaignId,
+          recipientRef: toRecipientRef(c),
+          recipientSource: c.owner,
+          recipientAddress: c.email ?? c.phone ?? "",
+          requestedChannel: campaign.primaryChannel,
+          effectiveChannel,
+          status: "failed" as const,
+          decisionReason: `notifications_error:${(error as Error).message}`,
+          processedAt: nowIso(),
+          duration_ms: Date.now() - started
+        };
+      }
+    })
+  );
+
+  const sentCount = results.filter((r) => r.status === "sent").length;
+  const failedCount = results.length - sentCount;
+  const duration_ms = Date.now() - started;
+  if (failedCount === 0) {
     logDecision("notification_chunk_send_completed", {
       campaignId: campaign.campaignId,
       runId,
       chunkIndex,
       chunkSize: batch.length,
-      sentCount: batch.length,
+      sentCount,
       duration_ms
     });
-    return batch.map((c) => ({
-      deliveryId: crypto.randomUUID(),
-      campaignId: campaign.campaignId,
-      recipientRef: toRecipientRef(c),
-      recipientSource: c.owner,
-      recipientAddress: c.email ?? c.phone ?? "",
-      requestedChannel: campaign.primaryChannel,
-      effectiveChannel: channelSelection.get(c.id)?.channel ?? c.preferredChannel,
-      status: "sent",
-      decisionReason: "sent_via_notifications",
-      processedAt: nowIso(),
-      duration_ms
-    }));
-  } catch (error) {
-    const duration_ms = Date.now() - started;
-    logDecision("notification_chunk_send_failed", {
+  } else {
+    logDecision("notification_chunk_send_partial", {
       campaignId: campaign.campaignId,
       runId,
       chunkIndex,
       chunkSize: batch.length,
-      duration_ms,
-      error: (error as Error).message
-    });
-    return batch.map((c) => ({
-      deliveryId: crypto.randomUUID(),
-      campaignId: campaign.campaignId,
-      recipientRef: toRecipientRef(c),
-      recipientSource: c.owner,
-      recipientAddress: c.email ?? c.phone ?? "",
-      requestedChannel: campaign.primaryChannel,
-      effectiveChannel: channelSelection.get(c.id)?.channel ?? c.preferredChannel,
-      status: "failed",
-      decisionReason: `notifications_error:${(error as Error).message}`,
-      processedAt: nowIso(),
+      sentCount,
+      failedCount,
       duration_ms
-    }));
+    });
   }
+  return results;
 }
 
 export async function executeCampaign(campaignId: string, idempotencyKey: string): Promise<ExecutionRun> {
