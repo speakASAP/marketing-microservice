@@ -7,8 +7,8 @@
 ## marketing-microservice
 
 **Purpose**: Centralized campaign and segmentation engine. Runs email/Telegram/WhatsApp campaigns with consent tracking and frequency caps.  
-**Ports**: 4600 (blue) · 4601 (green)  
-**Stack**: NestJS · PostgreSQL
+**Port**: 4600 · **Domain**: https://marketing.alfares.cz  
+**Stack**: NestJS · PostgreSQL · Kubernetes (`statex-apps`)
 
 ### Key constraints
 - Never send campaigns without owner approval — all sends require explicit trigger
@@ -19,4 +19,4 @@
 ### Consumers
 flipflop-service, speakasap, beauty, statex.
 
-**Ops**: `docker compose logs -f` · `./scripts/deploy.sh`
+**Ops**: `kubectl logs -n statex-apps -l app=marketing-microservice -f` · `kubectl rollout restart deployment/marketing-microservice -n statex-apps` · `./scripts/deploy.sh`
