@@ -1,0 +1,138 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import axios from "axios";
+import { executeCampaign } from "../src/executor";
+import { campaigns, contacts, resetInMemoryState, segments } from "../src/store";
+import { Campaign, Segment } from "../src/types";
+
+function makeSegment(overrides: Partial<Segment> = {}): Segment {
+  return {
+    segmentId: "seg-1",
+    name: "segment",
+    sourceTypes: ["auth_users"],
+    rules: { owner: "auth" },
+    isDynamic: true,
+    estimatedCount: null,
+    ...overrides
+  };
+}
+
+function makeCampaign(overrides: Partial<Campaign> = {}): Campaign {
+  return {
+    campaignId: "camp-1",
+    tenant: "statex",
+    name: "campaign",
+    segmentId: "seg-1",
+    description: null,
+    purpose: "marketing",
+    primaryChannel: "email",
+    fallbackChannels: [],
+    templateRef: "welcome_template",
+    scheduleAt: undefined,
+    throttlePerMinute: null,
+    frequencyCapPerDay: 1,
+    message: { body: "hello" },
+    status: "draft",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...overrides
+  };
+}
+
+test("enforces consent, unsubscribe and frequency cap", async () => {
+  resetInMemoryState();
+  const originalContacts = contacts.slice();
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+  const originalPost = axios.post;
+  let postCalls = 0;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set("seg-1", makeSegment());
+    campaigns.set("camp-1", makeCampaign());
+
+    const firstRun = await executeCampaign("camp-1", "idem-1");
+    assert.equal(firstRun.totalRecipients, 2);
+    assert.equal(firstRun.totalSent, 1);
+    assert.ok(firstRun.results.some((r) => r.decisionReason === "unsubscribed"));
+    assert.equal(postCalls, 1);
+
+    const secondRun = await executeCampaign("camp-1", "idem-2");
+    assert.equal(secondRun.totalSent, 0);
+    assert.ok(secondRun.results.some((r) => r.decisionReason === "frequency_cap"));
+    assert.ok(secondRun.results.some((r) => r.decisionReason === "unsubscribed"));
+    assert.equal(postCalls, 1);
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    contacts.splice(0, contacts.length, ...originalContacts);
+    resetInMemoryState();
+  }
+});
+
+test("returns same run for identical idempotency key", async () => {
+  resetInMemoryState();
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+  const originalPost = axios.post;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set("seg-1", makeSegment());
+    campaigns.set("camp-1", makeCampaign());
+
+    const runA = await executeCampaign("camp-1", "idem-same");
+    const runB = await executeCampaign("camp-1", "idem-same");
+    assert.equal(runA.id, runB.id);
+    assert.deepEqual(runA.results, runB.results);
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    resetInMemoryState();
+  }
+});
+
+test("chunks recipients to <=30 per notifications call", async () => {
+  resetInMemoryState();
+  const originalContacts = contacts.slice();
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+  const originalPost = axios.post;
+  const chunkSizes: number[] = [];
+  (axios.post as unknown as typeof originalPost) = (async (_url: string, payload: unknown) => {
+    const typed = payload as { notifications: Array<unknown> };
+    chunkSizes.push(typed.notifications.length);
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    for (let i = 0; i < 65; i += 1) {
+      contacts.push({
+        id: `auth-extra-${i}`,
+        owner: "auth",
+        email: `extra-${i}@example.com`,
+        preferredChannel: "email",
+        fallbackChannels: [],
+        consent: { marketing: true, unsubscribed: false }
+      });
+    }
+
+    segments.set(
+      "seg-1",
+      makeSegment({
+        sourceTypes: ["auth_users", "leads"],
+        rules: {}
+      })
+    );
+    campaigns.set("camp-1", makeCampaign());
+
+    await executeCampaign("camp-1", "idem-chunks");
+    assert.ok(chunkSizes.length > 1);
+    assert.ok(chunkSizes.every((size) => size <= 30));
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    contacts.splice(0, contacts.length, ...originalContacts);
+    resetInMemoryState();
+  }
+});

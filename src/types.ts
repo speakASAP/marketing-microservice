@@ -1,32 +1,44 @@
-export type ContactOwner = "auth" | "lead";
+export type ContactOwner = "auth" | "leads";
 export type Channel = "email" | "telegram" | "whatsapp";
-export type Purpose = "marketing" | "retention" | "transactional";
+export type Purpose = "marketing" | "retention" | "transactional-not-marketing";
+export type SegmentSource = "auth_users" | "leads" | "orders";
+export type CampaignStatus =
+  | "draft"
+  | "scheduled"
+  | "running"
+  | "paused"
+  | "completed"
+  | "failed"
+  | "archived";
 
 export interface Segment {
-  id: string;
+  segmentId: string;
   name: string;
-  ownerApp: string;
-  filters: Record<string, string | number | boolean>;
-  createdAt: string;
-  updatedAt: string;
+  sourceTypes: SegmentSource[];
+  rules: Record<string, string | number | boolean>;
+  isDynamic: boolean;
+  estimatedCount?: number | null;
 }
 
 export interface Campaign {
-  id: string;
+  campaignId: string;
+  tenant: string;
   name: string;
   segmentId: string;
-  ownerApp: string;
+  description?: string | null;
   purpose: Purpose;
   primaryChannel: Channel;
   fallbackChannels: Channel[];
   channelKey?: string;
+  templateRef: string;
   scheduleAt?: string;
+  throttlePerMinute?: number | null;
   frequencyCapPerDay: number;
   message: {
     subject?: string;
     body: string;
   };
-  status: "draft" | "active" | "archived";
+  status: CampaignStatus;
   createdAt: string;
   updatedAt: string;
 }
@@ -45,10 +57,16 @@ export interface Contact {
 }
 
 export interface DeliveryResult {
-  recipientId: string;
-  status: "sent" | "skipped" | "failed";
-  reason: string;
-  timestamp: string;
+  deliveryId: string;
+  campaignId: string;
+  recipientRef: string;
+  recipientSource: ContactOwner;
+  recipientAddress: string;
+  requestedChannel: Channel;
+  effectiveChannel: Channel;
+  status: "queued" | "skipped" | "sent" | "failed";
+  decisionReason: string;
+  processedAt: string;
   duration_ms: number;
 }
 

@@ -16,7 +16,7 @@ export const contacts: Contact[] = [
   },
   {
     id: "lead-1",
-    owner: "lead",
+    owner: "leads",
     email: "lead1@example.com",
     preferredChannel: "email",
     fallbackChannels: ["whatsapp"],
@@ -33,3 +33,10 @@ export const contacts: Contact[] = [
 ];
 
 export const sendHistory = new Map<string, string[]>();
+
+export function resetInMemoryState(): void {
+  segments.clear();
+  campaigns.clear();
+  runs.clear();
+  sendHistory.clear();
+}
