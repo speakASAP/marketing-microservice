@@ -41,14 +41,19 @@ This service integrates with:
 
 Explicit permission for marketing emails is required (e.g. checkbox on registration, account/site options, or site rules/legal). See `docs/agents/master-prompt.md` for full requirements.
 
-## API Overview (Planned)
+## API Overview
 
 - Campaign and segment CRUD
 - Campaign execution (scheduled or on-demand, batched)
 - Unsubscribe and preference endpoints
 - Health check: `GET /health`
 
-Exact contracts will be defined in Phase 0 (see master-prompt) and documented under `docs/`.
+Contract definitions are frozen in:
+
+- `docs/agents/contracts/marketing-campaign-contract.md`
+- `docs/agents/contracts/preferences-consent-contract.md`
+- `docs/agents/contracts/channel-registry-contract.md`
+- `docs/agents/contracts/integration-api-matrix.md`
 
 ## Configuration
 
@@ -96,4 +101,11 @@ Phase 1 core implementation is now present in this repository:
 - Consent, unsubscribe, and frequency-cap enforcement in execution path
 - Structured decision/outcome logging with ISO timestamps and `duration_ms`
 
-Cross-service connectors to auth/leads/orders remain contract-aligned and are planned for the next integration phase.
+Cross-service ownership boundaries are fixed for cutover:
+
+- Marketing owns campaigns, segments, execution state, and delivery outcomes.
+- Auth owns registered-user identity and preferences/consent fields.
+- Leads owns lead identity and preferences/consent fields.
+- Notifications owns outbound provider execution and channel registry state.
+
+`channelKey` remains optional on `/notifications/send`; when omitted, notifications resolves the legacy default sender path for backward compatibility.

@@ -4,6 +4,7 @@ import { logDecision } from "./logger";
 import { Campaign, Contact, DeliveryResult, ExecutionRun } from "./types";
 
 const CHUNK_SIZE = 30;
+const DEFAULT_MAX_SEND_PER_RUN = 300;
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -29,6 +30,31 @@ function evaluateRecipient(campaign: Campaign, contact: Contact): { allowed: boo
   return { allowed: true, reason: "eligible" };
 }
 
+function resolveEffectiveChannel(
+  campaign: Campaign,
+  contact: Contact
+): { channel: Contact["preferredChannel"]; reason: string } {
+  if (campaign.purpose === "transactional-not-marketing") {
+    if (contact.preferredChannel !== campaign.primaryChannel) {
+      return {
+        channel: campaign.primaryChannel,
+        reason: "transactional_primary_override"
+      };
+    }
+    return { channel: contact.preferredChannel, reason: "preferred_channel_applied" };
+  }
+
+  if (contact.preferredChannel === campaign.primaryChannel) {
+    return { channel: contact.preferredChannel, reason: "preferred_channel_applied" };
+  }
+
+  if (contact.fallbackChannels.includes(campaign.primaryChannel)) {
+    return { channel: campaign.primaryChannel, reason: "campaign_primary_in_fallback" };
+  }
+
+  return { channel: contact.preferredChannel, reason: "preferred_channel_mismatch_kept" };
+}
+
 function toRecipientRef(contact: Contact): string {
   return `${contact.owner === "auth" ? "auth" : "lead"}:${contact.id}`;
 }
@@ -45,7 +71,8 @@ async function sendChunk(
   campaign: Campaign,
   runId: string,
   chunkIndex: number,
-  batch: Contact[]
+  batch: Contact[],
+  channelSelection: Map<string, { channel: Contact["preferredChannel"]; reason: string }>
 ): Promise<DeliveryResult[]> {
   const started = Date.now();
   const notificationUrl = process.env.NOTIFICATION_SERVICE_URL;
@@ -57,7 +84,7 @@ async function sendChunk(
       recipientId: c.id,
       to: c.email,
       message: campaign.message,
-      channel: c.preferredChannel
+      channel: channelSelection.get(c.id)?.channel ?? c.preferredChannel
     }))
   };
 
@@ -78,7 +105,7 @@ async function sendChunk(
       recipientSource: c.owner,
       recipientAddress: c.email ?? c.phone ?? "",
       requestedChannel: campaign.primaryChannel,
-      effectiveChannel: c.preferredChannel,
+      effectiveChannel: channelSelection.get(c.id)?.channel ?? c.preferredChannel,
       status: "failed",
       decisionReason: "notification_url_missing",
       processedAt: nowIso(),
@@ -114,7 +141,7 @@ async function sendChunk(
       recipientSource: c.owner,
       recipientAddress: c.email ?? c.phone ?? "",
       requestedChannel: campaign.primaryChannel,
-      effectiveChannel: c.preferredChannel,
+      effectiveChannel: channelSelection.get(c.id)?.channel ?? c.preferredChannel,
       status: "sent",
       decisionReason: "sent_via_notifications",
       processedAt: nowIso(),
@@ -137,7 +164,7 @@ async function sendChunk(
       recipientSource: c.owner,
       recipientAddress: c.email ?? c.phone ?? "",
       requestedChannel: campaign.primaryChannel,
-      effectiveChannel: c.preferredChannel,
+      effectiveChannel: channelSelection.get(c.id)?.channel ?? c.preferredChannel,
       status: "failed",
       decisionReason: `notifications_error:${(error as Error).message}`,
       processedAt: nowIso(),
@@ -190,13 +217,19 @@ export async function executeCampaign(campaignId: string, idempotencyKey: string
   });
 
   const approved: Contact[] = [];
+  const channelSelection = new Map<string, { channel: Contact["preferredChannel"]; reason: string }>();
   for (const recipient of recipients) {
+    const channel = resolveEffectiveChannel(campaign, recipient);
+    channelSelection.set(recipient.id, channel);
     const decision = evaluateRecipient(campaign, recipient);
     logDecision("recipient_decision", {
       campaignId,
       runId: run.id,
       recipientId: recipient.id,
-      decision: decision.reason
+      decision: decision.reason,
+      preferredChannel: recipient.preferredChannel,
+      effectiveChannel: channel.channel,
+      channelResolutionReason: channel.reason
     });
     if (!decision.allowed) {
       run.results.push({
@@ -206,7 +239,7 @@ export async function executeCampaign(campaignId: string, idempotencyKey: string
         recipientSource: recipient.owner,
         recipientAddress: recipient.email ?? recipient.phone ?? "",
         requestedChannel: campaign.primaryChannel,
-        effectiveChannel: recipient.preferredChannel,
+        effectiveChannel: channel.channel,
         status: "skipped",
         decisionReason: decision.reason,
         processedAt: nowIso(),
@@ -217,10 +250,25 @@ export async function executeCampaign(campaignId: string, idempotencyKey: string
     approved.push(recipient);
   }
 
+  const configuredMaxSendPerRun = Number(process.env.CAMPAIGN_MAX_SEND_PER_RUN ?? DEFAULT_MAX_SEND_PER_RUN);
+  const maxSendPerRun =
+    Number.isFinite(configuredMaxSendPerRun) && configuredMaxSendPerRun > 0
+      ? Math.floor(configuredMaxSendPerRun)
+      : DEFAULT_MAX_SEND_PER_RUN;
+  if (approved.length > maxSendPerRun) {
+    logDecision("campaign_guardrail_triggered", {
+      campaignId,
+      runId: run.id,
+      guardrail: "max_send_per_run",
+      approvedCount: approved.length,
+      cappedTo: maxSendPerRun
+    });
+    approved.splice(maxSendPerRun);
+  }
   const chunks = chunk(approved, CHUNK_SIZE);
   for (let i = 0; i < chunks.length; i += 1) {
     const batch = chunks[i];
-    const chunkResults = await sendChunk(campaign, run.id, i, batch);
+    const chunkResults = await sendChunk(campaign, run.id, i, batch, channelSelection);
     run.results.push(...chunkResults);
   }
 
@@ -236,6 +284,15 @@ export async function executeCampaign(campaignId: string, idempotencyKey: string
 
   run.completedAt = nowIso();
   run.status = "completed";
+  const reasonCounts = run.results.reduce<Record<string, number>>((acc, current) => {
+    const reason = current.decisionReason;
+    acc[reason] = (acc[reason] ?? 0) + 1;
+    return acc;
+  }, {});
+  const statusCounts = run.results.reduce<Record<string, number>>((acc, current) => {
+    acc[current.status] = (acc[current.status] ?? 0) + 1;
+    return acc;
+  }, {});
 
   logDecision("campaign_execution_completed", {
     campaignId,
@@ -243,7 +300,9 @@ export async function executeCampaign(campaignId: string, idempotencyKey: string
     totalRecipients: run.totalRecipients,
     totalSent: run.totalSent,
     totalSkipped: run.results.filter((r) => r.status === "skipped").length,
-    totalFailed: run.results.filter((r) => r.status === "failed").length
+    totalFailed: run.results.filter((r) => r.status === "failed").length,
+    statusCounts,
+    reasonCounts
   });
 
   return run;
