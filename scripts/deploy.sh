@@ -35,7 +35,7 @@ echo "[$(date -Iseconds)] Waiting for rollout: $SERVICE_NAME"
 if ! kubectl rollout status deployment/"$SERVICE_NAME" -n "$NAMESPACE" --timeout=120s; then
   echo "[$(date -Iseconds)] Rollout timeout. Checking terminating pods for $SERVICE_NAME"
   kubectl get pods -n "$NAMESPACE" -l app="$SERVICE_NAME" -o wide || true
-  TERMINATING_PODS="$(kubectl get pods -n "$NAMESPACE" -l app="$SERVICE_NAME" --no-headers 2>/dev/null | awk '$3==\"Terminating\"{print $1}')"
+  TERMINATING_PODS="$(kubectl get pods -n "$NAMESPACE" -l app="$SERVICE_NAME" --no-headers 2>/dev/null | awk '$3=="Terminating"{print $1}')"
   if [ -n "$TERMINATING_PODS" ]; then
     echo "[$(date -Iseconds)] Force deleting stuck terminating pods"
     for pod in $TERMINATING_PODS; do
@@ -51,7 +51,7 @@ MAX_TERMINATING_WAIT_SECONDS=45
 CHECK_INTERVAL_SECONDS=5
 elapsed=0
 while true; do
-  TERMINATING_PODS="$(kubectl get pods -n "$NAMESPACE" -l app="$SERVICE_NAME" --no-headers 2>/dev/null | awk '$3==\"Terminating\"{print $1}')"
+  TERMINATING_PODS="$(kubectl get pods -n "$NAMESPACE" -l app="$SERVICE_NAME" --no-headers 2>/dev/null | awk '$3=="Terminating"{print $1}')"
   if [ -z "$TERMINATING_PODS" ]; then
     break
   fi

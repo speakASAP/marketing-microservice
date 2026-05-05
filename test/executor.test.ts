@@ -99,10 +99,10 @@ test("chunks recipients to <=30 per notifications call", async () => {
   const originalContacts = contacts.slice();
   process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
   const originalPost = axios.post;
-  const chunkSizes: number[] = [];
+  const perRequestRecipients: string[] = [];
   (axios.post as unknown as typeof originalPost) = (async (_url: string, payload: unknown) => {
-    const typed = payload as { notifications: Array<unknown> };
-    chunkSizes.push(typed.notifications.length);
+    const typed = payload as { recipient: string };
+    perRequestRecipients.push(typed.recipient);
     return { status: 200, data: {} } as never;
   }) as typeof originalPost;
 
@@ -128,8 +128,7 @@ test("chunks recipients to <=30 per notifications call", async () => {
     campaigns.set("camp-1", makeCampaign());
 
     await executeCampaign("camp-1", "idem-chunks");
-    assert.ok(chunkSizes.length > 1);
-    assert.ok(chunkSizes.every((size) => size <= 30));
+    assert.equal(perRequestRecipients.length, 66);
   } finally {
     (axios.post as unknown as typeof originalPost) = originalPost;
     contacts.splice(0, contacts.length, ...originalContacts);
@@ -143,9 +142,11 @@ test("uses fallback channel when campaign primary is in fallback list", async ()
   process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
   const originalPost = axios.post;
   const channels: string[] = [];
+  const recipients: string[] = [];
   (axios.post as unknown as typeof originalPost) = (async (_url: string, payload: unknown) => {
-    const typed = payload as { notifications: Array<{ channel: string }> };
-    channels.push(...typed.notifications.map((item) => item.channel));
+    const typed = payload as { channel: string; recipient: string };
+    channels.push(typed.channel);
+    recipients.push(typed.recipient);
     return { status: 200, data: {} } as never;
   }) as typeof originalPost;
 
@@ -176,6 +177,7 @@ test("uses fallback channel when campaign primary is in fallback list", async ()
     const run = await executeCampaign("camp-1", "idem-fallback");
     assert.equal(run.totalSent, 1);
     assert.deepEqual(channels, ["whatsapp"]);
+    assert.deepEqual(recipients, ["lead-fallback@example.com"]);
     assert.equal(run.results[0].effectiveChannel, "whatsapp");
   } finally {
     (axios.post as unknown as typeof originalPost) = originalPost;
@@ -192,9 +194,14 @@ test("applies campaign-level max send guardrail", async () => {
   process.env.CAMPAIGN_MAX_SEND_PER_RUN = "2";
   const originalPost = axios.post;
   let sentCount = 0;
+  const sentRecipients: string[] = [];
   (axios.post as unknown as typeof originalPost) = (async (_url: string, payload: unknown) => {
-    const typed = payload as { notifications: Array<unknown> };
-    sentCount += typed.notifications.length;
+    const typed = payload as { recipient: string; type: string; message: string; channel: string };
+    sentCount += 1;
+    sentRecipients.push(typed.recipient);
+    assert.equal(typed.type, "custom");
+    assert.equal(typeof typed.message, "string");
+    assert.equal(typed.channel, "email");
     return { status: 200, data: {} } as never;
   }) as typeof originalPost;
 
@@ -232,6 +239,7 @@ test("applies campaign-level max send guardrail", async () => {
 
     const run = await executeCampaign("camp-1", "idem-guardrail");
     assert.equal(sentCount, 2);
+    assert.deepEqual(sentRecipients, ["user1@example.com", "user2@example.com"]);
     assert.equal(run.totalSent, 2);
   } finally {
     (axios.post as unknown as typeof originalPost) = originalPost;
@@ -241,6 +249,52 @@ test("applies campaign-level max send guardrail", async () => {
       process.env.CAMPAIGN_MAX_SEND_PER_RUN = originalMax;
     }
     contacts.splice(0, contacts.length, ...originalContacts);
+    resetInMemoryState();
+  }
+});
+
+test("sends notifications using per-contact DTO contract", async () => {
+  resetInMemoryState();
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+  process.env.NOTIFICATION_SERVICE_TOKEN = "svc-token";
+  const originalPost = axios.post;
+  const calls: Array<{
+    payload: Record<string, unknown>;
+    headers: Record<string, string> | undefined;
+  }> = [];
+  (axios.post as unknown as typeof originalPost) = (async (_url: string, payload: unknown, config?: unknown) => {
+    calls.push({
+      payload: payload as Record<string, unknown>,
+      headers: (config as { headers?: Record<string, string> } | undefined)?.headers
+    });
+    return { status: 200, data: { success: true, status: "sent" } } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set("seg-1", makeSegment());
+    campaigns.set(
+      "camp-1",
+      makeCampaign({
+        channelKey: "flipflop_email_promotions",
+        message: { body: "contract-check", subject: "Contract subject" }
+      })
+    );
+
+    await executeCampaign("camp-1", "idem-contract-shape");
+    assert.equal(calls.length, 1);
+    const call = calls[0];
+    assert.equal(call.payload.recipient, "user1@example.com");
+    assert.equal(call.payload.message, "contract-check");
+    assert.equal(call.payload.type, "custom");
+    assert.equal(call.payload.subject, "Contract subject");
+    assert.equal(call.payload.channel, "email");
+    assert.equal(call.payload.purpose, "marketing");
+    assert.equal(call.payload.service, "marketing-microservice");
+    assert.equal(call.payload.channelKey, "flipflop_email_promotions");
+    assert.equal(call.headers?.Authorization, "Bearer svc-token");
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    delete process.env.NOTIFICATION_SERVICE_TOKEN;
     resetInMemoryState();
   }
 });
