@@ -46,5 +46,29 @@ if ! kubectl rollout status deployment/"$SERVICE_NAME" -n "$NAMESPACE" --timeout
   echo "[$(date -Iseconds)] Re-checking rollout after cleanup"
   kubectl rollout status deployment/"$SERVICE_NAME" -n "$NAMESPACE" --timeout=120s
 fi
+echo "[$(date -Iseconds)] Verifying no old pods are stuck in Terminating"
+MAX_TERMINATING_WAIT_SECONDS=45
+CHECK_INTERVAL_SECONDS=5
+elapsed=0
+while true; do
+  TERMINATING_PODS="$(kubectl get pods -n "$NAMESPACE" -l app="$SERVICE_NAME" --no-headers 2>/dev/null | awk '$3==\"Terminating\"{print $1}')"
+  if [ -z "$TERMINATING_PODS" ]; then
+    break
+  fi
+
+  if [ "$elapsed" -ge "$MAX_TERMINATING_WAIT_SECONDS" ]; then
+    echo "[$(date -Iseconds)] Terminating pods exceeded ${MAX_TERMINATING_WAIT_SECONDS}s, forcing deletion"
+    kubectl get pods -n "$NAMESPACE" -l app="$SERVICE_NAME" -o wide || true
+    for pod in $TERMINATING_PODS; do
+      echo "[$(date -Iseconds)] Force delete after wait: $pod"
+      kubectl delete pod -n "$NAMESPACE" "$pod" --grace-period=0 --force || true
+    done
+    break
+  fi
+
+  echo "[$(date -Iseconds)] Waiting for terminating pods to exit (${elapsed}s/${MAX_TERMINATING_WAIT_SECONDS}s)"
+  sleep "$CHECK_INTERVAL_SECONDS"
+  elapsed=$((elapsed + CHECK_INTERVAL_SECONDS))
+done
 echo "[$(date -Iseconds)] Pod status:"
 kubectl get pods -n "$NAMESPACE" -l app="$SERVICE_NAME"
