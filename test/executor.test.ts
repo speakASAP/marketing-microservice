@@ -136,3 +136,111 @@ test("chunks recipients to <=30 per notifications call", async () => {
     resetInMemoryState();
   }
 });
+
+test("uses fallback channel when campaign primary is in fallback list", async () => {
+  resetInMemoryState();
+  const originalContacts = contacts.slice();
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+  const originalPost = axios.post;
+  const channels: string[] = [];
+  (axios.post as unknown as typeof originalPost) = (async (_url: string, payload: unknown) => {
+    const typed = payload as { notifications: Array<{ channel: string }> };
+    channels.push(...typed.notifications.map((item) => item.channel));
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    contacts.splice(0, contacts.length, {
+      id: "lead-fallback",
+      owner: "leads",
+      email: "lead-fallback@example.com",
+      preferredChannel: "email",
+      fallbackChannels: ["whatsapp"],
+      consent: { marketing: true, unsubscribed: false }
+    });
+    segments.set(
+      "seg-1",
+      makeSegment({
+        sourceTypes: ["leads"],
+        rules: { owner: "leads" }
+      })
+    );
+    campaigns.set(
+      "camp-1",
+      makeCampaign({
+        primaryChannel: "whatsapp",
+        fallbackChannels: ["email"]
+      })
+    );
+
+    const run = await executeCampaign("camp-1", "idem-fallback");
+    assert.equal(run.totalSent, 1);
+    assert.deepEqual(channels, ["whatsapp"]);
+    assert.equal(run.results[0].effectiveChannel, "whatsapp");
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    contacts.splice(0, contacts.length, ...originalContacts);
+    resetInMemoryState();
+  }
+});
+
+test("applies campaign-level max send guardrail", async () => {
+  resetInMemoryState();
+  const originalContacts = contacts.slice();
+  const originalMax = process.env.CAMPAIGN_MAX_SEND_PER_RUN;
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+  process.env.CAMPAIGN_MAX_SEND_PER_RUN = "2";
+  const originalPost = axios.post;
+  let sentCount = 0;
+  (axios.post as unknown as typeof originalPost) = (async (_url: string, payload: unknown) => {
+    const typed = payload as { notifications: Array<unknown> };
+    sentCount += typed.notifications.length;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    contacts.splice(
+      0,
+      contacts.length,
+      {
+        id: "auth-1",
+        owner: "auth",
+        email: "user1@example.com",
+        preferredChannel: "email",
+        fallbackChannels: [],
+        consent: { marketing: true, unsubscribed: false }
+      },
+      {
+        id: "auth-2",
+        owner: "auth",
+        email: "user2@example.com",
+        preferredChannel: "email",
+        fallbackChannels: [],
+        consent: { marketing: true, unsubscribed: false }
+      },
+      {
+        id: "auth-3",
+        owner: "auth",
+        email: "user3@example.com",
+        preferredChannel: "email",
+        fallbackChannels: [],
+        consent: { marketing: true, unsubscribed: false }
+      }
+    );
+    segments.set("seg-1", makeSegment());
+    campaigns.set("camp-1", makeCampaign());
+
+    const run = await executeCampaign("camp-1", "idem-guardrail");
+    assert.equal(sentCount, 2);
+    assert.equal(run.totalSent, 2);
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    if (originalMax === undefined) {
+      delete process.env.CAMPAIGN_MAX_SEND_PER_RUN;
+    } else {
+      process.env.CAMPAIGN_MAX_SEND_PER_RUN = originalMax;
+    }
+    contacts.splice(0, contacts.length, ...originalContacts);
+    resetInMemoryState();
+  }
+});
