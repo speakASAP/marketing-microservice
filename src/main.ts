@@ -12,22 +12,21 @@ app.get("/health", (_req, res) => {
 });
 
 app.post("/segments", (req, res) => {
-  const now = new Date().toISOString();
   const body = req.body as Partial<Segment>;
-  if (!body.name || !body.ownerApp) {
-    return res.status(400).json({ error: "name_and_ownerApp_required" });
+  if (!body.name || !Array.isArray(body.sourceTypes) || !body.rules || body.isDynamic === undefined) {
+    return res.status(400).json({ error: "name_sourceTypes_rules_isDynamic_required" });
   }
 
   const segment: Segment = {
-    id: crypto.randomUUID(),
+    segmentId: crypto.randomUUID(),
     name: body.name,
-    ownerApp: body.ownerApp,
-    filters: body.filters ?? {},
-    createdAt: now,
-    updatedAt: now
+    sourceTypes: body.sourceTypes,
+    rules: body.rules,
+    isDynamic: body.isDynamic,
+    estimatedCount: body.estimatedCount ?? null
   };
 
-  segments.set(segment.id, segment);
+  segments.set(segment.segmentId, segment);
   return res.status(201).json(segment);
 });
 
@@ -44,10 +43,9 @@ app.put("/segments/:id", (req, res) => {
   const updated: Segment = {
     ...existing,
     ...req.body,
-    id: existing.id,
-    updatedAt: new Date().toISOString()
+    segmentId: existing.segmentId
   };
-  segments.set(updated.id, updated);
+  segments.set(updated.segmentId, updated);
   return res.json(updated);
 });
 
@@ -62,8 +60,8 @@ app.delete("/segments/:id", (req, res) => {
 app.post("/campaigns", (req, res) => {
   const now = new Date().toISOString();
   const body = req.body as Partial<Campaign>;
-  if (!body.name || !body.segmentId || !body.ownerApp || !body.message?.body) {
-    return res.status(400).json({ error: "name_segment_owner_message_required" });
+  if (!body.name || !body.segmentId || !body.tenant || !body.message?.body || !body.templateRef) {
+    return res.status(400).json({ error: "name_segment_tenant_template_message_required" });
   }
 
   if (!segments.has(body.segmentId)) {
@@ -71,15 +69,18 @@ app.post("/campaigns", (req, res) => {
   }
 
   const campaign: Campaign = {
-    id: crypto.randomUUID(),
+    campaignId: crypto.randomUUID(),
+    tenant: body.tenant,
     name: body.name,
     segmentId: body.segmentId,
-    ownerApp: body.ownerApp,
+    description: body.description ?? null,
     purpose: body.purpose ?? "marketing",
     primaryChannel: body.primaryChannel ?? "email",
     fallbackChannels: body.fallbackChannels ?? [],
     channelKey: body.channelKey,
+    templateRef: body.templateRef,
     scheduleAt: body.scheduleAt,
+    throttlePerMinute: body.throttlePerMinute ?? null,
     frequencyCapPerDay: body.frequencyCapPerDay ?? 1,
     message: body.message,
     status: body.status ?? "draft",
@@ -87,7 +88,7 @@ app.post("/campaigns", (req, res) => {
     updatedAt: now
   };
 
-  campaigns.set(campaign.id, campaign);
+  campaigns.set(campaign.campaignId, campaign);
   return res.status(201).json(campaign);
 });
 
@@ -104,10 +105,10 @@ app.put("/campaigns/:id", (req, res) => {
   const updated: Campaign = {
     ...existing,
     ...req.body,
-    id: existing.id,
+    campaignId: existing.campaignId,
     updatedAt: new Date().toISOString()
   };
-  campaigns.set(updated.id, updated);
+  campaigns.set(updated.campaignId, updated);
   return res.json(updated);
 });
 

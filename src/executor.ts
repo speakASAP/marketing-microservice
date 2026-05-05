@@ -29,6 +29,10 @@ function evaluateRecipient(campaign: Campaign, contact: Contact): { allowed: boo
   return { allowed: true, reason: "eligible" };
 }
 
+function toRecipientRef(contact: Contact): string {
+  return `${contact.owner === "auth" ? "auth" : "lead"}:${contact.id}`;
+}
+
 function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) {
@@ -59,7 +63,7 @@ async function sendChunk(
 
   if (!notificationUrl) {
     logDecision("notification_chunk_failed", {
-      campaignId: campaign.id,
+      campaignId: campaign.campaignId,
       runId,
       chunkIndex,
       chunkSize: batch.length,
@@ -68,16 +72,22 @@ async function sendChunk(
     });
     const duration_ms = Date.now() - started;
     return batch.map((c) => ({
-      recipientId: c.id,
+      deliveryId: crypto.randomUUID(),
+      campaignId: campaign.campaignId,
+      recipientRef: toRecipientRef(c),
+      recipientSource: c.owner,
+      recipientAddress: c.email ?? c.phone ?? "",
+      requestedChannel: campaign.primaryChannel,
+      effectiveChannel: c.preferredChannel,
       status: "failed",
-      reason: "notification_url_missing",
-      timestamp: nowIso(),
+      decisionReason: "notification_url_missing",
+      processedAt: nowIso(),
       duration_ms
     }));
   }
 
   logDecision("notification_chunk_send_started", {
-    campaignId: campaign.id,
+    campaignId: campaign.campaignId,
     runId,
     chunkIndex,
     chunkSize: batch.length,
@@ -90,7 +100,7 @@ async function sendChunk(
     });
     const duration_ms = Date.now() - started;
     logDecision("notification_chunk_send_completed", {
-      campaignId: campaign.id,
+      campaignId: campaign.campaignId,
       runId,
       chunkIndex,
       chunkSize: batch.length,
@@ -98,16 +108,22 @@ async function sendChunk(
       duration_ms
     });
     return batch.map((c) => ({
-      recipientId: c.id,
+      deliveryId: crypto.randomUUID(),
+      campaignId: campaign.campaignId,
+      recipientRef: toRecipientRef(c),
+      recipientSource: c.owner,
+      recipientAddress: c.email ?? c.phone ?? "",
+      requestedChannel: campaign.primaryChannel,
+      effectiveChannel: c.preferredChannel,
       status: "sent",
-      reason: "sent_via_notifications",
-      timestamp: nowIso(),
+      decisionReason: "sent_via_notifications",
+      processedAt: nowIso(),
       duration_ms
     }));
   } catch (error) {
     const duration_ms = Date.now() - started;
     logDecision("notification_chunk_send_failed", {
-      campaignId: campaign.id,
+      campaignId: campaign.campaignId,
       runId,
       chunkIndex,
       chunkSize: batch.length,
@@ -115,10 +131,16 @@ async function sendChunk(
       error: (error as Error).message
     });
     return batch.map((c) => ({
-      recipientId: c.id,
+      deliveryId: crypto.randomUUID(),
+      campaignId: campaign.campaignId,
+      recipientRef: toRecipientRef(c),
+      recipientSource: c.owner,
+      recipientAddress: c.email ?? c.phone ?? "",
+      requestedChannel: campaign.primaryChannel,
+      effectiveChannel: c.preferredChannel,
       status: "failed",
-      reason: `notifications_error:${(error as Error).message}`,
-      timestamp: nowIso(),
+      decisionReason: `notifications_error:${(error as Error).message}`,
+      processedAt: nowIso(),
       duration_ms
     }));
   }
@@ -144,7 +166,7 @@ export async function executeCampaign(campaignId: string, idempotencyKey: string
 
   const recipients = contacts.filter((contact) => {
     // Placeholder filter logic until external segment query integration is added.
-    const ownerFilter = segment.filters.owner as string | undefined;
+    const ownerFilter = segment.rules.owner as string | undefined;
     if (!ownerFilter) return true;
     return contact.owner === ownerFilter;
   });
@@ -178,10 +200,16 @@ export async function executeCampaign(campaignId: string, idempotencyKey: string
     });
     if (!decision.allowed) {
       run.results.push({
-        recipientId: recipient.id,
+        deliveryId: crypto.randomUUID(),
+        campaignId: campaign.campaignId,
+        recipientRef: toRecipientRef(recipient),
+        recipientSource: recipient.owner,
+        recipientAddress: recipient.email ?? recipient.phone ?? "",
+        requestedChannel: campaign.primaryChannel,
+        effectiveChannel: recipient.preferredChannel,
         status: "skipped",
-        reason: decision.reason,
-        timestamp: nowIso(),
+        decisionReason: decision.reason,
+        processedAt: nowIso(),
         duration_ms: 0
       });
       continue;
@@ -198,9 +226,10 @@ export async function executeCampaign(campaignId: string, idempotencyKey: string
 
   for (const result of run.results) {
     if (result.status === "sent") {
-      const history = sendHistory.get(result.recipientId) ?? [];
-      history.push(result.timestamp);
-      sendHistory.set(result.recipientId, history);
+      const recipientId = result.recipientRef.split(":").slice(1).join(":");
+      const history = sendHistory.get(recipientId) ?? [];
+      history.push(result.processedAt);
+      sendHistory.set(recipientId, history);
       run.totalSent += 1;
     }
   }
