@@ -88,4 +88,12 @@ All operational and audit logs must be sent to the centralized logging microserv
 
 ## Status
 
-This repository is in **planning/design** phase. Implementation is driven by the master-prompt and related contracts (channel registry in notifications-microservice, marketing preferences in auth-microservice, lead consent in leads-microservice). Database name and port range for marketing-microservice will be assigned following shared ecosystem conventions when the service is created.
+Phase 1 core implementation is now present in this repository:
+
+- Segment CRUD API
+- Campaign CRUD API
+- Idempotent campaign execution endpoint with chunked notification calls (`<=30`)
+- Consent, unsubscribe, and frequency-cap enforcement in execution path
+- Structured decision/outcome logging with ISO timestamps and `duration_ms`
+
+Cross-service connectors to auth/leads/orders remain contract-aligned and are planned for the next integration phase.
