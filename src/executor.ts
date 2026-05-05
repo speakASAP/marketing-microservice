@@ -37,9 +37,15 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-async function sendChunk(campaign: Campaign, batch: Contact[]): Promise<DeliveryResult[]> {
+async function sendChunk(
+  campaign: Campaign,
+  runId: string,
+  chunkIndex: number,
+  batch: Contact[]
+): Promise<DeliveryResult[]> {
   const started = Date.now();
   const notificationUrl = process.env.NOTIFICATION_SERVICE_URL;
+  const sendEndpoint = notificationUrl ? `${notificationUrl}/notifications/send` : "";
   const requestPayload = {
     purpose: campaign.purpose,
     channelKey: campaign.channelKey,
@@ -52,6 +58,14 @@ async function sendChunk(campaign: Campaign, batch: Contact[]): Promise<Delivery
   };
 
   if (!notificationUrl) {
+    logDecision("notification_chunk_failed", {
+      campaignId: campaign.id,
+      runId,
+      chunkIndex,
+      chunkSize: batch.length,
+      reason: "notification_url_missing",
+      duration_ms: Date.now() - started
+    });
     const duration_ms = Date.now() - started;
     return batch.map((c) => ({
       recipientId: c.id,
@@ -62,11 +76,27 @@ async function sendChunk(campaign: Campaign, batch: Contact[]): Promise<Delivery
     }));
   }
 
+  logDecision("notification_chunk_send_started", {
+    campaignId: campaign.id,
+    runId,
+    chunkIndex,
+    chunkSize: batch.length,
+    endpoint: sendEndpoint
+  });
+
   try {
-    await axios.post(`${notificationUrl}/notifications/send`, requestPayload, {
+    await axios.post(sendEndpoint, requestPayload, {
       timeout: 5000
     });
     const duration_ms = Date.now() - started;
+    logDecision("notification_chunk_send_completed", {
+      campaignId: campaign.id,
+      runId,
+      chunkIndex,
+      chunkSize: batch.length,
+      sentCount: batch.length,
+      duration_ms
+    });
     return batch.map((c) => ({
       recipientId: c.id,
       status: "sent",
@@ -76,6 +106,14 @@ async function sendChunk(campaign: Campaign, batch: Contact[]): Promise<Delivery
     }));
   } catch (error) {
     const duration_ms = Date.now() - started;
+    logDecision("notification_chunk_send_failed", {
+      campaignId: campaign.id,
+      runId,
+      chunkIndex,
+      chunkSize: batch.length,
+      duration_ms,
+      error: (error as Error).message
+    });
     return batch.map((c) => ({
       recipientId: c.id,
       status: "failed",
@@ -152,8 +190,9 @@ export async function executeCampaign(campaignId: string, idempotencyKey: string
   }
 
   const chunks = chunk(approved, CHUNK_SIZE);
-  for (const batch of chunks) {
-    const chunkResults = await sendChunk(campaign, batch);
+  for (let i = 0; i < chunks.length; i += 1) {
+    const batch = chunks[i];
+    const chunkResults = await sendChunk(campaign, run.id, i, batch);
     run.results.push(...chunkResults);
   }
 

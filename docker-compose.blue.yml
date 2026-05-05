@@ -1,0 +1,21 @@
+services:
+  marketing-microservice-blue:
+    image: node:22-alpine
+    container_name: marketing-microservice-blue
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    env_file:
+      - .env
+    environment:
+      - SERVICE_NAME=marketing-microservice
+      - PORT=${BLUE_PORT:-4600}
+    volumes:
+      - ./:/app
+    ports:
+      - "${BLUE_PORT:-4600}:${BLUE_PORT:-4600}"
+    networks:
+      - nginx-network
+
+networks:
+  nginx-network:
+    external: true
