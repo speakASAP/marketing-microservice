@@ -87,6 +87,10 @@ async function sendChunk(
       channel: channelSelection.get(c.id)?.channel ?? c.preferredChannel
     }))
   };
+  const notificationServiceToken = process.env.NOTIFICATION_SERVICE_TOKEN;
+  const requestHeaders = notificationServiceToken
+    ? { Authorization: `Bearer ${notificationServiceToken}` }
+    : undefined;
 
   if (!notificationUrl) {
     logDecision("notification_chunk_failed", {
@@ -123,7 +127,8 @@ async function sendChunk(
 
   try {
     await axios.post(sendEndpoint, requestPayload, {
-      timeout: 5000
+      timeout: 5000,
+      headers: requestHeaders
     });
     const duration_ms = Date.now() - started;
     logDecision("notification_chunk_send_completed", {
