@@ -6,7 +6,11 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 K8S_DIR="$PROJECT_ROOT/k8s"
 NAMESPACE="${NAMESPACE:-statex-apps}"
 SERVICE_NAME="marketing-microservice"
-IMAGE_NAME="${IMAGE_NAME:-localhost:5000/marketing-microservice:latest}"
+REGISTRY="localhost:5000"
+DEFAULT_TAG="$(cd "$PROJECT_ROOT" && git rev-parse --short HEAD 2>/dev/null || echo "build-$(date -u +%Y%m%d%H%M%S)")"
+IMAGE_TAG="${1:-$DEFAULT_TAG}"
+IMAGE="${REGISTRY}/${SERVICE_NAME}:${IMAGE_TAG}"
+IMAGE_LATEST="${REGISTRY}/${SERVICE_NAME}:latest"
 
 if [ ! -d "$K8S_DIR" ]; then
   echo "Missing k8s directory: $K8S_DIR"
@@ -18,10 +22,11 @@ if [ ! -f "$PROJECT_ROOT/Dockerfile" ]; then
   exit 1
 fi
 
-echo "[$(date -Iseconds)] Building image: $IMAGE_NAME"
-docker build -t "$IMAGE_NAME" "$PROJECT_ROOT"
-echo "[$(date -Iseconds)] Pushing image: $IMAGE_NAME"
-docker push "$IMAGE_NAME"
+echo "[$(date -Iseconds)] Building image: $IMAGE"
+docker build -t "$IMAGE" -t "$IMAGE_LATEST" "$PROJECT_ROOT"
+echo "[$(date -Iseconds)] Pushing image: $IMAGE"
+docker push "$IMAGE"
+docker push "$IMAGE_LATEST"
 
 for manifest in configmap.yaml external-secret.yaml deployment.yaml service.yaml ingress.yaml; do
   if [ -f "$K8S_DIR/$manifest" ]; then
@@ -29,8 +34,8 @@ for manifest in configmap.yaml external-secret.yaml deployment.yaml service.yaml
   fi
 done
 
-echo "[$(date -Iseconds)] Restarting deployment: $SERVICE_NAME"
-kubectl rollout restart deployment/"$SERVICE_NAME" -n "$NAMESPACE"
+echo "[$(date -Iseconds)] Updating K8s deployment: $SERVICE_NAME"
+kubectl set image deployment/"$SERVICE_NAME" app="$IMAGE" -n "$NAMESPACE"
 echo "[$(date -Iseconds)] Waiting for rollout: $SERVICE_NAME"
 if ! kubectl rollout status deployment/"$SERVICE_NAME" -n "$NAMESPACE" --timeout=120s; then
   echo "[$(date -Iseconds)] Rollout timeout. Checking terminating pods for $SERVICE_NAME"
