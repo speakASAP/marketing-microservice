@@ -1,6 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 K8S_DIR="$PROJECT_ROOT/k8s"
@@ -11,6 +18,10 @@ DEFAULT_TAG="$(cd "$PROJECT_ROOT" && git rev-parse --short HEAD 2>/dev/null || e
 IMAGE_TAG="${1:-$DEFAULT_TAG}"
 IMAGE="${REGISTRY}/${SERVICE_NAME}:${IMAGE_TAG}"
 IMAGE_LATEST="${REGISTRY}/${SERVICE_NAME}:latest"
+
+echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║             Deploy: Marketing Microservice             ║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
 
 if [ ! -d "$K8S_DIR" ]; then
   echo "Missing k8s directory: $K8S_DIR"
@@ -75,5 +86,12 @@ while true; do
   sleep "$CHECK_INTERVAL_SECONDS"
   elapsed=$((elapsed + CHECK_INTERVAL_SECONDS))
 done
-echo "[$(date -Iseconds)] Pod status:"
-kubectl get pods -n "$NAMESPACE" -l app="$SERVICE_NAME"
+
+echo -e "${GREEN}"
+echo "╔════════════════════════════════════════════════════════╗"
+echo "║    ✅ Marketing Microservice Deployment successful!    ║"
+echo "╚════════════════════════════════════════════════════════╝"
+echo "Image:    ${IMAGE}"
+echo "Namespace: ${NAMESPACE}"
+echo "Pods:     $(kubectl get pods -n ${NAMESPACE} -l app=${SERVICE_NAME} --no-headers | wc -l) running"
+echo -e "${NC}"
