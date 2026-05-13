@@ -46,7 +46,7 @@ for manifest in configmap.yaml external-secret.yaml deployment.yaml service.yaml
 done
 
 echo "[$(date -Iseconds)] Updating K8s deployment: $SERVICE_NAME"
-kubectl set image deployment/"$SERVICE_NAME" app="$IMAGE" -n "$NAMESPACE"
+kubectl set image deployment/"$SERVICE_NAME" app="$IMAGE_LATEST" -n "$NAMESPACE"
 echo "[$(date -Iseconds)] Waiting for rollout: $SERVICE_NAME"
 if ! kubectl rollout status deployment/"$SERVICE_NAME" -n "$NAMESPACE" --timeout=120s; then
   echo "[$(date -Iseconds)] Rollout timeout. Checking terminating pods for $SERVICE_NAME"
