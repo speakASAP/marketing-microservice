@@ -1,7 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-# Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -19,6 +18,12 @@ IMAGE_TAG="${1:-$DEFAULT_TAG}"
 IMAGE="${REGISTRY}/${SERVICE_NAME}:${IMAGE_TAG}"
 IMAGE_LATEST="${REGISTRY}/${SERVICE_NAME}:latest"
 
+# shellcheck disable=SC1091
+source "$(dirname "$PROJECT_ROOT")/shared/scripts/load-deploy-phase-timing.sh" "$PROJECT_ROOT" 2>/dev/null \
+  || source "$HOME/Documents/Github/shared/scripts/load-deploy-phase-timing.sh" "$PROJECT_ROOT" \
+  || { echo "Error: deploy timing library not found" >&2; exit 1; }
+deploy_timing_init "$SERVICE_NAME"
+
 echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║             Deploy: Marketing Microservice             ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
@@ -33,36 +38,32 @@ if [ ! -f "$PROJECT_ROOT/Dockerfile" ]; then
   exit 1
 fi
 
-echo "[$(date -Iseconds)] Building image: $IMAGE"
+deploy_timing_phase_start "Build image"
 docker build -t "$IMAGE" -t "$IMAGE_LATEST" "$PROJECT_ROOT"
-echo "[$(date -Iseconds)] Pushing image: $IMAGE"
+deploy_timing_phase_end "Build image"
+
+deploy_timing_phase_start "Push image"
 docker push "$IMAGE"
 docker push "$IMAGE_LATEST"
+deploy_timing_phase_end "Push image"
 
+deploy_timing_phase_start "Apply Kubernetes manifests"
 for manifest in configmap.yaml external-secret.yaml deployment.yaml service.yaml ingress.yaml; do
   if [ -f "$K8S_DIR/$manifest" ]; then
     kubectl apply -f "$K8S_DIR/$manifest" -n "$NAMESPACE"
   fi
 done
+deploy_timing_phase_end "Apply Kubernetes manifests"
 
-echo "[$(date -Iseconds)] Updating K8s deployment: $SERVICE_NAME"
+deploy_timing_phase_start "Set deployment image"
 kubectl set image deployment/"$SERVICE_NAME" app="$IMAGE_LATEST" -n "$NAMESPACE"
-echo "[$(date -Iseconds)] Waiting for rollout: $SERVICE_NAME"
-if ! kubectl rollout status deployment/"$SERVICE_NAME" -n "$NAMESPACE" --timeout=120s; then
-  echo "[$(date -Iseconds)] Rollout timeout. Checking terminating pods for $SERVICE_NAME"
-  kubectl get pods -n "$NAMESPACE" -l app="$SERVICE_NAME" -o wide || true
-  TERMINATING_PODS="$(kubectl get pods -n "$NAMESPACE" -l app="$SERVICE_NAME" --no-headers 2>/dev/null | awk '$3=="Terminating"{print $1}')"
-  if [ -n "$TERMINATING_PODS" ]; then
-    echo "[$(date -Iseconds)] Force deleting stuck terminating pods"
-    for pod in $TERMINATING_PODS; do
-      echo "[$(date -Iseconds)] Force delete: $pod"
-      kubectl delete pod -n "$NAMESPACE" "$pod" --grace-period=0 --force || true
-    done
-  fi
-  echo "[$(date -Iseconds)] Re-checking rollout after cleanup"
-  kubectl rollout status deployment/"$SERVICE_NAME" -n "$NAMESPACE" --timeout=120s
-fi
-echo "[$(date -Iseconds)] Verifying no old pods are stuck in Terminating"
+deploy_timing_phase_end "Set deployment image"
+
+deploy_timing_phase_start "Wait for rollout"
+deploy_timing_k8s_rollout_wait kubectl "$SERVICE_NAME" "$NAMESPACE"
+deploy_timing_phase_end "Wait for rollout"
+
+deploy_timing_phase_start "Wait for terminating pods"
 MAX_TERMINATING_WAIT_SECONDS=45
 CHECK_INTERVAL_SECONDS=5
 elapsed=0
@@ -71,27 +72,18 @@ while true; do
   if [ -z "$TERMINATING_PODS" ]; then
     break
   fi
-
   if [ "$elapsed" -ge "$MAX_TERMINATING_WAIT_SECONDS" ]; then
-    echo "[$(date -Iseconds)] Terminating pods exceeded ${MAX_TERMINATING_WAIT_SECONDS}s, forcing deletion"
-    kubectl get pods -n "$NAMESPACE" -l app="$SERVICE_NAME" -o wide || true
     for pod in $TERMINATING_PODS; do
-      echo "[$(date -Iseconds)] Force delete after wait: $pod"
       kubectl delete pod -n "$NAMESPACE" "$pod" --grace-period=0 --force || true
     done
     break
   fi
-
-  echo "[$(date -Iseconds)] Waiting for terminating pods to exit (${elapsed}s/${MAX_TERMINATING_WAIT_SECONDS}s)"
   sleep "$CHECK_INTERVAL_SECONDS"
   elapsed=$((elapsed + CHECK_INTERVAL_SECONDS))
 done
+deploy_timing_phase_end "Wait for terminating pods"
 
-echo -e "${GREEN}"
-echo "╔════════════════════════════════════════════════════════╗"
-echo "║    ✅ Marketing Microservice Deployment successful!    ║"
-echo "╚════════════════════════════════════════════════════════╝"
+deploy_timing_finish_success "Marketing Microservice"
 echo "Image:    ${IMAGE}"
-echo "Namespace: ${NAMESPACE}"
-echo "Pods:     $(kubectl get pods -n ${NAMESPACE} -l app=${SERVICE_NAME} --no-headers | wc -l) running"
-echo -e "${NC}"
+DEPLOY_TIMING_FINISHED=1
+exit 0
