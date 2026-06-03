@@ -57,5 +57,5 @@ Fallback behavior: if `channelKey` is omitted, notifications uses backward-compa
 ## Validation Notes (Validator Agent)
 
 - Confirm every cross-service field has a single owner service (auth/leads/notifications/marketing/orders).
-- Confirm no direct database access contract exists between marketing and other services.
+- Confirm marketing uses service APIs or approved contracts with other services.
 - Confirm outbound delivery path is only through notifications APIs.

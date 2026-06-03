@@ -35,7 +35,7 @@ Produce a frozen, implementation-ready contract set for:
 ## DO NOT Rules
 
 - Do not modify `database-server`, `nginx-microservice`, or `logging-microservice`.
-- Do not design direct database access from marketing to other services.
+- Use service APIs or approved contracts between marketing and other services.
 - Do not create contracts that bypass consent checks.
 - Do not hardcode domains, providers, keys, or service URLs.
 
