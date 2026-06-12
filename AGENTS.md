@@ -2,6 +2,22 @@
 
 Marketing is a campaign orchestration service, but AI/Codex sessions must follow the marketing implementation orchestrator before planning or implementing work.
 
+## Knowledge Retrieval
+
+When available, query docs-rag-microservice for ecosystem architecture, config, API, migration, deployment, and operations context. This does not replace the mandatory marketing reading order below.
+
+```bash
+kubectl -n statex-apps exec deployment/marketing-microservice -- node -e '
+const fs = require("fs");
+const token = fs.readFileSync(process.env.HOME + "/.claude/rag-token", "utf8").trim();
+fetch("http://docs-rag-microservice:3397/retrieval/agent-context", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+  body: JSON.stringify({ query: "YOUR QUESTION HERE", maxTokens: 3000 }),
+}).then(async (r) => { console.log(await r.text()); process.exit(r.ok ? 0 : 1); });
+'
+```
+
 ## One-Command Continuation
 
 When the user says:

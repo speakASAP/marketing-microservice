@@ -9,10 +9,15 @@
 **Query the RAG before reading source files** — saves 2000-5000 tokens per answer.
 
 ```bash
-kubectl -n statex-apps exec deployment/marketing-microservice -- curl -s -X POST http://docs-rag-microservice:3397/retrieval/agent-context \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $(cat ~/.claude/rag-token)" \
-  -d '{"query": "YOUR QUESTION HERE", "maxTokens": 3000}'
+kubectl -n statex-apps exec deployment/marketing-microservice -- node -e '
+const fs = require("fs");
+const token = fs.readFileSync(process.env.HOME + "/.claude/rag-token", "utf8").trim();
+fetch("http://docs-rag-microservice:3397/retrieval/agent-context", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+  body: JSON.stringify({ query: "YOUR QUESTION HERE", maxTokens: 3000 }),
+}).then(async (r) => { console.log(await r.text()); process.exit(r.ok ? 0 : 1); });
+'
 ```
 
 

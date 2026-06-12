@@ -21,6 +21,10 @@ spec:
       labels:
         app: marketing-microservice
     spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       containers:
         - name: app
           image: localhost:5000/marketing-microservice:latest
@@ -62,3 +66,15 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+          env:
+            - name: HOME
+              value: /home/ssf
+          volumeMounts:
+            - name: claude-config
+              mountPath: /home/ssf/.claude
+              readOnly: true
+      volumes:
+        - name: claude-config
+          hostPath:
+            path: /home/ssf/.claude
+            type: Directory
