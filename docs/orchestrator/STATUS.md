@@ -250,3 +250,46 @@ Completed chunk:
 Next unfinished step:
 
 - Goal 2 acceptance review: confirm all Goal 2 chunks satisfy runtime external-source integration criteria before moving to Goal 3.
+
+## 2026-06-12 - Goal 2 Test Fixture Preservation Hardening
+
+Current focus: Goal 2 - External Source Integration, final fixture preservation hardening.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Auth and leads remain the sources of truth for contact data, preferences, consent, and unsubscribe state.
+- In-memory recipient fixtures are now stored under test code only and are not part of the production source build tree.
+- Marketing still delegates outbound delivery only to notifications-microservice.
+- Real campaign execution guardrails remain unchanged; this session did not deploy or execute any campaign against real recipients.
+
+Implementation evidence:
+
+- Deleted src/test-fixtures.ts so hardcoded recipient fixtures are no longer compiled with production source.
+- Removed stale dist/test-fixtures.js generated output so the remote working tree does not retain old built fixture data.
+- Added test/fixtures.ts as the deterministic test-only recipient fixture holder.
+- Updated src/sources.ts to remove dynamic imports of fixture data and accept only a test-provided fixture provider guarded by NODE_ENV=test.
+- Updated test/executor.test.ts to register the fixture provider from test/fixtures.ts after setting the test environment.
+- Added a direct test proving fixture provider registration throws outside the test environment.
+
+Validation:
+
+- Remote npm run build passed after stale fixture output cleanup.
+- Remote npm test passed after stale fixture output cleanup: 15 tests, 15 passing.
+
+Intent Compliance Report:
+
+- Runtime execution no longer contains or imports hardcoded recipient fixtures.
+- Missing source service configuration still fails safely instead of sending to fixtures.
+- Marketing did not take ownership of auth or leads contact, preference, consent, or unsubscribe data.
+- Marketing did not implement direct email, Telegram, or WhatsApp delivery.
+- Consent, unsubscribe, frequency-cap, idempotency, configured auth/leads source resolution, order/catalog signal filtering, and max-30 notification chunk behavior remain covered by tests.
+
+Completed chunk:
+
+- Goal 2 chunk: Preserve in-memory test fixtures behind tests only.
+
+Next unfinished step:
+
+- Goal 2 acceptance review: confirm all Goal 2 chunks satisfy runtime external-source integration criteria before moving to Goal 3.
+

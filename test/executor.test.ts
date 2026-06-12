@@ -2,12 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import axios from "axios";
 import { executeCampaign } from "../src/executor";
+import { setTestRecipientFixtureProviderForTest } from "../src/sources";
 import { campaigns, resetInMemoryState, segments } from "../src/store";
-import { testRecipientFixtures as contacts } from "../src/test-fixtures";
+import { testRecipientFixtures as contacts } from "./fixtures";
 import { Campaign, Segment } from "../src/types";
 
 process.env.NODE_ENV = "test";
 process.env.MARKETING_USE_TEST_RECIPIENT_FIXTURES = "true";
+setTestRecipientFixtureProviderForTest(() => contacts);
 
 function makeSegment(overrides: Partial<Segment> = {}): Segment {
   return {
@@ -42,6 +44,21 @@ function makeCampaign(overrides: Partial<Campaign> = {}): Campaign {
     ...overrides
   };
 }
+
+test("rejects test fixture provider registration outside test environment", () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+
+  try {
+    assert.throws(
+      () => setTestRecipientFixtureProviderForTest(() => contacts),
+      /test_recipient_fixture_provider_is_test_only/
+    );
+  } finally {
+    process.env.NODE_ENV = originalNodeEnv ?? "test";
+    setTestRecipientFixtureProviderForTest(() => contacts);
+  }
+});
 
 test("enforces consent, unsubscribe and frequency cap", async () => {
   resetInMemoryState();

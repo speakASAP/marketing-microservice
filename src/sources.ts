@@ -501,18 +501,28 @@ async function fetchOrderSignal(segment: Segment, campaign: Campaign, productSig
   return signal;
 }
 
+type TestRecipientFixtureProvider = () => Contact[];
+
+let testRecipientFixtureProvider: TestRecipientFixtureProvider | undefined;
+
+export function setTestRecipientFixtureProviderForTest(provider: TestRecipientFixtureProvider | undefined): void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("test_recipient_fixture_provider_is_test_only");
+  }
+  testRecipientFixtureProvider = provider;
+}
+
 function testRecipientFixturesEnabled(): boolean {
   return process.env.NODE_ENV === "test" && process.env.MARKETING_USE_TEST_RECIPIENT_FIXTURES === "true";
 }
 
 async function resolveTestFixtureRecipients(segment: Segment, owner: Contact["owner"]): Promise<Contact[] | undefined> {
-  if (!testRecipientFixturesEnabled()) {
+  if (!testRecipientFixturesEnabled() || !testRecipientFixtureProvider) {
     return undefined;
   }
 
-  const { testRecipientFixtures } = await import("./test-fixtures.js");
   const ownerFilter = segment.rules.owner as string | undefined;
-  return testRecipientFixtures.filter((contact) => contact.owner === owner && (!ownerFilter || ownerFilter === owner));
+  return testRecipientFixtureProvider().filter((contact) => contact.owner === owner && (!ownerFilter || ownerFilter === owner));
 }
 
 function toRecipientRef(contact: Contact): string {
