@@ -1,4 +1,4 @@
-import { Contact } from "./types";
+import { Contact } from "../src/types";
 
 export const testRecipientFixtures: Contact[] = [
   {
