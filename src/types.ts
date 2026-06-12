@@ -1,4 +1,5 @@
 export type ContactOwner = "auth" | "leads";
+export type ResultSource = ContactOwner | "orders" | "catalog";
 export type Channel = "email" | "telegram" | "whatsapp";
 export type Purpose = "marketing" | "retention" | "transactional-not-marketing";
 export type SegmentSource = "auth_users" | "leads" | "orders";
@@ -60,7 +61,7 @@ export interface DeliveryResult {
   deliveryId: string;
   campaignId: string;
   recipientRef: string;
-  recipientSource: ContactOwner;
+  recipientSource: ResultSource;
   recipientAddress: string;
   requestedChannel: Channel;
   effectiveChannel: Channel;

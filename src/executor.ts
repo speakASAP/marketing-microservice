@@ -1,7 +1,8 @@
 import axios from "axios";
-import { campaigns, contacts, runs, sendHistory, segments } from "./store";
+import { campaigns, runs, sendHistory, segments } from "./store";
 import { logDecision } from "./logger";
 import { Campaign, Contact, DeliveryResult, ExecutionRun } from "./types";
+import { resolveSegmentRecipients, SourceFailure } from "./sources";
 
 const CHUNK_SIZE = 30;
 const DEFAULT_MAX_SEND_PER_RUN = 300;
@@ -65,6 +66,22 @@ function chunk<T>(arr: T[], size: number): T[][] {
     out.push(arr.slice(i, i + size));
   }
   return out;
+}
+
+function sourceFailureResult(campaign: Campaign, failure: SourceFailure): DeliveryResult {
+  return {
+    deliveryId: crypto.randomUUID(),
+    campaignId: campaign.campaignId,
+    recipientRef: `${failure.source}:source`,
+    recipientSource: failure.source,
+    recipientAddress: "",
+    requestedChannel: campaign.primaryChannel,
+    effectiveChannel: campaign.primaryChannel,
+    status: "failed",
+    decisionReason: failure.reason,
+    processedAt: nowIso(),
+    duration_ms: 0
+  };
 }
 
 async function sendOne(
@@ -221,12 +238,8 @@ export async function executeCampaign(campaignId: string, idempotencyKey: string
     throw new Error("segment_not_found");
   }
 
-  const recipients = contacts.filter((contact) => {
-    // Placeholder filter logic until external segment query integration is added.
-    const ownerFilter = segment.rules.owner as string | undefined;
-    if (!ownerFilter) return true;
-    return contact.owner === ownerFilter;
-  });
+  const recipientResolution = await resolveSegmentRecipients(segment, campaign);
+  const recipients = recipientResolution.recipients;
 
   const run: ExecutionRun = {
     id: crypto.randomUUID(),
@@ -236,7 +249,7 @@ export async function executeCampaign(campaignId: string, idempotencyKey: string
     status: "running",
     totalRecipients: recipients.length,
     totalSent: 0,
-    results: []
+    results: recipientResolution.failures.map((failure) => sourceFailureResult(campaign, failure))
   };
   runs.set(run.id, run);
 
