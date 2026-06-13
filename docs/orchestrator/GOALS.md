@@ -24,7 +24,7 @@ Acceptance criteria:
 
 ## Goal 2 - External Source Integration
 
-Status: active
+Status: done
 
 Intent: Marketing segment execution must use real auth/leads data instead of in-memory stub contacts.
 
@@ -44,7 +44,7 @@ Acceptance criteria:
 
 ## Goal 3 - Persistence And Execution State
 
-Status: pending
+Status: done
 
 Intent: Campaigns, segments, runs, delivery outcomes, and suppression evidence must survive process restarts.
 
@@ -63,7 +63,7 @@ Acceptance criteria:
 
 ## Goal 4 - Campaign Approval And Safety Gates
 
-Status: pending
+Status: done
 
 Intent: Real campaign execution must require explicit owner approval and safe operational limits.
 
@@ -83,7 +83,7 @@ Acceptance criteria:
 
 ## Goal 5 - Scheduling, Throttling, And Frequency Controls
 
-Status: pending
+Status: active
 
 Intent: Scheduled and recurring campaigns must run predictably while protecting recipients.
 

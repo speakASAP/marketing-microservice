@@ -14,11 +14,13 @@
   "dependencies": {
     "axios": "latest",
     "dotenv": "latest",
-    "express": "latest"
+    "express": "latest",
+    "pg": "^8.21.0"
   },
   "devDependencies": {
     "@types/express": "latest",
     "@types/node": "latest",
+    "@types/pg": "^8.20.0",
     "tsx": "latest",
     "typescript": "latest"
   }

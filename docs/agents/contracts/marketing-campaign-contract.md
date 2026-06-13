@@ -21,6 +21,7 @@ Defaulted fields:
 - `fallbackChannels`: `[]`
 - `frequencyCapPerDay`: `1`
 - `status`: `draft`
+- `approvalStatus`: `pending`
 
 Important optional fields:
 
@@ -45,6 +46,17 @@ Supported source types:
 - `leads`
 - `orders`
 
+## Approval Model
+
+Real execution requires campaign approval metadata recorded by marketing:
+
+- `approvalStatus`: `pending`, `approved`, or `revoked`.
+- `approvedBy`: owner/actor identifier required for approval.
+- `approvedAt`: approval timestamp.
+- `approvalNote`: optional owner note.
+
+Approval is recorded through `POST /campaigns/:id/approve`. Direct campaign updates must not silently set approval metadata.
+
 ## Execution Contract
 
 Execution requires:
@@ -52,8 +64,11 @@ Execution requires:
 - Existing campaign.
 - Existing segment.
 - Idempotency key via `x-idempotency-key` or request body.
+- For real delivery, approved campaign status with `approvedBy` and `approvedAt` evidence.
 - Recipient eligibility checks before delivery.
 - Outbound notification delegation only through notifications-microservice.
+
+Dry-run execution may run without approval and must not call notifications-microservice or record sent history.
 
 Execution output must include:
 
@@ -67,6 +82,8 @@ Execution output must include:
 ## Safety Requirements
 
 - Real campaign execution requires explicit owner approval.
+- Draft or unapproved campaigns must not execute against real recipients.
+- Dry-run must resolve recipients and decisions without notification calls.
 - Marketing-purpose sends require explicit consent.
 - Unsubscribed recipients must be skipped.
 - Frequency caps must be enforced before notification calls.

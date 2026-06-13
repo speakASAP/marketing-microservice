@@ -1,17 +1,30 @@
 import axios from "axios";
-import { campaigns, runs, sendHistory, segments } from "./store";
+import { getStore } from "./store";
 import { logDecision } from "./logger";
 import { Campaign, Contact, DeliveryResult, ExecutionRun } from "./types";
 import { resolveSegmentRecipients, SourceFailure } from "./sources";
 
-const CHUNK_SIZE = 30;
+const PLATFORM_MAX_CHUNK_SIZE = 30;
 const DEFAULT_MAX_SEND_PER_RUN = 300;
+
+let throttleWait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+export function setThrottleWaitForTest(wait: (ms: number) => Promise<void>): void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("throttle_wait_override_is_test_only");
+  }
+  throttleWait = wait;
+}
+
+export interface ExecuteCampaignOptions {
+  dryRun?: boolean;
+}
 
 function nowIso(): string {
   return new Date().toISOString();
 }
 
-function evaluateRecipient(campaign: Campaign, contact: Contact): { allowed: boolean; reason: string } {
+async function evaluateRecipient(campaign: Campaign, contact: Contact): Promise<{ allowed: boolean; reason: string }> {
   if (!contact.consent.marketing && campaign.purpose === "marketing") {
     return { allowed: false, reason: "consent_missing" };
   }
@@ -19,7 +32,7 @@ function evaluateRecipient(campaign: Campaign, contact: Contact): { allowed: boo
     return { allowed: false, reason: "unsubscribed" };
   }
 
-  const history = sendHistory.get(contact.id) ?? [];
+  const history = await getStore().getSendHistory(toRecipientRef(contact));
   const recent = history.filter((stamp) => {
     return Date.now() - new Date(stamp).getTime() < 24 * 60 * 60 * 1000;
   });
@@ -68,6 +81,31 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+function configuredMaxSendPerRun(): number {
+  const configured = Number(process.env.CAMPAIGN_MAX_SEND_PER_RUN ?? DEFAULT_MAX_SEND_PER_RUN);
+  return Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : DEFAULT_MAX_SEND_PER_RUN;
+}
+
+function configuredChunkSize(): number {
+  const configured = Number(process.env.CAMPAIGN_NOTIFICATION_CHUNK_SIZE ?? PLATFORM_MAX_CHUNK_SIZE);
+  return Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : PLATFORM_MAX_CHUNK_SIZE;
+}
+
+function throttleDelayMs(campaign: Campaign): number {
+  const throttlePerMinute = campaign.throttlePerMinute ?? 0;
+  if (!Number.isFinite(throttlePerMinute) || throttlePerMinute <= 0) return 0;
+  return Math.ceil(60_000 / throttlePerMinute);
+}
+
+function assertCampaignExecutable(campaign: Campaign): void {
+  if (campaign.approvalStatus !== "approved" || !campaign.approvedBy || !campaign.approvedAt) {
+    throw new Error("campaign_not_approved");
+  }
+  if (["draft", "paused", "archived", "failed"].includes(campaign.status)) {
+    throw new Error(`campaign_status_not_executable:${campaign.status}`);
+  }
+}
+
 function sourceFailureResult(campaign: Campaign, failure: SourceFailure): DeliveryResult {
   return {
     deliveryId: crypto.randomUUID(),
@@ -79,6 +117,22 @@ function sourceFailureResult(campaign: Campaign, failure: SourceFailure): Delive
     effectiveChannel: campaign.primaryChannel,
     status: "failed",
     decisionReason: failure.reason,
+    processedAt: nowIso(),
+    duration_ms: 0
+  };
+}
+
+function guardrailResult(campaign: Campaign, reason: string): DeliveryResult {
+  return {
+    deliveryId: crypto.randomUUID(),
+    campaignId: campaign.campaignId,
+    recipientRef: "system:guardrail",
+    recipientSource: "system",
+    recipientAddress: "",
+    requestedChannel: campaign.primaryChannel,
+    effectiveChannel: campaign.primaryChannel,
+    status: "failed",
+    decisionReason: reason,
     processedAt: nowIso(),
     duration_ms: 0
   };
@@ -158,41 +212,52 @@ async function sendChunk(
     endpoint: `${notificationUrl}/notifications/send`
   });
 
-  const results: DeliveryResult[] = await Promise.all(
-    batch.map(async (c) => {
-      const effectiveChannel = channelSelection.get(c.id)?.channel ?? c.preferredChannel;
-      try {
-        await sendOne(c, campaign, effectiveChannel, notificationUrl, requestHeaders);
-        return {
-          deliveryId: crypto.randomUUID(),
-          campaignId: campaign.campaignId,
-          recipientRef: toRecipientRef(c),
-          recipientSource: c.owner,
-          recipientAddress: c.email ?? c.phone ?? "",
-          requestedChannel: campaign.primaryChannel,
-          effectiveChannel,
-          status: "sent" as const,
-          decisionReason: "sent_via_notifications",
-          processedAt: nowIso(),
-          duration_ms: Date.now() - started
-        };
-      } catch (error) {
-        return {
-          deliveryId: crypto.randomUUID(),
-          campaignId: campaign.campaignId,
-          recipientRef: toRecipientRef(c),
-          recipientSource: c.owner,
-          recipientAddress: c.email ?? c.phone ?? "",
-          requestedChannel: campaign.primaryChannel,
-          effectiveChannel,
-          status: "failed" as const,
-          decisionReason: `notifications_error:${(error as Error).message}`,
-          processedAt: nowIso(),
-          duration_ms: Date.now() - started
-        };
+  const delayMs = throttleDelayMs(campaign);
+  const sendContact = async (c: Contact): Promise<DeliveryResult> => {
+    const effectiveChannel = channelSelection.get(c.id)?.channel ?? c.preferredChannel;
+    try {
+      await sendOne(c, campaign, effectiveChannel, notificationUrl, requestHeaders);
+      return {
+        deliveryId: crypto.randomUUID(),
+        campaignId: campaign.campaignId,
+        recipientRef: toRecipientRef(c),
+        recipientSource: c.owner,
+        recipientAddress: c.email ?? c.phone ?? "",
+        requestedChannel: campaign.primaryChannel,
+        effectiveChannel,
+        status: "sent" as const,
+        decisionReason: "sent_via_notifications",
+        processedAt: nowIso(),
+        duration_ms: Date.now() - started
+      };
+    } catch (error) {
+      return {
+        deliveryId: crypto.randomUUID(),
+        campaignId: campaign.campaignId,
+        recipientRef: toRecipientRef(c),
+        recipientSource: c.owner,
+        recipientAddress: c.email ?? c.phone ?? "",
+        requestedChannel: campaign.primaryChannel,
+        effectiveChannel,
+        status: "failed" as const,
+        decisionReason: `notifications_error:${(error as Error).message}`,
+        processedAt: nowIso(),
+        duration_ms: Date.now() - started
+      };
+    }
+  };
+
+  const results: DeliveryResult[] = [];
+  if (delayMs > 0) {
+    for (let i = 0; i < batch.length; i += 1) {
+      if (i > 0) {
+        await throttleWait(delayMs);
       }
-    })
-  );
+      results.push(await sendContact(batch[i]));
+    }
+  } else {
+    results.push(...(await Promise.all(batch.map(sendContact))));
+  }
 
   const sentCount = results.filter((r) => r.status === "sent").length;
   const failedCount = results.length - sentCount;
@@ -220,20 +285,28 @@ async function sendChunk(
   return results;
 }
 
-export async function executeCampaign(campaignId: string, idempotencyKey: string): Promise<ExecutionRun> {
-  const existing = Array.from(runs.values()).find(
-    (r) => r.campaignId === campaignId && r.idempotencyKey === idempotencyKey
-  );
+export async function executeCampaign(
+  campaignId: string,
+  idempotencyKey: string,
+  options: ExecuteCampaignOptions = {}
+): Promise<ExecutionRun> {
+  const dryRun = options.dryRun === true;
+  const store = getStore();
+  const effectiveIdempotencyKey = dryRun ? `dry-run:${idempotencyKey}` : idempotencyKey;
+  const existing = await store.findRunByIdempotency(campaignId, effectiveIdempotencyKey);
   if (existing) {
     return existing;
   }
 
-  const campaign = campaigns.get(campaignId);
+  const campaign = await store.getCampaign(campaignId);
   if (!campaign) {
     throw new Error("campaign_not_found");
   }
+  if (!dryRun) {
+    assertCampaignExecutable(campaign);
+  }
 
-  const segment = segments.get(campaign.segmentId);
+  const segment = await store.getSegment(campaign.segmentId);
   if (!segment) {
     throw new Error("segment_not_found");
   }
@@ -244,19 +317,29 @@ export async function executeCampaign(campaignId: string, idempotencyKey: string
   const run: ExecutionRun = {
     id: crypto.randomUUID(),
     campaignId,
-    idempotencyKey,
+    idempotencyKey: effectiveIdempotencyKey,
     startedAt: nowIso(),
     status: "running",
+    dryRun,
+    approvalEvidence: dryRun
+      ? null
+      : {
+          approvalStatus: campaign.approvalStatus,
+          approvedBy: campaign.approvedBy ?? null,
+          approvedAt: campaign.approvedAt ?? null
+        },
     totalRecipients: recipients.length,
     totalSent: 0,
     results: recipientResolution.failures.map((failure) => sourceFailureResult(campaign, failure))
   };
-  runs.set(run.id, run);
+  await store.saveRun(run);
 
-  logDecision("campaign_execution_started", {
+  logDecision(dryRun ? "campaign_dry_run_started" : "campaign_execution_started", {
     campaignId,
     runId: run.id,
-    recipientCount: recipients.length
+    recipientCount: recipients.length,
+    approvalStatus: campaign.approvalStatus,
+    approvedBy: campaign.approvedBy ?? null
   });
 
   const approved: Contact[] = [];
@@ -264,10 +347,11 @@ export async function executeCampaign(campaignId: string, idempotencyKey: string
   for (const recipient of recipients) {
     const channel = resolveEffectiveChannel(campaign, recipient);
     channelSelection.set(recipient.id, channel);
-    const decision = evaluateRecipient(campaign, recipient);
+    const decision = await evaluateRecipient(campaign, recipient);
     logDecision("recipient_decision", {
       campaignId,
       runId: run.id,
+      dryRun,
       recipientId: recipient.id,
       decision: decision.reason,
       preferredChannel: recipient.preferredChannel,
@@ -291,24 +375,74 @@ export async function executeCampaign(campaignId: string, idempotencyKey: string
       continue;
     }
     approved.push(recipient);
+    if (dryRun) {
+      run.results.push({
+        deliveryId: crypto.randomUUID(),
+        campaignId: campaign.campaignId,
+        recipientRef: toRecipientRef(recipient),
+        recipientSource: recipient.owner,
+        recipientAddress: recipient.email ?? recipient.phone ?? "",
+        requestedChannel: campaign.primaryChannel,
+        effectiveChannel: channel.channel,
+        status: "would_send",
+        decisionReason: "dry_run_would_send",
+        processedAt: nowIso(),
+        duration_ms: 0
+      });
+    }
   }
 
-  const configuredMaxSendPerRun = Number(process.env.CAMPAIGN_MAX_SEND_PER_RUN ?? DEFAULT_MAX_SEND_PER_RUN);
-  const maxSendPerRun =
-    Number.isFinite(configuredMaxSendPerRun) && configuredMaxSendPerRun > 0
-      ? Math.floor(configuredMaxSendPerRun)
-      : DEFAULT_MAX_SEND_PER_RUN;
+  const maxSendPerRun = configuredMaxSendPerRun();
   if (approved.length > maxSendPerRun) {
+    const reason = `max_send_per_run_exceeded:${approved.length}>${maxSendPerRun}`;
     logDecision("campaign_guardrail_triggered", {
       campaignId,
       runId: run.id,
+      dryRun,
       guardrail: "max_send_per_run",
       approvedCount: approved.length,
-      cappedTo: maxSendPerRun
+      maxSendPerRun
     });
-    approved.splice(maxSendPerRun);
+    run.results.push(guardrailResult(campaign, reason));
+    run.completedAt = nowIso();
+    run.status = dryRun ? "dry_run_completed" : "failed";
+    await store.saveRun(run);
+    return run;
   }
-  const chunks = chunk(approved, CHUNK_SIZE);
+
+  if (dryRun) {
+    run.completedAt = nowIso();
+    run.status = "dry_run_completed";
+    await store.saveRun(run);
+    logDecision("campaign_dry_run_completed", {
+      campaignId,
+      runId: run.id,
+      totalRecipients: run.totalRecipients,
+      wouldSend: run.results.filter((r) => r.status === "would_send").length,
+      totalSkipped: run.results.filter((r) => r.status === "skipped").length,
+      totalFailed: run.results.filter((r) => r.status === "failed").length
+    });
+    return run;
+  }
+
+  const notificationChunkSize = configuredChunkSize();
+  if (notificationChunkSize > PLATFORM_MAX_CHUNK_SIZE) {
+    const reason = `notification_chunk_size_exceeds_platform_limit:${notificationChunkSize}>${PLATFORM_MAX_CHUNK_SIZE}`;
+    logDecision("campaign_guardrail_triggered", {
+      campaignId,
+      runId: run.id,
+      guardrail: "notification_chunk_size",
+      configuredChunkSize: notificationChunkSize,
+      platformMaxChunkSize: PLATFORM_MAX_CHUNK_SIZE
+    });
+    run.results.push(guardrailResult(campaign, reason));
+    run.completedAt = nowIso();
+    run.status = "failed";
+    await store.saveRun(run);
+    return run;
+  }
+
+  const chunks = chunk(approved, notificationChunkSize);
   for (let i = 0; i < chunks.length; i += 1) {
     const batch = chunks[i];
     const chunkResults = await sendChunk(campaign, run.id, i, batch, channelSelection);
@@ -317,10 +451,7 @@ export async function executeCampaign(campaignId: string, idempotencyKey: string
 
   for (const result of run.results) {
     if (result.status === "sent") {
-      const recipientId = result.recipientRef.split(":").slice(1).join(":");
-      const history = sendHistory.get(recipientId) ?? [];
-      history.push(result.processedAt);
-      sendHistory.set(recipientId, history);
+      await store.recordSend(result.recipientRef, campaignId, run.id, result.processedAt);
       run.totalSent += 1;
     }
   }
@@ -337,9 +468,13 @@ export async function executeCampaign(campaignId: string, idempotencyKey: string
     return acc;
   }, {});
 
+  await store.saveRun(run);
+
   logDecision("campaign_execution_completed", {
     campaignId,
     runId: run.id,
+    approvedBy: campaign.approvedBy ?? null,
+    approvedAt: campaign.approvedAt ?? null,
     totalRecipients: run.totalRecipients,
     totalSent: run.totalSent,
     totalSkipped: run.results.filter((r) => r.status === "skipped").length,
