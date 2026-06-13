@@ -783,3 +783,409 @@ Completed follow-up item:
 Next unfinished step:
 
 - Goal 8 - Ecosystem Ownership Contract Baseline.
+
+## 2026-06-13 - Goal 8 Ecosystem Ownership Contract Baseline
+
+Current focus: Goal 8 - Ecosystem Ownership Contract Baseline.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Marketing owns campaign definitions, segment definitions, journey definitions, approvals, dry-runs, scheduled runs, delivery decisions, suppression, throttling, frequency caps, attribution references, and campaign audit state.
+- Auth and leads remain the sources of truth for identity, contact data, preferences, consent, and unsubscribe state.
+- Notifications remains the source of truth for provider execution, provider credentials, channel registry behavior, and final sends.
+- Tenant/app/business registry, CRM/account master data, analytics read models, application event truth, order truth, and catalog truth are explicitly owned outside Marketing.
+- No real campaign was executed against real recipients.
+
+Implementation evidence:
+
+- Added `docs/agents/contracts/ecosystem-ownership-contract.md` with the ecosystem ownership matrix, cross-service contract changes, and safety invariants.
+- Added `docs/agents/contracts/application-portfolio-taxonomy.md` with canonical app IDs and lifecycle/signal taxonomy for Flipflop, SpeakASap, Marathon, Bazos, Rent-A-Box, RunLayer, Shop Assistant, and Statics.
+- Added `docs/agents/contracts/crm-account-boundary-contract.md` confirming CRM/account master data does not belong inside Marketing and defining future read-only CRM/account signal usage.
+- Added `docs/agents/contracts/tenant-app-registry-contract.md` defining tenant/app/business/brand/sender/locale/timezone/policy registry ownership and Marketing validation-only usage.
+- Added `docs/agents/contracts/analytics-attribution-contract.md` defining Marketing campaign facts, notification delivery facts, app/domain behavior facts, and analytics/customer-insights read-model ownership.
+- Added `docs/agents/contracts/application-signal-contract.md` defining a common signal envelope, subject references, and safe failure rules for app behavior signals.
+- Updated `docs/agents/contracts/integration-api-matrix.md` to reference the expanded ecosystem services and new contract documents.
+- Updated `docs/orchestrator/GOALS.md` to mark Goal 8 complete.
+- Updated `docs/orchestrator/PLAN.md`, `TASKS.md`, and `STATE.json` so the next focus is Goal 9 - Tenant/App Registry Integration.
+
+Validation:
+
+- Documentation-only contract update; `npm run build` and `npm test` were not required because no runtime source code changed.
+- `STATE.json` parsed successfully after update.
+- Goal 8 acceptance checklist was reviewed against the new contract pack.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of contacts, consent truth, CRM master data, tenant truth, provider credentials, channel registry state, raw app events, order truth, or catalog truth.
+- Marketing did not implement direct email, Telegram, WhatsApp, or provider delivery.
+- Apps and domain services are documented as signal owners only and are not campaign engines.
+- Future CRM/account service is documented as the account master owner; Marketing may consume read-only lifecycle signals only.
+- The roadmap and contracts preserve owner approval, explicit consent, unsubscribe enforcement, frequency caps, throttling, idempotency, max-send limits, max-30 notification chunks, notification delegation, and audit evidence.
+
+Completed goal:
+
+- Goal 8 - Ecosystem Ownership Contract Baseline.
+
+Next unfinished step:
+
+- Goal 9 - Tenant/App Registry Integration.
+
+
+## 2026-06-13 - Goal 9 Tenant/App Registry Integration
+
+Current focus: Goal 9 - Tenant/App Registry Integration.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Marketing stores canonical tenant/app/brand/business/locale/timezone/product-line/lifecycle/policy references only.
+- Tenant/app/business registry truth remains outside Marketing.
+- Notifications remains the only outbound delivery executor; registry validation now runs before recipient resolution and notification delegation.
+- No real campaign was executed against real recipients.
+
+Implementation evidence:
+
+- Added RegistryScope metadata to campaign and segment models, including required tenantId, appId, and brandId plus optional business, environment, locale/timezone, product-line, lifecycle, sender identity, and policy references.
+- Added src/registry.ts registry validation client with TENANT_APP_REGISTRY_URL, optional token/path/timeout configuration, and test-only fixtures gated by NODE_ENV=test plus MARKETING_USE_TEST_REGISTRY_FIXTURES=true.
+- Added registry validation to segment/campaign create/update routes and execution preflight. Real execution fails before recipient resolution/delivery on unavailable, invalid, or inactive registry references; dry-run records a safe guardrail result.
+- Added tenant/app/brand scope filters for segment and campaign list endpoints.
+- Added migration migrations/0005_tenant_app_registry_scope.sql to persist scope references and indexes.
+- Updated contract docs, local env key template, and Kubernetes registry environment wiring.
+- Added contract tests for invalid registry references and tenant/app segment filtering.
+
+Validation:
+
+- Remote npm run build passed on 2026-06-13.
+- Remote npm test passed on 2026-06-13: 30 tests, 30 passing.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of tenant, app, business, brand, sender, provider credential, contact, consent, unsubscribe, order, catalog, CRM, analytics, or application event truth.
+- Marketing stores registry references and validates them through the registry contract only.
+- Missing or invalid registry references fail safely before notification delegation.
+- Consent, unsubscribe, approval, frequency cap, throttling, idempotency, max-send, max-30 chunking, and audit controls remain in place.
+- No direct email, Telegram, WhatsApp, or provider delivery was added.
+
+Completed goal:
+
+- Goal 9 - Tenant/App Registry Integration.
+
+Next unfinished step:
+
+- Goal 10 - Cross-Service Recipient And Consent Contract Hardening.
+
+
+## 2026-06-13 - Goal 10.1 Auth Recipient Contract Hardening
+
+Current focus: Goal 10 - Cross-Service Recipient And Consent Contract Hardening, chunk 10.1.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Auth remains the source of truth for registered-user identity, contact data, preferred channels, fallback channels, consent, and unsubscribe state.
+- Marketing reads auth-owned recipient and consent data by tenant/app/purpose/channel, stores execution evidence only, and still delegates outbound delivery only to notifications-microservice.
+- No real campaign was executed against real recipients.
+
+Implementation evidence:
+
+- Added `docs/agents/contracts/auth-recipient-consent-contract.md` defining the auth registered-user recipient endpoint semantics for tenantId, appId, brandId, purpose, channel, limits, response fields, channel consent semantics, pagination, safe failure behavior, and ownership boundaries.
+- Updated `docs/agents/contracts/preferences-consent-contract.md` and `docs/agents/contracts/integration-api-matrix.md` to reference the auth-specific recipient/consent contract.
+- Updated auth recipient source requests to always include campaign scope and delivery decision fields: tenantId, appId, brandId, purpose, channel, optional fallbackChannels, and optional registry scope filters, while preserving segment rule filters.
+- Added normalized optional channel consent evidence to recipient contacts so source-owned channel denial can be enforced before notification delegation.
+- Updated execution eligibility to skip marketing recipients with explicit source-owned denial for the effective delivery channel using `channel_consent_missing`.
+- Extended the configured auth source test to assert scoped auth query parameters and channel-specific consent denial behavior.
+- Marked Goal 10.1 complete in `docs/orchestrator/GOALS.md`; Goal 10 remains open.
+
+Validation:
+
+- Remote `npm run build` passed on 2026-06-13.
+- Remote `npm test` passed on 2026-06-13: 30 tests, 30 passing.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of auth contact, identity, preference, consent, or unsubscribe truth.
+- Marketing did not implement direct email, Telegram, WhatsApp, or provider delivery.
+- Source-owned channel consent denial is enforced before notification delegation.
+- Auth source outages and invalid source behavior still fail safely without notification delivery.
+- Owner approval, unsubscribe enforcement, frequency caps, throttling, idempotency, max-send limits, max-30 notification chunking, registry validation, and audit evidence remain in place.
+
+Completed chunk:
+
+- Goal 10.1 - Define auth registered-user recipient contract by tenant/app/purpose/channel.
+
+Next unfinished step:
+
+- Goal 10.2 - Define leads recipient contract by tenant/app/purpose/channel.
+
+
+## 2026-06-13 - Goal 10.2 Leads Recipient Contract Hardening
+
+Current focus: Goal 10 - Cross-Service Recipient And Consent Contract Hardening, chunk 10.2.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Leads remains the source of truth for lead identity, contact data, preferred channels, fallback channels, lifecycle state, qualification fields, consent, unsubscribe state, and lead-to-user conversion references.
+- Marketing reads leads-owned recipient and consent data by tenant/app/purpose/channel, stores execution evidence only, and still delegates outbound delivery only to notifications-microservice.
+- No real campaign was executed against real recipients.
+
+Implementation evidence:
+
+- Added `docs/agents/contracts/leads-recipient-consent-contract.md` defining the leads recipient endpoint semantics for tenantId, appId, brandId, purpose, channel, limits, response fields, channel consent semantics, conversion boundary, pagination, safe failure behavior, and ownership boundaries.
+- Updated `docs/agents/contracts/preferences-consent-contract.md` and `docs/agents/contracts/integration-api-matrix.md` to reference the leads-specific recipient/consent contract.
+- Updated leads recipient source requests to always include campaign scope and delivery decision fields: tenantId, appId, brandId, purpose, channel, optional fallbackChannels, and optional registry scope filters, while preserving segment rule filters.
+- Extended recipient response extraction to accept a source-owned `leads` array in addition to existing item/result shapes.
+- Extended the configured leads source test to assert scoped leads query parameters and channel-specific consent denial behavior.
+- Marked Goal 10.2 complete in `docs/orchestrator/GOALS.md`; Goal 10 remains open.
+
+Validation:
+
+- Remote `npm run build` passed on 2026-06-13.
+- Remote `npm test` passed on 2026-06-13: 30 tests, 30 passing.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of lead contact, identity, preference, lifecycle, qualification, consent, unsubscribe, or conversion truth.
+- Marketing did not implement direct email, Telegram, WhatsApp, or provider delivery.
+- Source-owned leads channel consent denial is enforced before notification delegation.
+- Leads source outages and invalid source behavior still fail safely without notification delivery.
+- Lead conversion references remain source-owned and were not stored as Marketing master records.
+- Owner approval, unsubscribe enforcement, frequency caps, throttling, idempotency, max-send limits, max-30 notification chunking, registry validation, and audit evidence remain in place.
+
+Completed chunk:
+
+- Goal 10.2 - Define leads recipient contract by tenant/app/purpose/channel.
+
+Next unfinished step:
+
+- Goal 10.3 - Define lead-to-user conversion and identity-linking behavior.
+
+## 2026-06-13 - Goal 10.3 Lead-To-User Identity Linking
+
+Current focus: Goal 10 - Cross-Service Recipient And Consent Contract Hardening, chunk 10.3.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Auth remains the source of truth for registered-user identity, contact data, consent, preferences, and unsubscribe state.
+- Leads remains the source of truth for lead identity, contact data, consent, preferences, lifecycle state, and conversion references.
+- Marketing may use source-owned lead-to-user references only as transient run-level dedupe evidence and must not create or persist merged contacts, golden profiles, CRM identities, or conversion truth.
+- Notifications remains the only outbound delivery executor.
+- No real campaign was executed against real recipients.
+
+Implementation evidence:
+
+- Added `docs/agents/contracts/lead-identity-linking-contract.md` defining source-owned lead-to-user conversion/link fields, resolution rules, consent/unsubscribe behavior, audit evidence, failure behavior, and forbidden Marketing ownership expansions.
+- Updated `docs/agents/contracts/integration-api-matrix.md`, `docs/agents/contracts/preferences-consent-contract.md`, and `docs/agents/contracts/leads-recipient-consent-contract.md` to reference the identity-linking boundary.
+- Added optional recipient identity-link evidence to Marketing contact normalization for auth and leads source responses.
+- Updated recipient resolution dedupe so converted leads with source-owned auth identity links collapse into the linked registered user recipient, with the auth recipient winning when both sources return the same identity.
+- Added a regression test proving a converted lead is not delivered separately when the linked auth recipient is also selected.
+- Marked Goal 10.3 complete in `docs/orchestrator/GOALS.md`; Goal 10 remains open.
+
+Validation:
+
+- Remote `npm run build` passed on 2026-06-13.
+- Remote `npm test` passed on 2026-06-13: 31 tests, 31 passing.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of auth contact, lead contact, identity, preference, consent, unsubscribe, lifecycle, qualification, CRM, or conversion truth.
+- Marketing did not implement direct email, Telegram, WhatsApp, or provider delivery.
+- Lead-to-user links are treated as source-owned recipient resolution evidence only.
+- Duplicate delivery to a converted lead and its linked registered user is prevented before notification delegation.
+- Owner approval, unsubscribe enforcement, frequency caps, throttling, idempotency, max-send limits, max-30 notification chunking, registry validation, consent enforcement, and audit evidence remain in place.
+
+Completed chunk:
+
+- Goal 10.3 - Define lead-to-user conversion and identity-linking behavior.
+
+Next unfinished step:
+
+- Goal 10.4 - Define unsubscribe write-through or source-owned write contracts.
+
+## 2026-06-13 - Goal 10.4 Source-Owned Unsubscribe Write Contract
+
+Current focus: Goal 10 - Cross-Service Recipient And Consent Contract Hardening, chunk 10.4.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Auth remains the durable owner of registered-user unsubscribe, consent, and preference writes.
+- Leads remains the durable owner of lead unsubscribe, consent, and preference writes.
+- Marketing may accept public unsubscribe intake and forward it to the source owner, but must not become the unsubscribe truth store.
+- Notifications remains the only outbound delivery executor.
+- No real campaign was executed against real recipients.
+
+Implementation evidence:
+
+- Added `docs/agents/contracts/unsubscribe-source-write-contract.md` defining Marketing intake, auth/leads write-through endpoints, source-owned durable storage, safe pending-source behavior, and forbidden Marketing ownership expansions.
+- Updated the integration matrix, preferences/consent contract, auth recipient contract, and leads recipient contract to reference source-owned unsubscribe writes.
+- Added `src/preferences.ts` to forward unsubscribe intake to auth or leads when source URLs are configured, with `source_write_pending` evidence when source configuration is missing, unavailable, or rejected.
+- Extended `POST /preferences/unsubscribe` validation and response metadata with optional tenant/app/brand scope, request ID, reason, and source write status evidence.
+- Added non-secret runtime keys for unsubscribe forwarding paths/timeouts to `.env.example` and Kubernetes ConfigMap wiring.
+- Added contract tests for pending-source unsubscribe intake and configured leads write-through forwarding.
+- Marked Goal 10.4 complete in `docs/orchestrator/GOALS.md`; Goal 10 remains open.
+
+Validation:
+
+- Remote `npm run build` passed on 2026-06-13.
+- Remote `npm test` passed on 2026-06-13: 32 tests, 32 passing.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of auth or leads unsubscribe, consent, preference, contact, identity, lifecycle, qualification, CRM, or conversion truth.
+- Marketing did not implement direct email, Telegram, WhatsApp, or provider delivery.
+- Source write-through is best-effort intake forwarding only; durable unsubscribe state remains in auth/leads and execution still skips only once source-owned unsubscribe state is visible through recipient resolution.
+- Source write failures are accepted with pending-source evidence rather than local replacement truth.
+- Owner approval, consent enforcement, frequency caps, throttling, idempotency, max-send limits, max-30 notification chunking, registry validation, and audit evidence remain in place.
+
+Completed chunk:
+
+- Goal 10.4 - Define unsubscribe write-through or source-owned write contracts.
+
+Next unfinished step:
+
+- Goal 10.5 - Update source clients and tests after provider contracts exist.
+
+## 2026-06-13 - Goal 10.5 Source Client Contract Alignment And Goal 10 Completion
+
+Current focus: Goal 10 - Cross-Service Recipient And Consent Contract Hardening, chunk 10.5.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Auth remains the source of truth for registered-user identity, contact data, preferences, consent, unsubscribe state, and registered-user recipient contract behavior.
+- Leads remains the source of truth for lead identity, contact data, preferences, consent, unsubscribe state, lifecycle state, and lead conversion references.
+- Marketing normalizes source-owned evidence for execution decisions only and still delegates outbound delivery only to notifications-microservice.
+- No real campaign was executed against real recipients.
+
+Implementation evidence:
+
+- Updated source client default paths to the provider contracts: `/auth/marketing/recipients` and `/leads/marketing/recipients`, while preserving environment override keys.
+- Hardened recipient source response parsing so malformed auth/leads recipient responses become source failure evidence and do not result in notification delegation.
+- Added nested source-owned unsubscribe enforcement for normalized `consentByPurposeChannel` evidence, including channel-level `{ granted: true, unsubscribed: true }` records.
+- Preserved explicit boolean consent handling so `marketingConsents: { marketing: true }` remains consent evidence, not unsubscribe evidence.
+- Extended configured auth/leads tests to assert contract endpoint paths, tenant/app/brand/purpose/channel query fields, channel-specific consent denial, nested unsubscribe skips, and malformed auth response failure.
+- Revalidated converted lead/auth deduplication and order/catalog recipient filtering against the updated source-client default paths.
+- Marked Goal 10.5 and Goal 10 complete in `docs/orchestrator/GOALS.md`.
+
+Validation:
+
+- Remote `npm run build` passed on 2026-06-13.
+- Remote `npm test` passed on 2026-06-13: 33 tests, 33 passing.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of auth or leads contact, identity, preference, consent, unsubscribe, lifecycle, qualification, CRM, or conversion truth.
+- Marketing did not implement direct email, Telegram, WhatsApp, or provider delivery.
+- Tenant/app/purpose/channel consent and unsubscribe evidence is read from source-owned recipient contracts and enforced before notification delegation.
+- Converted lead identity links remain source-owned and are used only for run-level dedupe evidence.
+- Source outages and malformed source responses fail safely without notification delivery.
+- Owner approval, consent enforcement, unsubscribe enforcement, frequency caps, throttling, idempotency, max-send limits, max-30 notification chunking, registry validation, and audit evidence remain in place.
+
+Completed chunk:
+
+- Goal 10.5 - Update source clients and tests after provider contracts exist.
+
+Completed goal:
+
+- Goal 10 - Cross-Service Recipient And Consent Contract Hardening.
+
+Next unfinished step:
+
+- Goal 11.1 - Define common application signal envelope.
+
+
+## 2026-06-13 - Goal 11.1 Common Application Signal Envelope
+
+Current focus: Goal 11 - Application Signal Segmentation Contracts, chunk 11.1.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Flipflop, SpeakASap, Marathon, Bazos, Rent-A-Box, RunLayer, Shop Assistant, Statics, and future apps remain the source of truth for their raw behavior facts.
+- Marketing may use app behavior signals as segmentation inputs only; it must not become an application event store, CRM master database, contact owner, consent owner, or campaign engine inside each app.
+- Auth/leads remain the sources of reachable recipient and consent truth, and notifications remains the only outbound delivery executor.
+- No real campaign was executed against real recipients.
+
+Implementation evidence:
+
+- Expanded `docs/agents/contracts/application-signal-contract.md` into the common `marketing.application_signal.v1` envelope for application behavior signals.
+- Defined required envelope fields for schema version, stable signal ID, source service, canonical app ID, subject reference, event type, source object, and UTC occurrence time.
+- Added scope semantics for tenantId, businessId, brandId, and environment while preserving registry ownership of tenant/app/business truth.
+- Added subject reference rules for `auth:user:<id>`, `leads:lead:<id>`, future `crm:account:<id>`, tenant lifecycle references, and anonymous pre-consent facts that cannot produce real delivery recipients until source-resolved.
+- Defined event/object semantics, occurred/observed timestamps, idempotency and dedupe expectations, segmentation-safe attributes, related refs, quality evidence, and forbidden secret/contact/consent replacement fields.
+- Added safe failure and future validation expectations for malformed signals, unresolved subjects, source outages, replayed signals, and secret-bearing metadata.
+- Marked Goal 11.1 complete in `docs/orchestrator/GOALS.md` and advanced `STATE.json` to Goal 11.2.
+
+Validation:
+
+- Documentation-only contract change; no runtime code changed for this chunk.
+- Remote contract inspection passed by reading `docs/agents/contracts/application-signal-contract.md` after update.
+- `npm run build` and `npm test` were not run because this chunk only defines the common signal envelope and does not change application source or tests.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of raw application behavior truth, contact data, consent/preferences, provider delivery, tenant registry truth, or CRM/account master data.
+- Application signals are constrained to segmentation input and cannot bypass approval, consent, unsubscribe, frequency caps, throttling, max-send limits, idempotency, max-30 notification chunking, or notification delegation.
+- Applications remain signal providers only and are explicitly not campaign engines.
+- The next chunk remains contract-scoped: define the application-specific signal catalog before adding source clients, ingestion, segment rules, or dry-run behavior.
+
+Completed chunk:
+
+- Goal 11.1 - Define common application signal envelope.
+
+Next unfinished step:
+
+- Goal 11.2 - Define signal catalog for Flipflop, SpeakASap, Marathon, Bazos, Rent-A-Box, RunLayer, Shop Assistant, and Statics.
+
+## 2026-06-13 - Goal 11.2 Application Signal Catalog
+
+Current focus: Goal 11 - Application Signal Segmentation Contracts, chunk 11.2.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Flipflop, SpeakASap, Marathon, Bazos, Rent-A-Box, RunLayer, Shop Assistant, and Statics remain the source of truth for raw behavior facts and source object state.
+- Marketing may use cataloged app signals as segmentation inputs only; it must not become an application event store, contact owner, consent owner, CRM/account owner, notification provider, or campaign engine inside each app.
+- Auth/leads remain the sources of reachable recipient and consent truth, tenant/app registry remains the source of scope truth, and notifications remains the only outbound delivery executor.
+- No real campaign was executed against real recipients.
+
+Implementation evidence:
+
+- Added `docs/agents/contracts/application-signal-catalog-contract.md` as the Goal 11.2 app-specific signal catalog contract.
+- Defined catalog rules requiring the common `marketing.application_signal.v1` envelope, canonical appId, source-owned subject references, source objects, UTC occurrence time, tenant/app scope where applicable, and segmentation-safe attributes.
+- Cataloged initial event classes for Flipflop: product view, cart item added, checkout started, purchase completed, category interest, and inactivity.
+- Cataloged initial event classes for SpeakASap: learner registration, course interest, lesson completion, stalled progress, trial start, and subscription state changes.
+- Cataloged initial event classes for Marathon: event registration intent, event registration, training plan start, training milestone, event attendance, and participant inactivity.
+- Cataloged initial event classes for Bazos: listing creation, listing expiry/expiration, saved search, category interest, and buyer response.
+- Cataloged initial event classes for Rent-A-Box: reservation creation, move-in scheduled, active storage, upcoming renewal, capacity threshold, and abandoned reservation.
+- Cataloged initial event classes for RunLayer: tenant creation, workflow creation, first workflow run completion, workflow run failure, feature adoption, and usage tier threshold.
+- Cataloged initial event classes for Shop Assistant: cart creation/abandonment, recommendation click, merchant setup start/completion, and product intent.
+- Cataloged initial event classes for Statics: workspace creation, report creation, dashboard view, workspace inactivity, plan usage threshold, and subscription renewal.
+- Added cross-app normalization groups and forbidden catalog expansion rules to prevent raw contact, consent, provider credential, CRM, event-store, or campaign-engine ownership drift.
+- Linked the catalog from `docs/agents/contracts/application-signal-contract.md` and `docs/agents/contracts/integration-api-matrix.md`.
+- Marked Goal 11.2 complete in `docs/orchestrator/GOALS.md` and advanced `STATE.json` to Goal 11.3.
+
+Validation:
+
+- Documentation-only contract change; no runtime code changed for this chunk.
+- Remote contract inspection passed by reading `docs/agents/contracts/application-signal-catalog-contract.md` and the updated Goal 11 checklist after update.
+- `STATE.json` parsed successfully after update.
+- `npm run build` and `npm test` were not run because this chunk only defines the signal catalog and does not change application source or tests.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of raw app behavior truth, source object state, contact data, consent/preferences, tenant registry truth, CRM/account master data, provider delivery, or notification channel registry state.
+- Cataloged signals are constrained to segmentation input and cannot bypass approval, consent, unsubscribe, frequency caps, throttling, max-send limits, idempotency, max-30 notification chunking, registry validation, recipient resolution, or notification delegation.
+- Each application can contribute source-owned behavior signals without implementing local campaigns.
+- The next chunk remains contract/runtime-boundary scoped: define the signal source client or event ingestion contract before implementing segment rules or dry-run preview behavior.
+
+Completed chunk:
+
+- Goal 11.2 - Define signal catalog for Flipflop, SpeakASap, Marathon, Bazos, Rent-A-Box, RunLayer, Shop Assistant, and Statics.
+
+Next unfinished step:
+
+- Goal 11.3 - Add signal source client or event ingestion contract.

@@ -20,9 +20,9 @@ The next program is the expanded ecosystem marketing platform described in `docs
 
 ## Next Goal Selection
 
-The next valid goal is Goal 8 - Ecosystem Ownership Contract Baseline.
+The next valid goal is Goal 11 - Application Signal Segmentation Contracts.
 
-Do not start landing page, admin UI, CRM/account integration, analytics dashboards, journey automation, or app-signal implementation before Goal 8 establishes the ownership and contract baseline.
+Goals 8, 9, and 10 are complete. Continue Goal 11 one chunk at a time. Do not start landing page, admin UI, CRM/account runtime integration, analytics dashboards, journey automation, or app-signal runtime behavior beyond the selected Goal 11 chunk.
 
 ## Phase 2 - Ecosystem Contract And Product Baseline
 

@@ -3,6 +3,8 @@ export type ResultSource = ContactOwner | "orders" | "catalog" | "system";
 export type Channel = "email" | "telegram" | "whatsapp";
 export type Purpose = "marketing" | "retention" | "transactional-not-marketing";
 export type SegmentSource = "auth_users" | "leads" | "orders";
+export type RegistryEnvironment = "production" | "staging" | "development" | "test";
+export type RegistryStatus = "active" | "suspended" | "archived" | "test-only";
 export type CampaignStatus =
   | "draft"
   | "scheduled"
@@ -13,7 +15,21 @@ export type CampaignStatus =
   | "archived";
 export type CampaignApprovalStatus = "pending" | "approved" | "revoked";
 
-export interface Segment {
+export interface RegistryScope {
+  tenantId: string;
+  appId: string;
+  brandId: string;
+  businessId?: string | null;
+  environment?: RegistryEnvironment | null;
+  defaultLocale?: string | null;
+  timezone?: string | null;
+  productLine?: string | null;
+  lifecycleScope?: string | null;
+  legalSenderIdentity?: string | null;
+  policyRef?: string | null;
+}
+
+export interface Segment extends RegistryScope {
   segmentId: string;
   name: string;
   sourceTypes: SegmentSource[];
@@ -22,7 +38,7 @@ export interface Segment {
   estimatedCount?: number | null;
 }
 
-export interface Campaign {
+export interface Campaign extends RegistryScope {
   campaignId: string;
   tenant: string;
   name: string;
@@ -59,9 +75,14 @@ export interface Contact {
   phone?: string;
   preferredChannel: Channel;
   fallbackChannels: Channel[];
+  identityLinks?: {
+    authUserId?: string;
+    leadId?: string;
+  };
   consent: {
     marketing: boolean;
     unsubscribed: boolean;
+    channels?: Partial<Record<Channel, boolean>>;
   };
 }
 

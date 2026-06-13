@@ -2,8 +2,8 @@ import axios from "axios";
 import { logDecision } from "./logger";
 import { Campaign, Channel, Contact, ResultSource, Segment } from "./types";
 
-const AUTH_USERS_DEFAULT_PATH = "/auth/admin/users";
-const LEADS_DEFAULT_PATH = "/leads";
+const AUTH_USERS_DEFAULT_PATH = "/auth/marketing/recipients";
+const LEADS_DEFAULT_PATH = "/leads/marketing/recipients";
 const ORDERS_DEFAULT_PATH = "/api/orders";
 const CATALOG_PRODUCTS_DEFAULT_PATH = "/api/products";
 
@@ -73,6 +73,14 @@ function readNestedString(record: UnknownRecord, parentKey: string, keys: string
   return parent ? readString(parent, keys) : undefined;
 }
 
+function readIdentityLinkString(record: UnknownRecord, keys: string[]): string | undefined {
+  return (
+    readString(record, keys) ??
+    readNestedString(record, "identityLink", keys) ??
+    readNestedString(record, "identity", keys)
+  );
+}
+
 function readContactMethod(record: UnknownRecord, type: Channel): string | undefined {
   const contactMethods = record.contactMethods;
   if (!Array.isArray(contactMethods)) {
@@ -100,6 +108,42 @@ function truthyConsentValue(value: unknown): boolean {
   return false;
 }
 
+function consentValueAt(value: unknown, channel: Channel): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") return truthyConsentValue(value);
+  if (!isRecord(value)) return undefined;
+
+  const direct = value[channel];
+  if (direct !== undefined) return truthyConsentValue(direct);
+  const channels = value.channels;
+  if (isRecord(channels) && channels[channel] !== undefined) return truthyConsentValue(channels[channel]);
+  if (value.granted !== undefined || value.consent !== undefined || value.marketing !== undefined) return truthyConsentValue(value);
+  return undefined;
+}
+
+function channelConsentFrom(record: UnknownRecord, campaign: Campaign, channel: Channel): boolean | undefined {
+  const candidates = [record.consentByPurposeChannel, record.marketingConsents, record.consents];
+  for (const candidate of candidates) {
+    if (!isRecord(candidate)) continue;
+
+    const direct = consentValueAt(candidate[channel], channel);
+    if (direct !== undefined) return direct;
+
+    for (const scoped of [
+      candidate[campaign.purpose],
+      candidate.marketing,
+      candidate[campaign.tenantId],
+      candidate[campaign.tenant],
+      candidate[campaign.appId],
+      candidate["*"]
+    ]) {
+      const value = consentValueAt(scoped, channel);
+      if (value !== undefined) return value;
+    }
+  }
+  return undefined;
+}
+
 function hasMarketingConsent(record: UnknownRecord, campaign: Campaign): boolean {
   const consents = record.marketingConsents;
   if (typeof record.marketingConsent === "boolean") {
@@ -109,18 +153,75 @@ function hasMarketingConsent(record: UnknownRecord, campaign: Campaign): boolean
     return record.consentMarketing;
   }
   if (!isRecord(consents)) {
-    return false;
+    return channelConsentFrom(record, campaign, campaign.primaryChannel) === true;
   }
   return (
     truthyConsentValue(consents.marketing) ||
     truthyConsentValue(consents[campaign.purpose]) ||
+    truthyConsentValue(consents[campaign.tenantId]) ||
     truthyConsentValue(consents[campaign.tenant]) ||
-    truthyConsentValue(consents["*"])
+    truthyConsentValue(consents["*"]) ||
+    channelConsentFrom(record, campaign, campaign.primaryChannel) === true
   );
 }
 
-function isUnsubscribed(record: UnknownRecord): boolean {
-  return Boolean(record.unsubscribedAt || record.unsubscribed || record.isUnsubscribed || record.transactionalOnly === true);
+function channelConsentsFrom(record: UnknownRecord, campaign: Campaign): Partial<Record<Channel, boolean>> | undefined {
+  const channels: Partial<Record<Channel, boolean>> = {};
+  for (const channel of ["email", "telegram", "whatsapp"] as const) {
+    const value = channelConsentFrom(record, campaign, channel);
+    if (value !== undefined) channels[channel] = value;
+  }
+  return Object.keys(channels).length > 0 ? channels : undefined;
+}
+
+function explicitUnsubscribeFlag(value: unknown): boolean {
+  if (value === true) return true;
+  if (typeof value === "string") return ["true", "yes", "unsubscribed", "opted_out"].includes(value.toLowerCase());
+  return false;
+}
+
+function sourceOwnedUnsubscribeValue(value: unknown): boolean | undefined {
+  if (!isRecord(value)) return undefined;
+  if (value.unsubscribed !== undefined) return explicitUnsubscribeFlag(value.unsubscribed);
+  if (value.isUnsubscribed !== undefined) return explicitUnsubscribeFlag(value.isUnsubscribed);
+  if (value.transactionalOnly === true) return true;
+  return undefined;
+}
+
+function channelUnsubscribedFrom(record: UnknownRecord, campaign: Campaign, channel: Channel): boolean {
+  const candidates = [record.consentByPurposeChannel, record.marketingConsents, record.consents];
+  for (const candidate of candidates) {
+    if (!isRecord(candidate)) continue;
+
+    const direct = consentValueAt(candidate[channel], channel);
+    const directUnsubscribed = sourceOwnedUnsubscribeValue(candidate[channel]);
+    if (directUnsubscribed === true) return true;
+    if (direct === false) continue;
+
+    for (const scoped of [
+      candidate[campaign.purpose],
+      candidate.marketing,
+      candidate[campaign.tenantId],
+      candidate[campaign.tenant],
+      candidate[campaign.appId],
+      candidate["*"]
+    ]) {
+      const scopedRecord = isRecord(scoped) ? scoped : undefined;
+      if (scopedRecord && sourceOwnedUnsubscribeValue(scopedRecord[channel]) === true) return true;
+      if (sourceOwnedUnsubscribeValue(scoped) === true) return true;
+    }
+  }
+  return false;
+}
+
+function isUnsubscribed(record: UnknownRecord, campaign: Campaign): boolean {
+  return Boolean(
+    record.unsubscribedAt ||
+    record.unsubscribed ||
+    record.isUnsubscribed ||
+    record.transactionalOnly === true ||
+    channelUnsubscribedFrom(record, campaign, campaign.primaryChannel)
+  );
 }
 
 function extractItems(data: unknown): unknown[] {
@@ -130,13 +231,24 @@ function extractItems(data: unknown): unknown[] {
   if (!isRecord(data)) {
     return [];
   }
-  for (const key of ["users", "items", "data", "results", "recipients"]) {
+  for (const key of ["users", "leads", "items", "data", "results", "recipients"]) {
     const value = data[key];
     if (Array.isArray(value)) {
       return value;
     }
+    if (isRecord(value)) {
+      const nested = extractItems(value);
+      if (nested.length > 0) return nested;
+    }
   }
   return [];
+}
+
+function extractRecipientItems(data: unknown, source: "auth" | "leads"): unknown[] {
+  const items = extractItems(data);
+  if (items.length > 0) return items;
+  if (Array.isArray(data)) return items;
+  throw new Error(`${source}_invalid_recipient_response`);
 }
 
 function extractRecord(data: unknown): UnknownRecord | undefined {
@@ -172,9 +284,11 @@ function toAuthContact(item: unknown, campaign: Campaign): Contact | null {
     phone: readString(item, ["phone", "phoneNumber", "primaryPhone"]),
     preferredChannel: normalizeChannel(item.preferredChannel),
     fallbackChannels: normalizeFallbackChannels(item.fallbackChannels),
+    identityLinks: { leadId: readIdentityLinkString(item, ["leadId", "sourceLeadId"]) },
     consent: {
       marketing: hasMarketingConsent(item, campaign),
-      unsubscribed: isUnsubscribed(item)
+      unsubscribed: isUnsubscribed(item, campaign),
+      channels: channelConsentsFrom(item, campaign)
     }
   };
 }
@@ -197,9 +311,11 @@ function toLeadContact(item: unknown, campaign: Campaign): Contact | null {
       readContactMethod(item, "telegram"),
     preferredChannel: normalizeChannel(item.preferredChannel),
     fallbackChannels: normalizeFallbackChannels(item.fallbackChannels),
+    identityLinks: { authUserId: readIdentityLinkString(item, ["convertedAuthUserId", "authUserId", "registeredUserId", "userId"]) },
     consent: {
       marketing: hasMarketingConsent(item, campaign),
-      unsubscribed: isUnsubscribed(item)
+      unsubscribed: isUnsubscribed(item, campaign),
+      channels: channelConsentsFrom(item, campaign)
     }
   };
 }
@@ -224,7 +340,7 @@ function catalogRequestHeaders(): Record<string, string> | undefined {
   return token ? { Authorization: `Bearer ${token}` } : undefined;
 }
 
-function withSegmentQuery(basePath: string, segment: Segment): string {
+function withAuthRecipientQuery(basePath: string, segment: Segment, campaign: Campaign): string {
   const params = new URLSearchParams();
   params.set("limit", String(process.env.AUTH_USERS_SEGMENT_LIMIT ?? 100));
   for (const [key, value] of Object.entries(segment.rules)) {
@@ -232,10 +348,22 @@ function withSegmentQuery(basePath: string, segment: Segment): string {
       params.set(key, String(value));
     }
   }
+
+  params.set("tenantId", campaign.tenantId);
+  params.set("appId", campaign.appId);
+  params.set("brandId", campaign.brandId);
+  params.set("purpose", campaign.purpose);
+  params.set("channel", campaign.primaryChannel);
+  if (campaign.fallbackChannels.length > 0) params.set("fallbackChannels", campaign.fallbackChannels.join(","));
+  if (campaign.businessId) params.set("businessId", campaign.businessId);
+  if (campaign.environment) params.set("environment", campaign.environment);
+  if (campaign.productLine) params.set("productLine", campaign.productLine);
+  if (campaign.lifecycleScope) params.set("lifecycleScope", campaign.lifecycleScope);
+
   return `${basePath}?${params.toString()}`;
 }
 
-function withLeadsSegmentQuery(basePath: string, segment: Segment): string {
+function withLeadsRecipientQuery(basePath: string, segment: Segment, campaign: Campaign): string {
   const params = new URLSearchParams();
   params.set("limit", String(process.env.LEADS_SEGMENT_LIMIT ?? 30));
   for (const [key, value] of Object.entries(segment.rules)) {
@@ -243,6 +371,18 @@ function withLeadsSegmentQuery(basePath: string, segment: Segment): string {
       params.set(key, String(value));
     }
   }
+
+  params.set("tenantId", campaign.tenantId);
+  params.set("appId", campaign.appId);
+  params.set("brandId", campaign.brandId);
+  params.set("purpose", campaign.purpose);
+  params.set("channel", campaign.primaryChannel);
+  if (campaign.fallbackChannels.length > 0) params.set("fallbackChannels", campaign.fallbackChannels.join(","));
+  if (campaign.businessId) params.set("businessId", campaign.businessId);
+  if (campaign.environment) params.set("environment", campaign.environment);
+  if (campaign.productLine) params.set("productLine", campaign.productLine);
+  if (campaign.lifecycleScope) params.set("lifecycleScope", campaign.lifecycleScope);
+
   return `${basePath}?${params.toString()}`;
 }
 
@@ -308,12 +448,12 @@ async function fetchAuthRecipients(segment: Segment, campaign: Campaign): Promis
   }
 
   const path = process.env.AUTH_USERS_SEGMENT_PATH ?? AUTH_USERS_DEFAULT_PATH;
-  const endpoint = `${authUrl.replace(/\/$/, "")}${withSegmentQuery(path, segment)}`;
+  const endpoint = `${authUrl.replace(/\/$/, "")}${withAuthRecipientQuery(path, segment, campaign)}`;
   const response = await axios.get(endpoint, {
     timeout: 5000,
     headers: authRequestHeaders()
   });
-  const mapped = extractItems(response.data)
+  const mapped = extractRecipientItems(response.data, "auth")
     .map((item) => toAuthContact(item, campaign))
     .filter((contact): contact is Contact => contact !== null);
 
@@ -345,12 +485,12 @@ async function fetchLeadRecipients(segment: Segment, campaign: Campaign): Promis
   }
 
   const path = process.env.LEADS_SEGMENT_PATH ?? LEADS_DEFAULT_PATH;
-  const endpoint = `${leadsUrl.replace(/\/$/, "")}${withLeadsSegmentQuery(path, segment)}`;
+  const endpoint = `${leadsUrl.replace(/\/$/, "")}${withLeadsRecipientQuery(path, segment, campaign)}`;
   const response = await axios.get(endpoint, {
     timeout: 5000,
     headers: leadsRequestHeaders()
   });
-  const mapped = extractItems(response.data)
+  const mapped = extractRecipientItems(response.data, "leads")
     .map((item) => toLeadContact(item, campaign))
     .filter((contact): contact is Contact => contact !== null);
 
@@ -529,6 +669,16 @@ function toRecipientRef(contact: Contact): string {
   return `${contact.owner === "auth" ? "auth" : "lead"}:${contact.id}`;
 }
 
+function recipientIdentityKey(contact: Contact): string {
+  if (contact.owner === "auth") {
+    return `auth:${contact.id}`;
+  }
+  if (contact.identityLinks?.authUserId) {
+    return `auth:${contact.identityLinks.authUserId}`;
+  }
+  return `lead:${contact.id}`;
+}
+
 function matchesOrderSignal(contact: Contact, signal: OrderSignal): boolean {
   const email = normalizeToken(contact.email);
   const phone = normalizeToken(contact.phone);
@@ -614,7 +764,11 @@ export async function resolveSegmentRecipients(segment: Segment, campaign: Campa
     if (orderSignal && !matchesOrderSignal(recipient, orderSignal)) {
       continue;
     }
-    deduped.set(`${recipient.owner}:${recipient.id}`, recipient);
+    const identityKey = recipientIdentityKey(recipient);
+    const existing = deduped.get(identityKey);
+    if (!existing || (existing.owner === "leads" && recipient.owner === "auth")) {
+      deduped.set(identityKey, recipient);
+    }
   }
   return { recipients: Array.from(deduped.values()), failures };
 }

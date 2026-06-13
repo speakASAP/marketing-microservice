@@ -12,11 +12,11 @@ export interface MarketingStore {
   init(): Promise<void>;
   reset(): Promise<void>;
   getSegment(id: string): Promise<Segment | undefined>;
-  listSegments(): Promise<Segment[]>;
+  listSegments(filters?: Partial<Pick<Segment, "tenantId" | "appId" | "brandId" | "businessId" | "productLine" | "lifecycleScope" | "environment">>): Promise<Segment[]>;
   saveSegment(segment: Segment): Promise<Segment>;
   deleteSegment(id: string): Promise<boolean>;
   getCampaign(id: string): Promise<Campaign | undefined>;
-  listCampaigns(): Promise<Campaign[]>;
+  listCampaigns(filters?: Partial<Pick<Campaign, "tenantId" | "appId" | "brandId" | "businessId" | "productLine" | "lifecycleScope" | "environment">>): Promise<Campaign[]>;
   saveCampaign(campaign: Campaign): Promise<Campaign>;
   deleteCampaign(id: string): Promise<boolean>;
   findRunByIdempotency(campaignId: string, idempotencyKey: string): Promise<ExecutionRun | undefined>;
@@ -42,8 +42,8 @@ export class InMemoryMarketingStore implements MarketingStore {
     return segments.get(id);
   }
 
-  async listSegments(): Promise<Segment[]> {
-    return Array.from(segments.values());
+  async listSegments(filters: Partial<Pick<Segment, "tenantId" | "appId" | "brandId" | "businessId" | "productLine" | "lifecycleScope" | "environment">> = {}): Promise<Segment[]> {
+    return Array.from(segments.values()).filter((segment) => matchesScopeFilters(segment, filters));
   }
 
   async saveSegment(segment: Segment): Promise<Segment> {
@@ -59,8 +59,8 @@ export class InMemoryMarketingStore implements MarketingStore {
     return campaigns.get(id);
   }
 
-  async listCampaigns(): Promise<Campaign[]> {
-    return Array.from(campaigns.values());
+  async listCampaigns(filters: Partial<Pick<Campaign, "tenantId" | "appId" | "brandId" | "businessId" | "productLine" | "lifecycleScope" | "environment">> = {}): Promise<Campaign[]> {
+    return Array.from(campaigns.values()).filter((campaign) => matchesScopeFilters(campaign, filters));
   }
 
   async saveCampaign(campaign: Campaign): Promise<Campaign> {
@@ -139,6 +139,24 @@ export class InMemoryMarketingStore implements MarketingStore {
   }
 }
 
+function matchesScopeFilters<T extends { tenantId: string; appId: string; brandId: string; businessId?: string | null; productLine?: string | null; lifecycleScope?: string | null; environment?: string | null }>(value: T, filters: Partial<Pick<T, "tenantId" | "appId" | "brandId" | "businessId" | "productLine" | "lifecycleScope" | "environment">>): boolean {
+  return Object.entries(filters).every(([key, expected]) => expected === undefined || String(value[key as keyof T] ?? "") === String(expected));
+}
+
+function scopeFiltersWhere(filters: Partial<Pick<Segment, "tenantId" | "appId" | "brandId" | "businessId" | "productLine" | "lifecycleScope" | "environment">>): { where: string; values: string[] } {
+  const columns: Record<string, string> = { tenantId: "tenant_id", appId: "app_id", brandId: "brand_id", businessId: "business_id", productLine: "product_line", lifecycleScope: "lifecycle_scope", environment: "environment" };
+  const clauses: string[] = [];
+  const values: string[] = [];
+  for (const [key, column] of Object.entries(columns)) {
+    const value = filters[key as keyof typeof filters];
+    if (value !== undefined) {
+      values.push(String(value));
+      clauses.push(column + " = $" + values.length);
+    }
+  }
+  return { where: clauses.length > 0 ? " where " + clauses.join(" and ") : "", values };
+}
+
 function asJsonArray<T>(value: unknown): T[] {
   if (Array.isArray(value)) return value as T[];
   if (typeof value === "string") return JSON.parse(value) as T[];
@@ -182,23 +200,34 @@ export class PostgresMarketingStore implements MarketingStore {
     return result.rows[0] ? rowToSegment(result.rows[0]) : undefined;
   }
 
-  async listSegments(): Promise<Segment[]> {
-    const result = await this.pool.query("select * from marketing_segments order by created_at asc, segment_id asc");
+  async listSegments(filters: Partial<Pick<Segment, "tenantId" | "appId" | "brandId" | "businessId" | "productLine" | "lifecycleScope" | "environment">> = {}): Promise<Segment[]> {
+    const scoped = scopeFiltersWhere(filters);
+    const result = await this.pool.query("select * from marketing_segments" + scoped.where + " order by created_at asc, segment_id asc", scoped.values);
     return result.rows.map(rowToSegment);
   }
 
   async saveSegment(segment: Segment): Promise<Segment> {
     await this.pool.query(
-      `insert into marketing_segments (segment_id, name, source_types, rules, is_dynamic, estimated_count)
-       values ($1, $2, $3::jsonb, $4::jsonb, $5, $6)
-       on conflict (segment_id) do update set
-         name = excluded.name,
-         source_types = excluded.source_types,
-         rules = excluded.rules,
-         is_dynamic = excluded.is_dynamic,
-         estimated_count = excluded.estimated_count,
-         updated_at = now()`,
-      [segment.segmentId, segment.name, JSON.stringify(segment.sourceTypes), JSON.stringify(segment.rules), segment.isDynamic, segment.estimatedCount ?? null]
+      "insert into marketing_segments (segment_id, tenant_id, app_id, brand_id, business_id, environment, default_locale, timezone, product_line, lifecycle_scope, legal_sender_identity, policy_ref, name, source_types, rules, is_dynamic, estimated_count) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15::jsonb, $16, $17) on conflict (segment_id) do update set tenant_id = excluded.tenant_id, app_id = excluded.app_id, brand_id = excluded.brand_id, business_id = excluded.business_id, environment = excluded.environment, default_locale = excluded.default_locale, timezone = excluded.timezone, product_line = excluded.product_line, lifecycle_scope = excluded.lifecycle_scope, legal_sender_identity = excluded.legal_sender_identity, policy_ref = excluded.policy_ref, name = excluded.name, source_types = excluded.source_types, rules = excluded.rules, is_dynamic = excluded.is_dynamic, estimated_count = excluded.estimated_count, updated_at = now()",
+      [
+        segment.segmentId,
+        segment.tenantId,
+        segment.appId,
+        segment.brandId,
+        segment.businessId ?? null,
+        segment.environment ?? null,
+        segment.defaultLocale ?? null,
+        segment.timezone ?? null,
+        segment.productLine ?? null,
+        segment.lifecycleScope ?? null,
+        segment.legalSenderIdentity ?? null,
+        segment.policyRef ?? null,
+        segment.name,
+        JSON.stringify(segment.sourceTypes),
+        JSON.stringify(segment.rules),
+        segment.isDynamic,
+        segment.estimatedCount ?? null
+      ]
     );
     return segment;
   }
@@ -213,45 +242,29 @@ export class PostgresMarketingStore implements MarketingStore {
     return result.rows[0] ? rowToCampaign(result.rows[0]) : undefined;
   }
 
-  async listCampaigns(): Promise<Campaign[]> {
-    const result = await this.pool.query("select * from marketing_campaigns order by created_at asc, campaign_id asc");
+  async listCampaigns(filters: Partial<Pick<Campaign, "tenantId" | "appId" | "brandId" | "businessId" | "productLine" | "lifecycleScope" | "environment">> = {}): Promise<Campaign[]> {
+    const scoped = scopeFiltersWhere(filters);
+    const result = await this.pool.query("select * from marketing_campaigns" + scoped.where + " order by created_at asc, campaign_id asc", scoped.values);
     return result.rows.map(rowToCampaign);
   }
 
   async saveCampaign(campaign: Campaign): Promise<Campaign> {
     await this.pool.query(
-      `insert into marketing_campaigns (
-        campaign_id, tenant, name, segment_id, description, purpose, primary_channel,
-        fallback_channels, channel_key, template_ref, schedule_at, throttle_per_minute,
-        frequency_cap_per_day, message, status, approval_status, approved_by, approved_at, approval_note,
-        scheduler_lock_owner, scheduler_lock_until, last_scheduled_run_at, created_at, updated_at
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $14::jsonb, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
-       on conflict (campaign_id) do update set
-         tenant = excluded.tenant,
-         name = excluded.name,
-         segment_id = excluded.segment_id,
-         description = excluded.description,
-         purpose = excluded.purpose,
-         primary_channel = excluded.primary_channel,
-         fallback_channels = excluded.fallback_channels,
-         channel_key = excluded.channel_key,
-         template_ref = excluded.template_ref,
-         schedule_at = excluded.schedule_at,
-         throttle_per_minute = excluded.throttle_per_minute,
-         frequency_cap_per_day = excluded.frequency_cap_per_day,
-         message = excluded.message,
-         status = excluded.status,
-         approval_status = excluded.approval_status,
-         approved_by = excluded.approved_by,
-         approved_at = excluded.approved_at,
-         approval_note = excluded.approval_note,
-         scheduler_lock_owner = excluded.scheduler_lock_owner,
-         scheduler_lock_until = excluded.scheduler_lock_until,
-         last_scheduled_run_at = excluded.last_scheduled_run_at,
-         updated_at = excluded.updated_at`,
+      "insert into marketing_campaigns (campaign_id, tenant, tenant_id, app_id, brand_id, business_id, environment, default_locale, timezone, product_line, lifecycle_scope, legal_sender_identity, policy_ref, name, segment_id, description, purpose, primary_channel, fallback_channels, channel_key, template_ref, schedule_at, throttle_per_minute, frequency_cap_per_day, message, status, approval_status, approved_by, approved_at, approval_note, scheduler_lock_owner, scheduler_lock_until, last_scheduled_run_at, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20, $21, $22, $23, $24, $25::jsonb, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35) on conflict (campaign_id) do update set tenant = excluded.tenant, tenant_id = excluded.tenant_id, app_id = excluded.app_id, brand_id = excluded.brand_id, business_id = excluded.business_id, environment = excluded.environment, default_locale = excluded.default_locale, timezone = excluded.timezone, product_line = excluded.product_line, lifecycle_scope = excluded.lifecycle_scope, legal_sender_identity = excluded.legal_sender_identity, policy_ref = excluded.policy_ref, name = excluded.name, segment_id = excluded.segment_id, description = excluded.description, purpose = excluded.purpose, primary_channel = excluded.primary_channel, fallback_channels = excluded.fallback_channels, channel_key = excluded.channel_key, template_ref = excluded.template_ref, schedule_at = excluded.schedule_at, throttle_per_minute = excluded.throttle_per_minute, frequency_cap_per_day = excluded.frequency_cap_per_day, message = excluded.message, status = excluded.status, approval_status = excluded.approval_status, approved_by = excluded.approved_by, approved_at = excluded.approved_at, approval_note = excluded.approval_note, scheduler_lock_owner = excluded.scheduler_lock_owner, scheduler_lock_until = excluded.scheduler_lock_until, last_scheduled_run_at = excluded.last_scheduled_run_at, updated_at = excluded.updated_at",
       [
         campaign.campaignId,
         campaign.tenant,
+        campaign.tenantId,
+        campaign.appId,
+        campaign.brandId,
+        campaign.businessId ?? null,
+        campaign.environment ?? null,
+        campaign.defaultLocale ?? null,
+        campaign.timezone ?? null,
+        campaign.productLine ?? null,
+        campaign.lifecycleScope ?? null,
+        campaign.legalSenderIdentity ?? null,
+        campaign.policyRef ?? null,
         campaign.name,
         campaign.segmentId,
         campaign.description ?? null,
@@ -459,6 +472,17 @@ export class PostgresMarketingStore implements MarketingStore {
 function rowToSegment(row: Record<string, unknown>): Segment {
   return {
     segmentId: String(row.segment_id),
+    tenantId: String(row.tenant_id ?? row.tenant ?? ""),
+    appId: String(row.app_id ?? ""),
+    brandId: String(row.brand_id ?? ""),
+    businessId: row.business_id === null || row.business_id === undefined ? null : String(row.business_id),
+    environment: row.environment === null || row.environment === undefined ? null : row.environment as Segment["environment"],
+    defaultLocale: row.default_locale === null || row.default_locale === undefined ? null : String(row.default_locale),
+    timezone: row.timezone === null || row.timezone === undefined ? null : String(row.timezone),
+    productLine: row.product_line === null || row.product_line === undefined ? null : String(row.product_line),
+    lifecycleScope: row.lifecycle_scope === null || row.lifecycle_scope === undefined ? null : String(row.lifecycle_scope),
+    legalSenderIdentity: row.legal_sender_identity === null || row.legal_sender_identity === undefined ? null : String(row.legal_sender_identity),
+    policyRef: row.policy_ref === null || row.policy_ref === undefined ? null : String(row.policy_ref),
     name: String(row.name),
     sourceTypes: asJsonArray(row.source_types),
     rules: asJsonObject(row.rules),
@@ -471,6 +495,17 @@ function rowToCampaign(row: Record<string, unknown>): Campaign {
   return {
     campaignId: String(row.campaign_id),
     tenant: String(row.tenant),
+    tenantId: String(row.tenant_id ?? row.tenant ?? ""),
+    appId: String(row.app_id ?? ""),
+    brandId: String(row.brand_id ?? ""),
+    businessId: row.business_id === null || row.business_id === undefined ? null : String(row.business_id),
+    environment: row.environment === null || row.environment === undefined ? null : row.environment as Campaign["environment"],
+    defaultLocale: row.default_locale === null || row.default_locale === undefined ? null : String(row.default_locale),
+    timezone: row.timezone === null || row.timezone === undefined ? null : String(row.timezone),
+    productLine: row.product_line === null || row.product_line === undefined ? null : String(row.product_line),
+    lifecycleScope: row.lifecycle_scope === null || row.lifecycle_scope === undefined ? null : String(row.lifecycle_scope),
+    legalSenderIdentity: row.legal_sender_identity === null || row.legal_sender_identity === undefined ? null : String(row.legal_sender_identity),
+    policyRef: row.policy_ref === null || row.policy_ref === undefined ? null : String(row.policy_ref),
     name: String(row.name),
     segmentId: String(row.segment_id),
     description: row.description === null ? null : String(row.description),

@@ -143,16 +143,16 @@ Acceptance criteria:
 
 ## Goal 8 - Ecosystem Ownership Contract Baseline
 
-Status: pending
+Status: done
 
 Intent: Marketing must define the expanded ecosystem ownership model before adding multi-application, CRM-like, analytics, landing page, or admin-dashboard capabilities.
 
 Chunks:
 
-- [ ] 8.1 Create ecosystem ownership contracts for tenant/app/business registry, CRM/account scope, analytics, app signals, and marketing orchestration.
-- [ ] 8.2 Define application portfolio taxonomy for Flipflop, SpeakASap, Marathon, Bazos, Rent-A-Box, RunLayer, Shop Assistant, and Statics.
-- [ ] 8.3 Define CRM/account boundary and confirm Marketing will not own CRM master data.
-- [ ] 8.4 Define required contract changes for auth, leads, notifications, domain/app services, registry, analytics, and future CRM/account service.
+- [x] 8.1 Create ecosystem ownership contracts for tenant/app/business registry, CRM/account scope, analytics, app signals, and marketing orchestration.
+- [x] 8.2 Define application portfolio taxonomy for Flipflop, SpeakASap, Marathon, Bazos, Rent-A-Box, RunLayer, Shop Assistant, and Statics.
+- [x] 8.3 Define CRM/account boundary and confirm Marketing will not own CRM master data.
+- [x] 8.4 Define required contract changes for auth, leads, notifications, domain/app services, registry, analytics, and future CRM/account service.
 
 Acceptance criteria:
 
@@ -163,16 +163,16 @@ Acceptance criteria:
 
 ## Goal 9 - Tenant/App Registry Integration
 
-Status: pending
+Status: done
 
 Intent: Campaigns and segments must be scoped to canonical tenant/app/brand identifiers without Marketing owning tenant truth.
 
 Chunks:
 
-- [ ] 9.1 Add tenant/app/business registry contract and environment keys.
-- [ ] 9.2 Add campaign and segment metadata for tenantId, appId, brandId, locale/timezone, product line, and lifecycle scope.
-- [ ] 9.3 Add registry validation client with safe failure behavior.
-- [ ] 9.4 Add tenant/app filters and contract tests.
+- [x] 9.1 Add tenant/app/business registry contract and environment keys.
+- [x] 9.2 Add campaign and segment metadata for tenantId, appId, brandId, locale/timezone, product line, and lifecycle scope.
+- [x] 9.3 Add registry validation client with safe failure behavior.
+- [x] 9.4 Add tenant/app filters and contract tests.
 
 Acceptance criteria:
 
@@ -183,17 +183,17 @@ Acceptance criteria:
 
 ## Goal 10 - Cross-Service Recipient And Consent Contract Hardening
 
-Status: pending
+Status: done
 
 Intent: Recipient resolution must support tenant/app/purpose/channel consent without duplicating auth/leads truth.
 
 Chunks:
 
-- [ ] 10.1 Define auth registered-user recipient contract by tenant/app/purpose/channel.
-- [ ] 10.2 Define leads recipient contract by tenant/app/purpose/channel.
-- [ ] 10.3 Define lead-to-user conversion and identity-linking behavior.
-- [ ] 10.4 Define unsubscribe write-through or source-owned write contracts.
-- [ ] 10.5 Update source clients and tests after provider contracts exist.
+- [x] 10.1 Define auth registered-user recipient contract by tenant/app/purpose/channel.
+- [x] 10.2 Define leads recipient contract by tenant/app/purpose/channel.
+- [x] 10.3 Define lead-to-user conversion and identity-linking behavior.
+- [x] 10.4 Define unsubscribe write-through or source-owned write contracts.
+- [x] 10.5 Update source clients and tests after provider contracts exist.
 
 Acceptance criteria:
 
@@ -210,8 +210,8 @@ Intent: Marketing can segment by app behavior while apps remain the source of ev
 
 Chunks:
 
-- [ ] 11.1 Define common application signal envelope.
-- [ ] 11.2 Define signal catalog for Flipflop, SpeakASap, Marathon, Bazos, Rent-A-Box, RunLayer, Shop Assistant, and Statics.
+- [x] 11.1 Define common application signal envelope.
+- [x] 11.2 Define signal catalog for Flipflop, SpeakASap, Marathon, Bazos, Rent-A-Box, RunLayer, Shop Assistant, and Statics.
 - [ ] 11.3 Add signal source client or event ingestion contract.
 - [ ] 11.4 Add segment rules for app events and lifecycle states.
 - [ ] 11.5 Add dry-run preview support and failure evidence.

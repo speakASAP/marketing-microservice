@@ -5,6 +5,8 @@ import { logDecision } from "./logger";
 import { runDueScheduledCampaigns } from "./scheduler";
 import { getStore, initializeConfiguredStore } from "./store";
 import { Campaign, Segment } from "./types";
+import { registryScopeFrom, validateRegistryScope } from "./registry";
+import { forwardUnsubscribeWrite } from "./preferences";
 import {
   requireServiceAuth,
   sendContractError,
@@ -31,8 +33,23 @@ app.post("/segments", requireServiceAuth, async (req, res) => {
   }
 
   const body = validation.value;
+  const registryValidation = await validateRegistryScope(registryScopeFrom(body as Segment));
+  if (!registryValidation.ok) {
+    return res.status(400).json({ error: registryValidation.reason, details: registryValidation.details });
+  }
   const segment: Segment = {
     segmentId: crypto.randomUUID(),
+    tenantId: body.tenantId!,
+    appId: body.appId!,
+    brandId: body.brandId!,
+    businessId: body.businessId ?? null,
+    environment: body.environment ?? null,
+    defaultLocale: body.defaultLocale ?? null,
+    timezone: body.timezone ?? null,
+    productLine: body.productLine ?? null,
+    lifecycleScope: body.lifecycleScope ?? null,
+    legalSenderIdentity: body.legalSenderIdentity ?? null,
+    policyRef: body.policyRef ?? null,
     name: body.name!,
     sourceTypes: body.sourceTypes!,
     rules: body.rules!,
@@ -50,8 +67,8 @@ app.post("/segments", requireServiceAuth, async (req, res) => {
   return res.status(201).json(saved);
 });
 
-app.get("/segments", async (_req, res) => {
-  res.json(await getStore().listSegments());
+app.get("/segments", async (req, res) => {
+  res.json(await getStore().listSegments(req.query as Record<string, string>));
 });
 
 app.put("/segments/:id", requireServiceAuth, async (req, res) => {
@@ -70,6 +87,10 @@ app.put("/segments/:id", requireServiceAuth, async (req, res) => {
     ...validation.value,
     segmentId: existing.segmentId
   };
+  const registryValidation = await validateRegistryScope(registryScopeFrom(updated));
+  if (!registryValidation.ok) {
+    return res.status(400).json({ error: registryValidation.reason, details: registryValidation.details });
+  }
   const saved = await getStore().saveSegment(updated);
   logDecision("segment_updated", {
     segmentId: saved.segmentId,
@@ -100,10 +121,25 @@ app.post("/campaigns", requireServiceAuth, async (req, res) => {
   if (!(await getStore().getSegment(body.segmentId!))) {
     return res.status(400).json({ error: "segment_not_found" });
   }
+  const registryValidation = await validateRegistryScope(registryScopeFrom(body as Campaign));
+  if (!registryValidation.ok) {
+    return res.status(400).json({ error: registryValidation.reason, details: registryValidation.details });
+  }
 
   const campaign: Campaign = {
     campaignId: crypto.randomUUID(),
     tenant: body.tenant!,
+    tenantId: body.tenantId!,
+    appId: body.appId!,
+    brandId: body.brandId!,
+    businessId: body.businessId ?? null,
+    environment: body.environment ?? null,
+    defaultLocale: body.defaultLocale ?? null,
+    timezone: body.timezone ?? null,
+    productLine: body.productLine ?? null,
+    lifecycleScope: body.lifecycleScope ?? null,
+    legalSenderIdentity: body.legalSenderIdentity ?? null,
+    policyRef: body.policyRef ?? null,
     name: body.name!,
     segmentId: body.segmentId!,
     description: body.description ?? null,
@@ -142,8 +178,8 @@ app.post("/campaigns", requireServiceAuth, async (req, res) => {
   return res.status(201).json(saved);
 });
 
-app.get("/campaigns", async (_req, res) => {
-  res.json(await getStore().listCampaigns());
+app.get("/campaigns", async (req, res) => {
+  res.json(await getStore().listCampaigns(req.query as Record<string, string>));
 });
 
 app.put("/campaigns/:id", requireServiceAuth, async (req, res) => {
@@ -172,6 +208,10 @@ app.put("/campaigns/:id", requireServiceAuth, async (req, res) => {
     createdAt: existing.createdAt,
     updatedAt: new Date().toISOString()
   };
+  const registryValidation = await validateRegistryScope(registryScopeFrom(updated));
+  if (!registryValidation.ok) {
+    return res.status(400).json({ error: registryValidation.reason, details: registryValidation.details });
+  }
   const saved = await getStore().saveCampaign(updated);
   logDecision("campaign_updated", {
     campaignId: saved.campaignId,
@@ -321,12 +361,19 @@ app.post("/preferences/unsubscribe", async (req, res) => {
     return sendContractError(res, 400, validation.error);
   }
   const request = validation.value;
+  const writeResult = await forwardUnsubscribeWrite(request);
   logDecision("public_unsubscribe_requested", {
     owner: request.owner,
     recipientId: request.recipientId,
     channel: request.channel ?? null,
     purpose: request.purpose ?? "marketing",
-    writeOwner: sourceOwnerService(request.owner),
+    tenantId: request.tenantId ?? null,
+    appId: request.appId ?? null,
+    brandId: request.brandId ?? null,
+    writeOwner: writeResult.writeOwner,
+    sourceWriteStatus: writeResult.status,
+    sourceStatus: writeResult.sourceStatus ?? null,
+    sourceWriteReason: writeResult.reason ?? null,
     duration_ms: 0
   });
   return res.status(202).json({
@@ -335,7 +382,13 @@ app.post("/preferences/unsubscribe", async (req, res) => {
     recipientId: request.recipientId,
     channel: request.channel ?? null,
     purpose: request.purpose ?? "marketing",
-    writeOwner: sourceOwnerService(request.owner),
+    tenantId: request.tenantId ?? null,
+    appId: request.appId ?? null,
+    brandId: request.brandId ?? null,
+    writeOwner: writeResult.writeOwner,
+    sourceWriteStatus: writeResult.status,
+    sourceStatus: writeResult.sourceStatus ?? null,
+    sourceWriteReason: writeResult.reason ?? null,
     message: "Unsubscribe write ownership remains with the source owner; Marketing will honor visible unsubscribe state during execution."
   });
 });

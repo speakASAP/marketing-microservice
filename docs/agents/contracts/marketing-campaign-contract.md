@@ -25,6 +25,14 @@ Defaulted fields:
 
 Important optional fields:
 
+- 
+- 
+- 
+- 
+- 
+- 
+- 
+- 
 - `description`
 - `channelKey`
 - `message.subject`
@@ -106,3 +114,6 @@ Marketing audit logs must include ISO timestamps, `duration_ms`, service name, c
 - Recipient delivery work must be chunked at `<=30`.
 - Missing notification configuration must fail safely without direct sending.
 
+## Tenant/App Registry Scope
+
+Campaigns and segments carry canonical tenantId, appId, and brandId references plus optional business, environment, locale/timezone, product-line, lifecycle, sender-identity, and policy references. Marketing stores these references only. Registry truth remains with the tenant/app/business registry service. Create/update and execution paths validate scope before mutation or delivery; invalid, inactive, or unavailable registry references fail safely before notification delegation.
