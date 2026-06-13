@@ -4,54 +4,65 @@
 
 Work one goal chunk at a time. Prefer a complete, verifiable chunk over starting multiple tracks.
 
-## Completed Goal
+## Current Program
 
-Goal 1 - Intent Preservation And Contract Baseline.
+Phase 1 core implementation is complete through Goal 7:
 
-### Chunk 1.1 - Intent Preservation Docs
+- Goal 1 - Intent Preservation And Contract Baseline.
+- Goal 2 - External Source Integration.
+- Goal 3 - Persistence And Execution State.
+- Goal 4 - Campaign Approval And Safety Gates.
+- Goal 5 - Scheduling, Throttling, And Frequency Controls.
+- Goal 6 - Audit Logging And Compliance Evidence.
+- Goal 7 - API Contract Hardening.
 
-Deliverables:
-
-- `docs/orchestrator/MASTER_PROMPT.md`
-- `docs/orchestrator/INTENT.md`
-- `docs/orchestrator/GOALS.md`
-- `docs/orchestrator/PLAN.md`
-- `docs/orchestrator/STATUS.md`
-- `docs/orchestrator/PROMPTS.md`
-
-Verification:
-
-- Files exist in `docs/orchestrator/`.
-- Documents preserve root `README.md`, `BUSINESS.md`, `SYSTEM.md`, `TASKS.md`, and `STATE.json` intent.
-
-### Chunk 1.2 - Agent Entry Point
-
-Deliverables:
-
-- `AGENTS.md` references the orchestrator pack.
-- Mandatory reading order is explicit.
-- Core intent and boundaries are embedded in `AGENTS.md`.
-
-Verification:
-
-- Future agent instructions are clear without needing external context.
-
-### Chunk 1.3 - Compatibility Contract Docs
-
-Deliverables:
-
-- `docs/agents/contracts/marketing-campaign-contract.md`
-- `docs/agents/contracts/preferences-consent-contract.md`
-- `docs/agents/contracts/channel-registry-contract.md`
-- `docs/agents/contracts/integration-api-matrix.md`
-- `docs/agents/master-prompt.md`
-- `docs/agents/prompts/marketing-orchestrator.md`
-
-Verification:
-
-- README-referenced contract paths exist.
-- Contract docs defer ownership to the correct service.
+The next program is the expanded ecosystem marketing platform described in `docs/orchestrator/ROADMAP.md`.
 
 ## Next Goal Selection
 
-Goal 1, Goal 2, Goal 3, and Goal 4 are complete. Continue to Goal 5 - Scheduling, Throttling, And Frequency Controls unless the owner explicitly chooses another goal.
+The next valid goal is Goal 8 - Ecosystem Ownership Contract Baseline.
+
+Do not start landing page, admin UI, CRM/account integration, analytics dashboards, journey automation, or app-signal implementation before Goal 8 establishes the ownership and contract baseline.
+
+## Phase 2 - Ecosystem Contract And Product Baseline
+
+Goal 8 creates ecosystem ownership contracts, CRM/account boundary, tenant/app/business registry contract, application taxonomy, analytics/event ownership boundary, and required cross-service changes.
+
+## Phase 3 - Tenant/App And Campaign Catalog Foundation
+
+Goal 9 adds tenant/app/brand scope and registry validation. Goal 12 adds campaign catalog metadata, lifecycle stages, campaign families, and application blueprints.
+
+## Phase 4 - Recipient, Consent, And App Signal Hardening
+
+Goal 10 hardens auth/leads recipient and consent contracts. Goal 11 adds application signal segmentation contracts for all target applications.
+
+## Phase 5 - Lifecycle And CRM Signals
+
+Goal 13 adds lifecycle journeys. Goal 19 integrates future CRM/account signals as read-only segmentation inputs.
+
+## Phase 6 - Public Landing And Admin Console
+
+Goal 14 builds landing/auth entry points. Goal 15 builds the admin auth/RBAC shell. Goal 16 builds campaign and segment admin management. Goal 17 builds runs, consent, channel, and audit views.
+
+## Phase 7 - Analytics And Production Governance
+
+Goal 18 adds analytics and attribution. Goal 20 adds production governance and readiness.
+
+## Validation Standard
+
+For code changes, run remotely:
+
+```bash
+npm run build
+npm test
+```
+
+For frontend changes, also validate rendered desktop/mobile UI, anonymous admin rejection, token non-exposure, and responsive layouts.
+
+For deployment, require explicit owner approval before running:
+
+```bash
+./scripts/deploy.sh
+```
+
+No real campaign execution is allowed without explicit owner approval.

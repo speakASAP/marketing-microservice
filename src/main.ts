@@ -1,87 +1,121 @@
 import "dotenv/config";
 import express from "express";
 import { executeCampaign } from "./executor";
+import { logDecision } from "./logger";
 import { runDueScheduledCampaigns } from "./scheduler";
 import { getStore, initializeConfiguredStore } from "./store";
 import { Campaign, Segment } from "./types";
+import {
+  requireServiceAuth,
+  sendContractError,
+  sourceOwnerService,
+  validateCampaignBody,
+  validateExecutionBody,
+  validatePreferenceOwner,
+  validatePreferenceRequest,
+  validateSchedulerBody,
+  validateSegmentBody
+} from "./api-contracts";
 
-const app = express();
+export const app = express();
 app.use(express.json());
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", service: process.env.SERVICE_NAME ?? "marketing-microservice" });
 });
 
-app.post("/segments", async (req, res) => {
-  const body = req.body as Partial<Segment>;
-  if (!body.name || !Array.isArray(body.sourceTypes) || !body.rules || body.isDynamic === undefined) {
-    return res.status(400).json({ error: "name_sourceTypes_rules_isDynamic_required" });
+app.post("/segments", requireServiceAuth, async (req, res) => {
+  const validation = validateSegmentBody(req.body);
+  if (!validation.ok) {
+    return sendContractError(res, 400, validation.error);
   }
 
+  const body = validation.value;
   const segment: Segment = {
     segmentId: crypto.randomUUID(),
-    name: body.name,
-    sourceTypes: body.sourceTypes,
-    rules: body.rules,
-    isDynamic: body.isDynamic,
+    name: body.name!,
+    sourceTypes: body.sourceTypes!,
+    rules: body.rules!,
+    isDynamic: body.isDynamic!,
     estimatedCount: body.estimatedCount ?? null
   };
 
-  return res.status(201).json(await getStore().saveSegment(segment));
+  const saved = await getStore().saveSegment(segment);
+  logDecision("segment_created", {
+    segmentId: saved.segmentId,
+    sourceTypes: saved.sourceTypes,
+    isDynamic: saved.isDynamic,
+    duration_ms: 0
+  });
+  return res.status(201).json(saved);
 });
 
 app.get("/segments", async (_req, res) => {
   res.json(await getStore().listSegments());
 });
 
-app.put("/segments/:id", async (req, res) => {
-  const existing = await getStore().getSegment(req.params.id);
+app.put("/segments/:id", requireServiceAuth, async (req, res) => {
+  const validation = validateSegmentBody(req.body, true);
+  if (!validation.ok) {
+    return sendContractError(res, 400, validation.error);
+  }
+
+  const existing = await getStore().getSegment(String(req.params.id));
   if (!existing) {
     return res.status(404).json({ error: "segment_not_found" });
   }
 
   const updated: Segment = {
     ...existing,
-    ...req.body,
+    ...validation.value,
     segmentId: existing.segmentId
   };
-  return res.json(await getStore().saveSegment(updated));
+  const saved = await getStore().saveSegment(updated);
+  logDecision("segment_updated", {
+    segmentId: saved.segmentId,
+    sourceTypes: saved.sourceTypes,
+    isDynamic: saved.isDynamic,
+    duration_ms: 0
+  });
+  return res.json(saved);
 });
 
-app.delete("/segments/:id", async (req, res) => {
-  const existed = await getStore().deleteSegment(req.params.id);
+app.delete("/segments/:id", requireServiceAuth, async (req, res) => {
+  const existed = await getStore().deleteSegment(String(req.params.id));
   if (!existed) {
     return res.status(404).json({ error: "segment_not_found" });
   }
+  logDecision("segment_deleted", { segmentId: String(req.params.id), duration_ms: 0 });
   return res.status(204).send();
 });
 
-app.post("/campaigns", async (req, res) => {
-  const now = new Date().toISOString();
-  const body = req.body as Partial<Campaign>;
-  if (!body.name || !body.segmentId || !body.tenant || !body.message?.body || !body.templateRef) {
-    return res.status(400).json({ error: "name_segment_tenant_template_message_required" });
+app.post("/campaigns", requireServiceAuth, async (req, res) => {
+  const validation = validateCampaignBody(req.body);
+  if (!validation.ok) {
+    return sendContractError(res, 400, validation.error);
   }
 
-  if (!(await getStore().getSegment(body.segmentId))) {
+  const now = new Date().toISOString();
+  const body = validation.value;
+  if (!(await getStore().getSegment(body.segmentId!))) {
     return res.status(400).json({ error: "segment_not_found" });
   }
 
   const campaign: Campaign = {
     campaignId: crypto.randomUUID(),
-    tenant: body.tenant,
-    name: body.name,
-    segmentId: body.segmentId,
+    tenant: body.tenant!,
+    name: body.name!,
+    segmentId: body.segmentId!,
     description: body.description ?? null,
     purpose: body.purpose ?? "marketing",
     primaryChannel: body.primaryChannel ?? "email",
     fallbackChannels: body.fallbackChannels ?? [],
     channelKey: body.channelKey,
-    templateRef: body.templateRef,
+    templateRef: body.templateRef!,
     scheduleAt: body.scheduleAt,
     throttlePerMinute: body.throttlePerMinute ?? null,
     frequencyCapPerDay: body.frequencyCapPerDay ?? 1,
-    message: body.message,
+    message: body.message!,
     status: body.status ?? "draft",
     approvalStatus: "pending",
     approvedBy: null,
@@ -91,90 +125,172 @@ app.post("/campaigns", async (req, res) => {
     updatedAt: now
   };
 
-  return res.status(201).json(await getStore().saveCampaign(campaign));
+  const saved = await getStore().saveCampaign(campaign);
+  logDecision("campaign_created", {
+    campaignId: saved.campaignId,
+    tenant: saved.tenant,
+    segmentId: saved.segmentId,
+    purpose: saved.purpose,
+    primaryChannel: saved.primaryChannel,
+    status: saved.status,
+    approvalStatus: saved.approvalStatus,
+    scheduleAt: saved.scheduleAt ?? null,
+    throttlePerMinute: saved.throttlePerMinute ?? null,
+    frequencyCapPerDay: saved.frequencyCapPerDay,
+    duration_ms: 0
+  });
+  return res.status(201).json(saved);
 });
 
 app.get("/campaigns", async (_req, res) => {
   res.json(await getStore().listCampaigns());
 });
 
-app.put("/campaigns/:id", async (req, res) => {
-  const existing = await getStore().getCampaign(req.params.id);
+app.put("/campaigns/:id", requireServiceAuth, async (req, res) => {
+  const validation = validateCampaignBody(req.body, true);
+  if (!validation.ok) {
+    return sendContractError(res, 400, validation.error);
+  }
+
+  const existing = await getStore().getCampaign(String(req.params.id));
   if (!existing) {
     return res.status(404).json({ error: "campaign_not_found" });
   }
 
-  const { approvalStatus, approvedBy, approvedAt, approvalNote, ...safeBody } = req.body ?? {};
-  void approvalStatus;
-  void approvedBy;
-  void approvedAt;
-  void approvalNote;
+  if (validation.value.segmentId && !(await getStore().getSegment(validation.value.segmentId))) {
+    return res.status(400).json({ error: "segment_not_found" });
+  }
 
   const updated: Campaign = {
     ...existing,
-    ...safeBody,
+    ...validation.value,
     campaignId: existing.campaignId,
     approvalStatus: existing.approvalStatus,
     approvedBy: existing.approvedBy ?? null,
     approvedAt: existing.approvedAt ?? null,
     approvalNote: existing.approvalNote ?? null,
+    createdAt: existing.createdAt,
     updatedAt: new Date().toISOString()
   };
-  return res.json(await getStore().saveCampaign(updated));
+  const saved = await getStore().saveCampaign(updated);
+  logDecision("campaign_updated", {
+    campaignId: saved.campaignId,
+    tenant: saved.tenant,
+    segmentId: saved.segmentId,
+    purpose: saved.purpose,
+    primaryChannel: saved.primaryChannel,
+    status: saved.status,
+    approvalStatus: saved.approvalStatus,
+    scheduleAt: saved.scheduleAt ?? null,
+    throttlePerMinute: saved.throttlePerMinute ?? null,
+    frequencyCapPerDay: saved.frequencyCapPerDay,
+    duration_ms: 0
+  });
+  return res.json(saved);
 });
 
-app.post("/campaigns/:id/approve", async (req, res) => {
-  const existing = await getStore().getCampaign(req.params.id);
+app.post("/campaigns/:id/approve", requireServiceAuth, async (req, res) => {
+  const existing = await getStore().getCampaign(String(req.params.id));
   if (!existing) {
     return res.status(404).json({ error: "campaign_not_found" });
   }
 
   const approvedBy = req.body?.approvedBy ?? req.headers["x-owner-actor"];
-  if (!approvedBy || Array.isArray(approvedBy)) {
+  if (!approvedBy || Array.isArray(approvedBy) || typeof approvedBy !== "string" || approvedBy.trim().length === 0) {
     return res.status(400).json({ error: "approved_by_required" });
+  }
+  if (req.body?.approvalNote !== undefined && req.body.approvalNote !== null && typeof req.body.approvalNote !== "string") {
+    return res.status(400).json({ error: "invalid_approval_request", fields: { approvalNote: "must_be_string_or_null" } });
   }
 
   const updated: Campaign = {
     ...existing,
     status: existing.status === "draft" ? "scheduled" : existing.status,
     approvalStatus: "approved",
-    approvedBy: String(approvedBy),
+    approvedBy: approvedBy.trim(),
     approvedAt: new Date().toISOString(),
     approvalNote: req.body?.approvalNote ?? null,
     updatedAt: new Date().toISOString()
   };
 
-  return res.json(await getStore().saveCampaign(updated));
+  const saved = await getStore().saveCampaign(updated);
+  logDecision("campaign_approved", {
+    campaignId: saved.campaignId,
+    tenant: saved.tenant,
+    approvedBy: saved.approvedBy ?? null,
+    approvedAt: saved.approvedAt ?? null,
+    approvalStatus: saved.approvalStatus,
+    status: saved.status,
+    duration_ms: 0
+  });
+  return res.json(saved);
 });
 
-app.delete("/campaigns/:id", async (req, res) => {
-  const existed = await getStore().deleteCampaign(req.params.id);
+app.delete("/campaigns/:id", requireServiceAuth, async (req, res) => {
+  const existed = await getStore().deleteCampaign(String(req.params.id));
   if (!existed) {
     return res.status(404).json({ error: "campaign_not_found" });
   }
+  logDecision("campaign_deleted", { campaignId: String(req.params.id), duration_ms: 0 });
   return res.status(204).send();
 });
 
-app.post("/campaigns/:id/execute", async (req, res) => {
-  const dryRun = req.body?.dryRun === true;
-  const idempotencyKey = (req.headers["x-idempotency-key"] as string) || req.body?.idempotencyKey || (dryRun ? crypto.randomUUID() : undefined);
+app.post("/campaigns/:id/execute", requireServiceAuth, async (req, res) => {
+  const bodyValidation = validateExecutionBody(req.body ?? {}, req.body?.dryRun !== true);
+  if (!bodyValidation.ok) {
+    return sendContractError(res, 400, bodyValidation.error);
+  }
+
+  const dryRun = bodyValidation.value.dryRun === true;
+  const headerIdempotency = req.headers["x-idempotency-key"];
+  if (Array.isArray(headerIdempotency)) {
+    return res.status(400).json({ error: "invalid_execution_request", fields: { "x-idempotency-key": "must_be_single_header" } });
+  }
+  const idempotencyKey = headerIdempotency || bodyValidation.value.idempotencyKey || (dryRun ? crypto.randomUUID() : undefined);
   if (!idempotencyKey) {
     return res.status(400).json({ error: "idempotency_key_required" });
   }
 
   try {
-    const run = await executeCampaign(req.params.id, idempotencyKey, { dryRun });
+    const run = await executeCampaign(String(req.params.id), idempotencyKey, { dryRun });
+    logDecision(dryRun ? "campaign_dry_run_requested" : "campaign_execution_requested", {
+      campaignId: String(req.params.id),
+      runId: run.id,
+      idempotencyKey: run.idempotencyKey,
+      runStatus: run.status,
+      totalRecipients: run.totalRecipients,
+      totalSent: run.totalSent,
+      duration_ms: 0
+    });
     return res.json(run);
   } catch (error) {
     return res.status(400).json({ error: (error as Error).message });
   }
 });
 
-app.post("/campaigns/:id/dry-run", async (req, res) => {
-  const idempotencyKey = (req.headers["x-idempotency-key"] as string) || req.body?.idempotencyKey || crypto.randomUUID();
+app.post("/campaigns/:id/dry-run", requireServiceAuth, async (req, res) => {
+  const bodyValidation = validateExecutionBody(req.body ?? {}, false);
+  if (!bodyValidation.ok) {
+    return sendContractError(res, 400, bodyValidation.error);
+  }
+
+  const headerIdempotency = req.headers["x-idempotency-key"];
+  if (Array.isArray(headerIdempotency)) {
+    return res.status(400).json({ error: "invalid_execution_request", fields: { "x-idempotency-key": "must_be_single_header" } });
+  }
+  const idempotencyKey = headerIdempotency || bodyValidation.value.idempotencyKey || crypto.randomUUID();
 
   try {
-    const run = await executeCampaign(req.params.id, idempotencyKey, { dryRun: true });
+    const run = await executeCampaign(String(req.params.id), idempotencyKey, { dryRun: true });
+    logDecision("campaign_dry_run_requested", {
+      campaignId: String(req.params.id),
+      runId: run.id,
+      idempotencyKey: run.idempotencyKey,
+      runStatus: run.status,
+      totalRecipients: run.totalRecipients,
+      totalSent: run.totalSent,
+      duration_ms: 0
+    });
     return res.json(run);
   } catch (error) {
     return res.status(400).json({ error: (error as Error).message });
@@ -185,12 +301,63 @@ app.get("/executions", async (_req, res) => {
   res.json(await getStore().listRuns());
 });
 
-app.post("/scheduler/run-due", async (req, res) => {
+app.get("/preferences/:owner/:recipientId", async (req, res) => {
+  if (!validatePreferenceOwner(req.params.owner) || !req.params.recipientId) {
+    return res.status(400).json({ error: "invalid_preference_request", fields: { owner: "must_be_auth_or_leads", recipientId: "required_non_empty_string" } });
+  }
+  const owner = req.params.owner;
+  return res.json({
+    status: "external_source_owned",
+    owner,
+    recipientId: req.params.recipientId,
+    readOwner: sourceOwnerService(owner),
+    message: "Marketing reads preferences during campaign execution; preference truth remains with the source owner."
+  });
+});
+
+app.post("/preferences/unsubscribe", async (req, res) => {
+  const validation = validatePreferenceRequest(req.body);
+  if (!validation.ok) {
+    return sendContractError(res, 400, validation.error);
+  }
+  const request = validation.value;
+  logDecision("public_unsubscribe_requested", {
+    owner: request.owner,
+    recipientId: request.recipientId,
+    channel: request.channel ?? null,
+    purpose: request.purpose ?? "marketing",
+    writeOwner: sourceOwnerService(request.owner),
+    duration_ms: 0
+  });
+  return res.status(202).json({
+    status: "accepted",
+    owner: request.owner,
+    recipientId: request.recipientId,
+    channel: request.channel ?? null,
+    purpose: request.purpose ?? "marketing",
+    writeOwner: sourceOwnerService(request.owner),
+    message: "Unsubscribe write ownership remains with the source owner; Marketing will honor visible unsubscribe state during execution."
+  });
+});
+
+app.post("/scheduler/run-due", requireServiceAuth, async (req, res) => {
+  const bodyValidation = validateSchedulerBody(req.body ?? {});
+  if (!bodyValidation.ok) {
+    return sendContractError(res, 400, bodyValidation.error);
+  }
+
   try {
     const result = await runDueScheduledCampaigns({
-      schedulerOwner: req.body?.schedulerOwner ?? (req.headers["x-scheduler-owner"] as string | undefined),
-      batchSize: req.body?.batchSize,
-      lockTtlMs: req.body?.lockTtlMs
+      schedulerOwner: bodyValidation.value.schedulerOwner ?? (req.headers["x-scheduler-owner"] as string | undefined),
+      batchSize: bodyValidation.value.batchSize,
+      lockTtlMs: bodyValidation.value.lockTtlMs
+    });
+    logDecision("campaign_scheduler_run_due_requested", {
+      schedulerOwner: result.schedulerOwner,
+      claimed: result.claimed,
+      executed: result.executed,
+      failed: result.failed,
+      duration_ms: 0
     });
     return res.json(result);
   } catch (error) {
@@ -198,15 +365,17 @@ app.post("/scheduler/run-due", async (req, res) => {
   }
 });
 
-const port = Number(process.env.PORT || 4600);
-initializeConfiguredStore()
-  .then(() => {
-    app.listen(port, () => {
-      // Single startup line for container log checks.
-      console.log(JSON.stringify({ event: "service_started", timestamp: new Date().toISOString(), port }));
-    });
-  })
-  .catch((error) => {
+export async function startServer(): Promise<void> {
+  const port = Number(process.env.PORT || 4600);
+  await initializeConfiguredStore();
+  app.listen(port, () => {
+    console.log(JSON.stringify({ event: "service_started", timestamp: new Date().toISOString(), port }));
+  });
+}
+
+if (require.main === module) {
+  startServer().catch((error) => {
     console.error(JSON.stringify({ event: "service_start_failed", timestamp: new Date().toISOString(), error: (error as Error).message }));
     process.exit(1);
   });
+}

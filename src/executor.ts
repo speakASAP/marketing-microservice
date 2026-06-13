@@ -122,6 +122,10 @@ function sourceFailureResult(campaign: Campaign, failure: SourceFailure): Delive
   };
 }
 
+function correlationId(runId: string, recipientRef: string): string {
+  return "marketing:" + runId + ":" + recipientRef;
+}
+
 function guardrailResult(campaign: Campaign, reason: string): DeliveryResult {
   return {
     deliveryId: crypto.randomUUID(),
@@ -143,7 +147,8 @@ async function sendOne(
   campaign: Campaign,
   effectiveChannel: Contact["preferredChannel"],
   notificationUrl: string,
-  requestHeaders: Record<string, string> | undefined
+  requestHeaders: Record<string, string> | undefined,
+  correlationId: string
 ): Promise<void> {
   const payload: Record<string, unknown> = {
     recipient: contact.email ?? contact.phone ?? "",
@@ -161,7 +166,10 @@ async function sendOne(
   }
   await axios.post(`${notificationUrl}/notifications/send`, payload, {
     timeout: 5000,
-    headers: requestHeaders,
+    headers: {
+      ...(requestHeaders ?? {}),
+      "x-correlation-id": correlationId
+    },
   });
 }
 
@@ -189,19 +197,24 @@ async function sendChunk(
       duration_ms: Date.now() - started
     });
     const duration_ms = Date.now() - started;
-    return batch.map((c) => ({
-      deliveryId: crypto.randomUUID(),
-      campaignId: campaign.campaignId,
-      recipientRef: toRecipientRef(c),
-      recipientSource: c.owner,
-      recipientAddress: c.email ?? c.phone ?? "",
-      requestedChannel: campaign.primaryChannel,
-      effectiveChannel: channelSelection.get(c.id)?.channel ?? c.preferredChannel,
-      status: "failed",
-      decisionReason: "notification_url_missing",
-      processedAt: nowIso(),
-      duration_ms
-    }));
+    return batch.map((c) => {
+      const recipientRef = toRecipientRef(c);
+      const currentCorrelationId = correlationId(runId, recipientRef);
+      return {
+        deliveryId: crypto.randomUUID(),
+        campaignId: campaign.campaignId,
+        recipientRef,
+        recipientSource: c.owner,
+        recipientAddress: c.email ?? c.phone ?? "",
+        requestedChannel: campaign.primaryChannel,
+        effectiveChannel: channelSelection.get(c.id)?.channel ?? c.preferredChannel,
+        status: "failed",
+        decisionReason: "notification_url_missing",
+        processedAt: nowIso(),
+        duration_ms,
+        correlationId: currentCorrelationId
+      };
+    });
   }
 
   logDecision("notification_chunk_send_started", {
@@ -209,18 +222,21 @@ async function sendChunk(
     runId,
     chunkIndex,
     chunkSize: batch.length,
-    endpoint: `${notificationUrl}/notifications/send`
+    endpoint: `${notificationUrl}/notifications/send`,
+    duration_ms: Date.now() - started
   });
 
   const delayMs = throttleDelayMs(campaign);
   const sendContact = async (c: Contact): Promise<DeliveryResult> => {
     const effectiveChannel = channelSelection.get(c.id)?.channel ?? c.preferredChannel;
+    const recipientRef = toRecipientRef(c);
+    const currentCorrelationId = correlationId(runId, recipientRef);
     try {
-      await sendOne(c, campaign, effectiveChannel, notificationUrl, requestHeaders);
+      await sendOne(c, campaign, effectiveChannel, notificationUrl, requestHeaders, currentCorrelationId);
       return {
         deliveryId: crypto.randomUUID(),
         campaignId: campaign.campaignId,
-        recipientRef: toRecipientRef(c),
+        recipientRef,
         recipientSource: c.owner,
         recipientAddress: c.email ?? c.phone ?? "",
         requestedChannel: campaign.primaryChannel,
@@ -228,13 +244,14 @@ async function sendChunk(
         status: "sent" as const,
         decisionReason: "sent_via_notifications",
         processedAt: nowIso(),
-        duration_ms: Date.now() - started
+        duration_ms: Date.now() - started,
+        correlationId: currentCorrelationId
       };
     } catch (error) {
       return {
         deliveryId: crypto.randomUUID(),
         campaignId: campaign.campaignId,
-        recipientRef: toRecipientRef(c),
+        recipientRef,
         recipientSource: c.owner,
         recipientAddress: c.email ?? c.phone ?? "",
         requestedChannel: campaign.primaryChannel,
@@ -242,7 +259,8 @@ async function sendChunk(
         status: "failed" as const,
         decisionReason: `notifications_error:${(error as Error).message}`,
         processedAt: nowIso(),
-        duration_ms: Date.now() - started
+        duration_ms: Date.now() - started,
+        correlationId: currentCorrelationId
       };
     }
   };
@@ -339,7 +357,8 @@ export async function executeCampaign(
     runId: run.id,
     recipientCount: recipients.length,
     approvalStatus: campaign.approvalStatus,
-    approvedBy: campaign.approvedBy ?? null
+    approvedBy: campaign.approvedBy ?? null,
+    duration_ms: 0
   });
 
   const approved: Contact[] = [];
@@ -356,7 +375,8 @@ export async function executeCampaign(
       decision: decision.reason,
       preferredChannel: recipient.preferredChannel,
       effectiveChannel: channel.channel,
-      channelResolutionReason: channel.reason
+      channelResolutionReason: channel.reason,
+      duration_ms: 0
     });
     if (!decision.allowed) {
       run.results.push({
@@ -401,7 +421,8 @@ export async function executeCampaign(
       dryRun,
       guardrail: "max_send_per_run",
       approvedCount: approved.length,
-      maxSendPerRun
+      maxSendPerRun,
+      duration_ms: 0
     });
     run.results.push(guardrailResult(campaign, reason));
     run.completedAt = nowIso();
@@ -420,7 +441,8 @@ export async function executeCampaign(
       totalRecipients: run.totalRecipients,
       wouldSend: run.results.filter((r) => r.status === "would_send").length,
       totalSkipped: run.results.filter((r) => r.status === "skipped").length,
-      totalFailed: run.results.filter((r) => r.status === "failed").length
+      totalFailed: run.results.filter((r) => r.status === "failed").length,
+      duration_ms: new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()
     });
     return run;
   }
@@ -433,7 +455,8 @@ export async function executeCampaign(
       runId: run.id,
       guardrail: "notification_chunk_size",
       configuredChunkSize: notificationChunkSize,
-      platformMaxChunkSize: PLATFORM_MAX_CHUNK_SIZE
+      platformMaxChunkSize: PLATFORM_MAX_CHUNK_SIZE,
+      duration_ms: 0
     });
     run.results.push(guardrailResult(campaign, reason));
     run.completedAt = nowIso();
@@ -480,7 +503,8 @@ export async function executeCampaign(
     totalSkipped: run.results.filter((r) => r.status === "skipped").length,
     totalFailed: run.results.filter((r) => r.status === "failed").length,
     statusCounts,
-    reasonCounts
+    reasonCounts,
+    duration_ms: new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()
   });
 
   return run;

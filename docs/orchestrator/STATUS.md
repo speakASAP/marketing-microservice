@@ -530,3 +530,256 @@ Completed chunk:
 Next unfinished step:
 
 - Goal 5 acceptance review: confirm the scheduling/throttling implementation satisfies all Goal 5 acceptance criteria before moving to Goal 6.
+
+## 2026-06-13 - Goal 5 Acceptance Review
+
+Current focus: Goal 5 - Scheduling, Throttling, And Frequency Controls acceptance review.
+
+Acceptance evidence:
+
+- Duplicate schedulers cannot double-send the same scheduled run: due campaign claiming stores scheduler owner and lock expiry, PostgreSQL uses `for update skip locked`, scheduled executions use deterministic idempotency keys, and the test `scheduler claim prevents duplicate due scheduled execution` proves a second scheduler claim sends nothing.
+- Frequency caps are enforced across persisted history: execution reads send history through `MarketingStore.getSendHistory` before notification delegation, PostgreSQL persists send history in `marketing_send_history`, and existing frequency-cap tests continue to pass.
+- Paused campaigns do not execute: manual execution rejects paused campaigns and scheduler claiming filters to `status = scheduled`; the test `scheduler does not execute paused campaigns` verifies no notification call is made.
+- Per-campaign throttling is active: `throttlePerMinute` spaces notification requests, with test coverage through `applies campaign throttle between notification sends`.
+- Operational visibility is available through campaign status, execution run status, `GET /campaigns`, `GET /executions`, and explicit `POST /scheduler/run-due` result output.
+- Recurring campaigns were not added because the Goal 5 prompt requires them only if explicitly requested by the owner.
+
+Validation:
+
+- Remote `npm run build` passed on 2026-06-13.
+- Remote `npm test` passed on 2026-06-13: 22 tests, 22 passing.
+
+Intent Compliance Report:
+
+- Goal 5 completed Marketing-owned scheduling, throttling, frequency-cap, and run-state controls only.
+- Marketing did not implement direct email, Telegram, or WhatsApp delivery.
+- Auth and leads remain the sources of truth for contact data, preferences, consent, and unsubscribe state.
+- Orders and catalog remain segmentation signal sources only.
+- Scheduler execution still requires campaign approval and enforces consent, unsubscribe, frequency caps, max-send, and max-30 chunk rules before notification delegation.
+- No real campaign was executed against real recipients.
+
+Completed goal:
+
+- Goal 5 - Scheduling, Throttling, And Frequency Controls.
+
+Next unfinished step:
+
+- Goal 6 - Audit Logging And Compliance Evidence.
+
+## 2026-06-13 - Goal 6 Audit Logging And Compliance Evidence Start
+
+Current focus: Goal 6 - Audit Logging And Compliance Evidence.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Marketing owns audit evidence for campaign creation, update, approval, execution, scheduler decisions, recipient decisions, and notification delegation outcomes.
+- Notifications remains the only outbound delivery executor; Marketing only adds correlation metadata to delegated notification requests.
+- Auth and leads remain the sources of truth for contact data, preferences, consent, and unsubscribe state.
+- Orders and catalog remain segmentation signal sources only.
+- No real campaign was executed against real recipients.
+
+Implementation evidence:
+
+- Reworked `src/logger.ts` into a centralized audit logger that emits structured JSON with ISO timestamp, service name, and `duration_ms` on every `logDecision` event.
+- Added sanitization for sensitive keys including tokens, authorization, credentials, secrets, message bodies, and recipient addresses before stdout emission or logging-service forwarding.
+- Added optional forwarding to `LOGGING_SERVICE_URL` using `LOGGING_SERVICE_PATH` or default `/logs`, with optional `LOGGING_SERVICE_TOKEN` bearer auth.
+- Added test-only audit sink for deterministic logger validation without relying on a live logging service.
+- Added API audit events for segment create/update/delete and campaign create/update/approval/delete/manual execution/dry-run/scheduler invocation.
+- Added cross-service notification correlation IDs through the `x-correlation-id` header.
+- Added `correlationId` to delivery outcomes and persisted it in `marketing_delivery_outcomes.correlation_id` through `migrations/0004_audit_logging_compliance.sql`.
+- Updated `.env.example` with `LOGGING_SERVICE_TOKEN` and `LOGGING_SERVICE_PATH` keys.
+- Updated the marketing campaign contract with the audit logging contract.
+- Added tests for audit sanitization, logging-service forwarding, and notification correlation headers.
+
+Validation:
+
+- Remote `npm run build` passed on 2026-06-13.
+- Remote `npm test` passed on 2026-06-13: 24 tests, 24 passing.
+
+Intent Compliance Report:
+
+- Goal 6 changes add audit evidence only; they do not move provider execution, credentials, or channel registry behavior into Marketing.
+- Marketing still delegates all delivery to notifications-microservice.
+- Audit payloads redact sensitive message, token, authorization, credential, secret, and recipient-address fields before forwarding.
+- Consent, unsubscribe, frequency-cap, approval, max-send, and max-30 chunk checks remain in the execution path before notification delegation.
+- Contact, consent, order, catalog, and provider ownership boundaries remain unchanged.
+
+Completed chunk:
+
+- Goal 6 chunk: Send structured logs to logging-microservice where available.
+- Goal 6 chunk: Add audit fields/events for campaign create/update/approval/execution.
+- Goal 6 chunk: Record consent-decision evidence without exposing secrets.
+- Goal 6 chunk: Add correlation IDs for cross-service notification calls.
+
+Next unfinished step:
+
+- Goal 6 acceptance review: confirm audit evidence can explain every sent, skipped, or failed recipient and that no sensitive payloads are logged before moving to Goal 7.
+
+## 2026-06-13 - Goal 6 Acceptance Review
+
+Current focus: Goal 6 - Audit Logging And Compliance Evidence acceptance review.
+
+Acceptance evidence:
+
+- Logs include ISO timestamp and duration_ms where relevant: the centralized audit logger adds ISO timestamp, service, and duration_ms to every logDecision payload, and execution, API, scheduler, source-resolution, guardrail, notification chunk, and completion events use it.
+- Campaign execution can explain every sent, skipped, or failed recipient: execution persists per-recipient DeliveryResult rows with status, decisionReason, requested/effective channels, processedAt, duration_ms, and correlationId where notification delegation is attempted; completion logs include statusCounts and reasonCounts.
+- No sensitive tokens or message secrets are logged: audit sanitization redacts keys matching token, authorization, password, secret, credential, message/body, and recipient address before stdout or logging-service forwarding; tests verify redaction and forwarding behavior.
+- Cross-service notification traceability is present: notification calls include x-correlation-id and delivery outcomes persist the matching correlationId through migration 0004_audit_logging_compliance.sql.
+- Logging-microservice integration is optional and safe: LOGGING_SERVICE_URL enables sanitized forwarding to LOGGING_SERVICE_PATH or /logs with optional bearer auth; forwarding failure is reported without exposing secrets or blocking execution.
+
+Validation:
+
+- Remote npm run build passed on 2026-06-13.
+- Remote npm test passed on 2026-06-13: 24 tests, 24 passing.
+
+Intent Compliance Report:
+
+- Goal 6 added audit evidence and traceability only; it did not move provider execution, channel registry behavior, contact ownership, consent ownership, order ownership, or catalog ownership into Marketing.
+- Marketing still delegates all outbound delivery to notifications-microservice and never sends email, Telegram, or WhatsApp directly.
+- Consent, unsubscribe, frequency-cap, approval, max-send, and max-30 chunk checks remain enforced before notification delegation.
+- Audit payloads avoid message bodies, recipient addresses, tokens, authorization headers, credentials, and other secret material.
+- No real campaign was executed against real recipients.
+
+Completed goal:
+
+- Goal 6 - Audit Logging And Compliance Evidence.
+
+Next unfinished step:
+
+- Goal 7 - API Contract Hardening.
+
+## 2026-06-13 - Goal 7 API Contract Hardening
+
+Current focus: Goal 7 - API Contract Hardening.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Marketing owns campaign, segment, execution, dry-run, scheduler, and audit API contracts only.
+- Auth and leads remain the sources of truth for contact data, preferences, consent, and unsubscribe state.
+- Notifications remains the only outbound delivery executor; no direct delivery was added.
+- No real campaign was executed against real recipients.
+
+Implementation evidence:
+
+- Added `src/api-contracts.ts` with shared request validators, stable contract error responses, enum validation, ISO schedule validation, idempotency validation, source-owner validation, and service-token authorization middleware.
+- Protected write and execution routes now require `Authorization: Bearer <token>` or `x-service-token` backed by `MARKETING_API_TOKEN` or `SERVICE_API_TOKEN`.
+- Segment APIs validate required fields, source types, rules shape, boolean flags, read-only IDs, and estimated count values before mutation.
+- Campaign APIs validate required fields, channel names, purposes, statuses, schedule values, positive limits, message shape, read-only IDs, and read-only approval fields before mutation.
+- Real execution now has a stable idempotency request contract before executor invocation.
+- Added public preference/unsubscribe contract endpoints that return auth/leads source ownership metadata and do not write contact or consent truth inside Marketing.
+- Exported the Express app for contract tests while preserving the existing runtime startup path.
+- Added `MARKETING_API_TOKEN` and `SERVICE_API_TOKEN` keys to `.env.example`.
+- Updated contract docs for API authorization/validation and source-owned preference/unsubscribe behavior.
+- Added `test/api-contracts.test.ts` covering protected writes, invalid segment/campaign validation, real execution idempotency validation, and public preference/unsubscribe ownership responses.
+
+Validation:
+
+- Remote `npm run build` passed on 2026-06-13.
+- Remote `npm test` passed on 2026-06-13: 28 tests, 28 passing.
+
+Intent Compliance Report:
+
+- Goal 7 stabilized API boundaries without moving delivery, contact ownership, consent ownership, order ownership, catalog ownership, provider credentials, or channel registry behavior into Marketing.
+- Marketing still delegates all outbound delivery to notifications-microservice.
+- Public preference/unsubscribe endpoints preserve auth/leads as write owners and only expose contract/ownership metadata plus sanitized audit evidence.
+- Approval, consent, unsubscribe, frequency-cap, max-send, max-30 chunking, idempotency, and audit controls remain in place.
+
+Completed goal:
+
+- Goal 7 - API Contract Hardening.
+
+Next unfinished step:
+
+- No remaining numbered goal is pending in `docs/orchestrator/GOALS.md`; await owner selection for the next backlog or follow-up hardening item.
+
+## 2026-06-13 - TG-2.x Follow-Up Hardening: Protected API Runtime Token Wiring
+
+Current focus: TG-2.x Follow-up hardening after Phase 1 validation.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- This hardening only wires runtime configuration for protected Marketing APIs.
+- Auth and leads remain the sources of truth for contact data, preferences, consent, and unsubscribe state.
+- Notifications remains the only outbound delivery executor.
+- No real campaign was executed against real recipients.
+
+Implementation evidence:
+
+- Updated `k8s/external-secret.yaml` so the Kubernetes secret exposes `MARKETING_API_TOKEN` from the existing Vault `JWT_TOKEN` property.
+- Updated `k8s/secret.yaml.example` to include `MARKETING_API_TOKEN`, `NOTIFICATION_SERVICE_TOKEN`, and `JWT_TOKEN` placeholders for local/manual secret creation.
+- Updated `README.md` configuration guidance to document that protected write/execution APIs require `MARKETING_API_TOKEN` or `SERVICE_API_TOKEN`, with Kubernetes mapping `MARKETING_API_TOKEN` from the service secret.
+- Updated `TASKS.md` to close the selected TG-2.x hardening item.
+
+Validation:
+
+- Remote `npm run build` passed on 2026-06-13.
+- Remote `npm test` passed on 2026-06-13: 28 tests, 28 passing.
+
+Intent Compliance Report:
+
+- The change does not add direct email, Telegram, or WhatsApp delivery.
+- The change does not move contact, consent, unsubscribe, order, catalog, provider credential, or channel registry ownership into Marketing.
+- Protected API authorization now has matching runtime secret wiring, avoiding `api_auth_not_configured` for write/execution endpoints once deployed with the updated manifests.
+- No secret values were committed or printed; only secret key names and Vault property references were added.
+
+Completed follow-up item:
+
+- TG-2.x protected API runtime token wiring.
+
+Next unfinished step:
+
+- No active coordinator-maintained task remains in `TASKS.md`; await owner selection for another hardening item or deployment approval.
+
+## 2026-06-13 - TG-3.0 Ecosystem Roadmap Created
+
+Current focus: expanded Statex Marketing ecosystem roadmap and implementation goals.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Marketing owns campaigns, segments, journeys, approvals, dry-runs, scheduled runs, delivery decisions, throttling, frequency caps, suppression decisions, attribution references, and campaign audit state.
+- Auth and leads remain the sources of truth for registered users, leads, contact data, preferences, consent, and unsubscribe state.
+- Notifications remains the source of truth for outbound provider execution, channel registry behavior, provider credentials, and final send execution.
+- Domain/app services remain the source of truth for application behavior, orders, reservations, listings, learning progress, workflow usage, reports, products, and other segmentation signals.
+- Tenant/app/business registry and CRM/account master data are explicitly kept outside Marketing.
+- No real campaign was executed against real recipients.
+
+Sub-agent evidence:
+
+- Spawned three read-only sub-agents for ecosystem ownership, product/CRM/channel roadmap, and landing/admin implementation sequencing.
+- All analyses converged on the boundary that CRM-like engagement belongs in Marketing, but CRM/account master data should be owned by a separate CRM/account service or composed console, not by Marketing.
+- Frontend/admin analysis confirmed the current repo has no frontend and should add landing/admin auth shell before admin campaign controls.
+
+Implementation evidence:
+
+- Added `docs/orchestrator/ROADMAP.md` with the comprehensive ecosystem roadmap, CRM decision, application portfolio marketing model, channel strategy, landing page scope, admin dashboard scope, phases, Goal 8 through Goal 20 backlog, and validation strategy.
+- Expanded `docs/orchestrator/GOALS.md` with pending Goals 8-20.
+- Replaced `docs/orchestrator/PLAN.md` with the Phase 2+ implementation plan and next goal selection.
+- Appended Goal 8-20 prompts to `docs/orchestrator/PROMPTS.md`.
+- Updated `TASKS.md` with TG-3.1 through TG-3.13 backlog items and marked `tg-3.0-ecosystem-roadmap-created` complete.
+- Updated `STATE.json` to `phase-2-roadmap-ready` with next focus `Goal 8 ecosystem ownership contract baseline`.
+
+Validation:
+
+- Documentation-only roadmap update; `npm run build` and `npm test` were not required because no runtime source code changed.
+- Remote files were updated only under `/home/ssf/Documents/Github/marketing-microservice` on `alfares`.
+
+Intent Compliance Report:
+
+- The roadmap preserves Marketing as the campaign and segmentation control plane.
+- The roadmap does not move direct email, Telegram, WhatsApp, provider credential, or channel registry ownership into Marketing.
+- The roadmap does not move auth/leads contact, identity, consent, preference, or unsubscribe ownership into Marketing.
+- The roadmap explicitly rejects implementing CRM master data inside Marketing.
+- The roadmap keeps application/domain services as signal owners and prevents them from becoming campaign engines.
+- The roadmap requires owner approval, consent enforcement, unsubscribe handling, frequency caps, throttling, idempotency, max-send limits, max-30 chunking, and audit evidence to remain in future campaign execution paths.
+
+Completed follow-up item:
+
+- TG-3.0 ecosystem roadmap created.
+
+Next unfinished step:
+
+- Goal 8 - Ecosystem Ownership Contract Baseline.

@@ -83,7 +83,7 @@ Acceptance criteria:
 
 ## Goal 5 - Scheduling, Throttling, And Frequency Controls
 
-Status: active
+Status: done
 
 Intent: Scheduled and recurring campaigns must run predictably while protecting recipients.
 
@@ -103,7 +103,7 @@ Acceptance criteria:
 
 ## Goal 6 - Audit Logging And Compliance Evidence
 
-Status: pending
+Status: done
 
 Intent: Marketing must produce audit-grade evidence for campaign and recipient decisions.
 
@@ -123,7 +123,7 @@ Acceptance criteria:
 
 ## Goal 7 - API Contract Hardening
 
-Status: pending
+Status: done
 
 Intent: Marketing APIs must be stable enough for Statex applications and service-to-service consumers.
 
@@ -140,3 +140,269 @@ Acceptance criteria:
 - Protected operations require service/user authorization.
 - Public unsubscribe/preference endpoints follow documented contract.
 - `npm run build` and `npm test` pass.
+
+## Goal 8 - Ecosystem Ownership Contract Baseline
+
+Status: pending
+
+Intent: Marketing must define the expanded ecosystem ownership model before adding multi-application, CRM-like, analytics, landing page, or admin-dashboard capabilities.
+
+Chunks:
+
+- [ ] 8.1 Create ecosystem ownership contracts for tenant/app/business registry, CRM/account scope, analytics, app signals, and marketing orchestration.
+- [ ] 8.2 Define application portfolio taxonomy for Flipflop, SpeakASap, Marathon, Bazos, Rent-A-Box, RunLayer, Shop Assistant, and Statics.
+- [ ] 8.3 Define CRM/account boundary and confirm Marketing will not own CRM master data.
+- [ ] 8.4 Define required contract changes for auth, leads, notifications, domain/app services, registry, analytics, and future CRM/account service.
+
+Acceptance criteria:
+
+- Ownership contracts identify exactly which service owns each data domain.
+- Marketing remains campaign and segmentation control plane only.
+- CRM/account master data is explicitly assigned outside Marketing.
+- Required cross-service contract changes are documented before implementation.
+
+## Goal 9 - Tenant/App Registry Integration
+
+Status: pending
+
+Intent: Campaigns and segments must be scoped to canonical tenant/app/brand identifiers without Marketing owning tenant truth.
+
+Chunks:
+
+- [ ] 9.1 Add tenant/app/business registry contract and environment keys.
+- [ ] 9.2 Add campaign and segment metadata for tenantId, appId, brandId, locale/timezone, product line, and lifecycle scope.
+- [ ] 9.3 Add registry validation client with safe failure behavior.
+- [ ] 9.4 Add tenant/app filters and contract tests.
+
+Acceptance criteria:
+
+- Campaigns and segments carry canonical tenant/app scope.
+- Invalid registry references fail with stable errors before execution.
+- Missing registry service fails safely and does not send.
+- Marketing stores references, not tenant truth.
+
+## Goal 10 - Cross-Service Recipient And Consent Contract Hardening
+
+Status: pending
+
+Intent: Recipient resolution must support tenant/app/purpose/channel consent without duplicating auth/leads truth.
+
+Chunks:
+
+- [ ] 10.1 Define auth registered-user recipient contract by tenant/app/purpose/channel.
+- [ ] 10.2 Define leads recipient contract by tenant/app/purpose/channel.
+- [ ] 10.3 Define lead-to-user conversion and identity-linking behavior.
+- [ ] 10.4 Define unsubscribe write-through or source-owned write contracts.
+- [ ] 10.5 Update source clients and tests after provider contracts exist.
+
+Acceptance criteria:
+
+- Marketing can enforce tenant/app/purpose/channel consent.
+- Auth and leads remain the sources of truth.
+- Lead conversion does not duplicate contact records in Marketing.
+- Source outages skip/fail safely without notification delivery.
+
+## Goal 11 - Application Signal Segmentation Contracts
+
+Status: pending
+
+Intent: Marketing can segment by app behavior while apps remain the source of event truth and do not become campaign engines.
+
+Chunks:
+
+- [ ] 11.1 Define common application signal envelope.
+- [ ] 11.2 Define signal catalog for Flipflop, SpeakASap, Marathon, Bazos, Rent-A-Box, RunLayer, Shop Assistant, and Statics.
+- [ ] 11.3 Add signal source client or event ingestion contract.
+- [ ] 11.4 Add segment rules for app events and lifecycle states.
+- [ ] 11.5 Add dry-run preview support and failure evidence.
+
+Acceptance criteria:
+
+- App signals include tenant/app/subject/time/source metadata.
+- Marketing owns segment definitions, not raw application truth.
+- Each app can contribute signals without implementing campaigns.
+- Tests cover each signal class and safe failure behavior.
+
+## Goal 12 - Multi-Application Campaign Catalog
+
+Status: pending
+
+Intent: Business users need a shared catalog of campaign families, lifecycle stages, audiences, and templates across applications.
+
+Chunks:
+
+- [ ] 12.1 Add campaign catalog metadata model.
+- [ ] 12.2 Add lifecycle stage and campaign family enums/contracts.
+- [ ] 12.3 Add application-specific default campaign blueprints.
+- [ ] 12.4 Add catalog APIs and filters.
+- [ ] 12.5 Add migration and tests.
+
+Acceptance criteria:
+
+- Campaigns can be discovered by tenant, app, product line, lifecycle stage, and purpose.
+- Blueprints do not execute without explicit owner approval.
+- Template references remain references; Marketing does not own provider template delivery.
+
+## Goal 13 - Lifecycle Journey Engine
+
+Status: pending
+
+Intent: Marketing can orchestrate approved multi-step customer journeys with safety controls.
+
+Chunks:
+
+- [ ] 13.1 Add journey definitions, steps, triggers, exit rules, and suppression rules.
+- [ ] 13.2 Add approval gate for journey activation.
+- [ ] 13.3 Add scheduler/idempotency integration for journey steps.
+- [ ] 13.4 Add dry-run preview for journey enrollment and next actions.
+- [ ] 13.5 Add audit evidence for step decisions.
+
+Acceptance criteria:
+
+- Journey steps cannot send directly or bypass notifications.
+- Approval, consent, unsubscribe, frequency caps, max-send, throttling, and max-30 chunking remain enforced.
+- Exit/suppression rules prevent repeated or stale journey sends.
+
+## Goal 14 - Landing Page And Auth Entry Points
+
+Status: pending
+
+Intent: Business users need a public entry point that explains the Marketing platform and routes users to auth-owned registration/login.
+
+Chunks:
+
+- [ ] 14.1 Add frontend build pipeline and static serving.
+- [ ] 14.2 Build landing page for Marketing platform capabilities.
+- [ ] 14.3 Add register, login, and admin buttons.
+- [ ] 14.4 Route login/register through auth-microservice with return URLs.
+- [ ] 14.5 Add deployment/static asset validation.
+
+Acceptance criteria:
+
+- Public landing page is accessible without auth.
+- Register and login are delegated to auth-microservice.
+- Admin button routes to protected admin shell.
+- No service tokens or campaign execution controls are exposed publicly.
+
+## Goal 15 - Admin Auth And RBAC Shell
+
+Status: pending
+
+Intent: Only authenticated and authorized users can access Marketing admin capabilities.
+
+Chunks:
+
+- [ ] 15.1 Add auth session verification with auth-microservice.
+- [ ] 15.2 Add role/permission mapping for viewer/operator/admin/owner.
+- [ ] 15.3 Add /admin/api/session and admin route protection.
+- [ ] 15.4 Add admin layout shell and navigation.
+- [ ] 15.5 Add contract tests for unauthorized and role-specific access.
+
+Acceptance criteria:
+
+- Anonymous users cannot access admin data.
+- Browser never receives service tokens.
+- RBAC is enforced server-side.
+- Existing service-token API consumers remain compatible.
+
+## Goal 16 - Campaign And Segment Admin Console
+
+Status: pending
+
+Intent: Operators can manage Marketing-owned campaign and segment state safely from the browser.
+
+Chunks:
+
+- [ ] 16.1 Build campaigns list/detail/create/edit views.
+- [ ] 16.2 Build segment list/detail/create/edit views.
+- [ ] 16.3 Add dry-run preview UI.
+- [ ] 16.4 Add approval workflow UI.
+- [ ] 16.5 Add campaign scheduling and pause/archive controls.
+
+Acceptance criteria:
+
+- UI validates the same constraints as backend contracts.
+- Read-only approval fields cannot be edited directly.
+- Dry-run does not call notifications.
+- Real execution remains approval-gated and idempotent.
+
+## Goal 17 - Runs, Consent, Channels, And Audit Admin Views
+
+Status: pending
+
+Intent: Operators can explain campaign decisions and inspect safety state without taking over other services ownership.
+
+Chunks:
+
+- [ ] 17.1 Build run list/detail and outcome search.
+- [ ] 17.2 Build consent/preference lookup and unsubscribe intake view.
+- [ ] 17.3 Build read-only notification channel registry view.
+- [ ] 17.4 Build audit evidence view with redaction.
+- [ ] 17.5 Add correlation ID search.
+
+Acceptance criteria:
+
+- Every sent/skipped/failed outcome is explainable.
+- Consent view preserves auth/leads ownership.
+- Channel view is read-only and does not expose provider credentials.
+- Audit view redacts secrets, message bodies, and recipient addresses.
+
+## Goal 18 - Analytics And Attribution Dashboard
+
+Status: pending
+
+Intent: Business users can evaluate campaign value by tenant, app, channel, segment, and lifecycle stage.
+
+Chunks:
+
+- [ ] 18.1 Emit normalized marketing events.
+- [ ] 18.2 Define conversion/correlation contract with app services and analytics.
+- [ ] 18.3 Add campaign attribution metadata.
+- [ ] 18.4 Build analytics read models or analytics-service integration.
+- [ ] 18.5 Build dashboard charts and exportable summaries.
+
+Acceptance criteria:
+
+- Marketing emits campaign facts but does not own all app/customer truth.
+- Attribution uses stable campaign, run, recipient, correlation, tenant, and app IDs.
+- Dashboard distinguishes sent, skipped, failed, delivered, converted, and attributed revenue/value.
+
+## Goal 19 - CRM/Account Service Integration
+
+Status: pending
+
+Intent: Marketing can use B2B account lifecycle signals without owning CRM master data.
+
+Chunks:
+
+- [ ] 19.1 Define CRM/account read-only signal contract.
+- [ ] 19.2 Define account, opportunity, lifecycle stage, owner, health, and onboarding status fields.
+- [ ] 19.3 Add CRM signal source client once service exists.
+- [ ] 19.4 Add B2B account segment rules and campaign blueprints.
+- [ ] 19.5 Add safe failure and audit evidence.
+
+Acceptance criteria:
+
+- CRM/account source remains the master owner.
+- Marketing stores references and campaign decisions only.
+- B2B onboarding, renewal, upsell, and winback campaigns can be dry-run before approval.
+
+## Goal 20 - Production Governance And Readiness
+
+Status: pending
+
+Intent: The expanded platform must be safe for production marketing operations.
+
+Chunks:
+
+- [ ] 20.1 Add campaign risk classification.
+- [ ] 20.2 Add high-risk approval workflow.
+- [ ] 20.3 Add quiet-hour and tenant/app policy guardrails.
+- [ ] 20.4 Add real-execution confirmation and rollback playbooks.
+- [ ] 20.5 Add production readiness validation and deployment checklist.
+
+Acceptance criteria:
+
+- Production campaign execution is auditable and owner-approved.
+- High-risk campaigns require stronger review.
+- Operational playbooks exist for deploy, rollback, incident review, and unsubscribe escalation.

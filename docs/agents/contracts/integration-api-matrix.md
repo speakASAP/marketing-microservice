@@ -26,6 +26,9 @@
 - `POST /campaigns/:id/execute`
 - `POST /campaigns/:id/dry-run`
 - `GET /executions`
+- `GET /preferences/:owner/:recipientId`
+- `POST /preferences/unsubscribe`
+- `POST /scheduler/run-due`
 
 ## Verification Commands
 
