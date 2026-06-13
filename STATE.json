@@ -1,7 +1,7 @@
 {
   "v": 1,
   "project": "marketing-microservice",
-  "stage": "phase-4-goal-11-2-complete",
+  "stage": "phase-4-goal-11-3-complete",
   "health": "ok",
   "cycle": 5,
   "last_cycle_at": "2026-06-13T00:00:00Z",
@@ -20,8 +20,8 @@
     "TG-3.12",
     "TG-3.13"
   ],
-  "last_milestone": "tg-3.4-goal-11-2-application-signal-catalog",
-  "next_focus": "Goal 11.3 signal source client or event ingestion contract",
+  "last_milestone": "tg-3.4-goal-11-3-application-signal-source-client",
+  "next_focus": "Goal 11.4 segment rules for app events and lifecycle states",
   "blockers": [],
   "budget_units_used": 0,
   "metrics": {
@@ -31,9 +31,9 @@
       "next_goal": "Goal 11 - Application Signal Segmentation Contracts",
       "goal_8_contract_pack": "docs/agents/contracts/ecosystem-ownership-contract.md",
       "goal_10_completed_chunks": "10.1,10.2,10.3,10.4,10.5",
-      "next_goal_chunk": "Goal 11.3 - Add signal source client or event ingestion contract",
+      "next_goal_chunk": "Goal 11.4 - Add segment rules for app events and lifecycle states",
       "goal_10_status": "complete",
-      "goal_11_completed_chunks": "11.1,11.2",
+      "goal_11_completed_chunks": "11.1,11.2,11.3",
       "goal_11_status": "in_progress"
     }
   }

@@ -6,6 +6,7 @@ const AUTH_USERS_DEFAULT_PATH = "/auth/marketing/recipients";
 const LEADS_DEFAULT_PATH = "/leads/marketing/recipients";
 const ORDERS_DEFAULT_PATH = "/api/orders";
 const CATALOG_PRODUCTS_DEFAULT_PATH = "/api/products";
+const APPLICATION_SIGNALS_DEFAULT_PATH = "/marketing/application-signals";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -18,6 +19,11 @@ interface OrderSignal {
   recipientRefs: Set<string>;
   emails: Set<string>;
   phones: Set<string>;
+}
+
+interface ApplicationSignal {
+  recipientRefs: Set<string>;
+  signalCount: number;
 }
 
 export interface RecipientResolution {
@@ -231,7 +237,7 @@ function extractItems(data: unknown): unknown[] {
   if (!isRecord(data)) {
     return [];
   }
-  for (const key of ["users", "leads", "items", "data", "results", "recipients"]) {
+  for (const key of ["users", "leads", "signals", "items", "data", "results", "recipients"]) {
     const value = data[key];
     if (Array.isArray(value)) {
       return value;
@@ -340,6 +346,11 @@ function catalogRequestHeaders(): Record<string, string> | undefined {
   return token ? { Authorization: `Bearer ${token}` } : undefined;
 }
 
+function applicationSignalRequestHeaders(): Record<string, string> | undefined {
+  const token = process.env.APPLICATION_SIGNAL_SOURCE_TOKEN;
+  return token ? { Authorization: `Bearer ${token}` } : undefined;
+}
+
 function withAuthRecipientQuery(basePath: string, segment: Segment, campaign: Campaign): string {
   const params = new URLSearchParams();
   params.set("limit", String(process.env.AUTH_USERS_SEGMENT_LIMIT ?? 100));
@@ -416,6 +427,36 @@ function withOrderSignalQuery(basePath: string, segment: Segment): string {
   return params.size > 0 ? `${basePath}?${params.toString()}` : basePath;
 }
 
+function withApplicationSignalQuery(basePath: string, segment: Segment, campaign: Campaign): string {
+  const params = new URLSearchParams();
+  params.set("limit", String(process.env.APPLICATION_SIGNAL_SOURCE_LIMIT ?? 100));
+  params.set("tenantId", campaign.tenantId);
+  params.set("appId", campaign.appId);
+  params.set("brandId", campaign.brandId);
+  if (campaign.businessId) params.set("businessId", campaign.businessId);
+  if (campaign.environment) params.set("environment", campaign.environment);
+  if (campaign.productLine) params.set("productLine", campaign.productLine);
+  if (campaign.lifecycleScope) params.set("lifecycleScope", campaign.lifecycleScope);
+
+  const queryRules: Array<[string, string[]]> = [
+    ["eventType", ["signalEventType", "eventType"]],
+    ["eventGroup", ["signalEventGroup", "eventGroup"]],
+    ["lifecycleStage", ["signalLifecycleStage", "lifecycleStage"]],
+    ["sourceService", ["signalSourceService", "sourceService"]],
+    ["sourceObjectType", ["signalSourceObjectType", "sourceObjectType"]],
+    ["sourceObjectId", ["signalSourceObjectId", "sourceObjectId"]],
+    ["subjectRef", ["signalSubjectRef", "subjectRef"]],
+    ["occurredSince", ["signalOccurredSince", "occurredSince", "occurredAfter"]],
+    ["occurredUntil", ["signalOccurredUntil", "occurredUntil", "occurredBefore"]]
+  ];
+  for (const [queryKey, ruleKeys] of queryRules) {
+    const value = readRule(segment, ruleKeys);
+    if (value) params.set(queryKey, value);
+  }
+
+  return `${basePath}?${params.toString()}`;
+}
+
 function withCatalogProductsQuery(basePath: string, segment: Segment): string {
   const params = new URLSearchParams();
   params.set("limit", String(process.env.CATALOG_PRODUCT_LIMIT ?? 100));
@@ -428,6 +469,76 @@ function withCatalogProductsQuery(basePath: string, segment: Segment): string {
   if (categoryId) params.set("categoryId", categoryId);
   if (isActive) params.set("isActive", isActive);
   return `${basePath}?${params.toString()}`;
+}
+
+function isIsoUtc(value: string): boolean {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
+function appSignalSubjectRef(item: UnknownRecord): string | undefined {
+  const direct = readString(item, ["subjectRef"]);
+  if (direct) return direct;
+  const subject = readNestedRecord(item, "subject");
+  return subject ? readString(subject, ["ref"]) : undefined;
+}
+
+function toAppSignalRecipientRef(subjectRef: string | undefined): string | undefined {
+  if (!subjectRef) return undefined;
+  if (subjectRef.startsWith("auth:user:")) return `auth:${subjectRef.slice("auth:user:".length)}`;
+  if (subjectRef.startsWith("leads:lead:")) return `lead:${subjectRef.slice("leads:lead:".length)}`;
+  return undefined;
+}
+
+function validateApplicationSignalEnvelope(item: unknown, campaign: Campaign): UnknownRecord {
+  if (!isRecord(item)) throw new Error("app_signal_invalid_response:not_object");
+  for (const field of ["schemaVersion", "signalId", "sourceService", "appId", "eventType", "occurredAt"] as const) {
+    if (!readString(item, [field])) throw new Error(`app_signal_invalid_response:${field}`);
+  }
+  if (readString(item, ["schemaVersion"]) !== "marketing.application_signal.v1") {
+    throw new Error("app_signal_invalid_response:schemaVersion");
+  }
+  if (readString(item, ["appId"]) !== campaign.appId) {
+    throw new Error("app_signal_invalid_response:appId");
+  }
+  const occurredAt = readString(item, ["occurredAt"]);
+  if (!occurredAt || !isIsoUtc(occurredAt)) throw new Error("app_signal_invalid_response:occurredAt");
+  if (!appSignalSubjectRef(item)) throw new Error("app_signal_invalid_response:subject");
+  if (!readNestedRecord(item, "sourceObject")) throw new Error("app_signal_invalid_response:sourceObject");
+  return item;
+}
+
+async function fetchApplicationSignal(segment: Segment, campaign: Campaign): Promise<ApplicationSignal> {
+  const signalUrl = process.env.APPLICATION_SIGNAL_SOURCE_URL;
+  if (!signalUrl) {
+    throw new Error("application_signal_source_url_missing");
+  }
+
+  const path = process.env.APPLICATION_SIGNAL_SOURCE_PATH ?? APPLICATION_SIGNALS_DEFAULT_PATH;
+  const endpoint = `${signalUrl.replace(/\/$/, "")}${withApplicationSignalQuery(path, segment, campaign)}`;
+  const timeout = Number(process.env.APPLICATION_SIGNAL_SOURCE_TIMEOUT_MS ?? 5000);
+  const response = await axios.get(endpoint, {
+    timeout: Number.isFinite(timeout) && timeout > 0 ? timeout : 5000,
+    headers: applicationSignalRequestHeaders()
+  });
+
+  const signal: ApplicationSignal = { recipientRefs: new Set(), signalCount: 0 };
+  for (const raw of extractItems(response.data)) {
+    const item = validateApplicationSignalEnvelope(raw, campaign);
+    signal.signalCount += 1;
+    const recipientRef = toAppSignalRecipientRef(appSignalSubjectRef(item));
+    if (recipientRef) signal.recipientRefs.add(recipientRef);
+  }
+
+  logDecision("recipient_source_resolved", {
+    campaignId: campaign.campaignId,
+    segmentId: segment.segmentId,
+    source: "app_signals",
+    signalCount: signal.signalCount,
+    recipientRefCount: signal.recipientRefs.size,
+    endpoint
+  });
+  return signal;
 }
 
 async function fetchAuthRecipients(segment: Segment, campaign: Campaign): Promise<Contact[]> {
@@ -689,11 +800,33 @@ function matchesOrderSignal(contact: Contact, signal: OrderSignal): boolean {
   );
 }
 
+function matchesApplicationSignal(contact: Contact, signal: ApplicationSignal): boolean {
+  return signal.recipientRefs.has(toRecipientRef(contact));
+}
+
 export async function resolveSegmentRecipients(segment: Segment, campaign: Campaign): Promise<RecipientResolution> {
   const recipients: Contact[] = [];
   const failures: SourceFailure[] = [];
   const requiresOrderSignal = segment.sourceTypes.includes("orders");
+  const requiresApplicationSignal = segment.sourceTypes.includes("app_signals");
   let orderSignal: OrderSignal | undefined;
+  let applicationSignal: ApplicationSignal | undefined;
+
+  if (requiresApplicationSignal) {
+    try {
+      applicationSignal = await fetchApplicationSignal(segment, campaign);
+    } catch (error) {
+      const message = (error as Error).message;
+      failures.push({ source: "app_signals", reason: `app_signals_source_unavailable:${message}` });
+      logDecision("recipient_source_failed", {
+        campaignId: campaign.campaignId,
+        segmentId: segment.segmentId,
+        source: "app_signals",
+        reason: message
+      });
+      return { recipients: [], failures };
+    }
+  }
 
   if (requiresOrderSignal) {
     let productSignal: ProductSignal | undefined;
@@ -726,8 +859,9 @@ export async function resolveSegmentRecipients(segment: Segment, campaign: Campa
     }
   }
 
-  const shouldResolveAuth = segment.sourceTypes.includes("auth_users") || (requiresOrderSignal && !segment.sourceTypes.includes("leads"));
-  const shouldResolveLeads = segment.sourceTypes.includes("leads") || (requiresOrderSignal && !segment.sourceTypes.includes("auth_users"));
+  const signalOnly = requiresOrderSignal || requiresApplicationSignal;
+  const shouldResolveAuth = segment.sourceTypes.includes("auth_users") || (signalOnly && !segment.sourceTypes.includes("leads"));
+  const shouldResolveLeads = segment.sourceTypes.includes("leads") || (signalOnly && !segment.sourceTypes.includes("auth_users"));
 
   if (shouldResolveAuth) {
     try {
@@ -762,6 +896,9 @@ export async function resolveSegmentRecipients(segment: Segment, campaign: Campa
   const deduped = new Map<string, Contact>();
   for (const recipient of recipients) {
     if (orderSignal && !matchesOrderSignal(recipient, orderSignal)) {
+      continue;
+    }
+    if (applicationSignal && !matchesApplicationSignal(recipient, applicationSignal)) {
       continue;
     }
     const identityKey = recipientIdentityKey(recipient);
