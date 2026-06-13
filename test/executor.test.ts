@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import axios from "axios";
-import { executeCampaign } from "../src/executor";
+import { executeCampaign, setThrottleWaitForTest } from "../src/executor";
+import { runDueScheduledCampaigns } from "../src/scheduler";
 import { setTestRecipientFixtureProviderForTest } from "../src/sources";
 import { campaigns, resetInMemoryState, segments } from "../src/store";
 import { testRecipientFixtures as contacts } from "./fixtures";
@@ -38,7 +39,11 @@ function makeCampaign(overrides: Partial<Campaign> = {}): Campaign {
     throttlePerMinute: null,
     frequencyCapPerDay: 1,
     message: { body: "hello" },
-    status: "draft",
+    status: "scheduled",
+    approvalStatus: "approved",
+    approvedBy: "owner@example.com",
+    approvedAt: new Date().toISOString(),
+    approvalNote: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     ...overrides
@@ -76,6 +81,7 @@ test("enforces consent, unsubscribe and frequency cap", async () => {
     campaigns.set("camp-1", makeCampaign());
 
     const firstRun = await executeCampaign("camp-1", "idem-1");
+    assert.equal(firstRun.approvalEvidence?.approvedBy, "owner@example.com");
     assert.equal(firstRun.totalRecipients, 2);
     assert.equal(firstRun.totalSent, 1);
     assert.ok(firstRun.results.some((r) => r.decisionReason === "unsubscribed"));
@@ -87,6 +93,234 @@ test("enforces consent, unsubscribe and frequency cap", async () => {
     assert.ok(secondRun.results.some((r) => r.decisionReason === "unsubscribed"));
     assert.equal(postCalls, 1);
   } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    contacts.splice(0, contacts.length, ...originalContacts);
+    resetInMemoryState();
+  }
+});
+
+
+test("blocks real execution for unapproved campaigns", async () => {
+  resetInMemoryState();
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+  const originalPost = axios.post;
+  let postCalls = 0;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set("seg-1", makeSegment());
+    campaigns.set(
+      "camp-1",
+      makeCampaign({
+        status: "draft",
+        approvalStatus: "pending",
+        approvedBy: null,
+        approvedAt: null
+      })
+    );
+
+    await assert.rejects(() => executeCampaign("camp-1", "idem-unapproved"), /campaign_not_approved/);
+    assert.equal(postCalls, 0);
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    resetInMemoryState();
+  }
+});
+
+test("blocks real execution for draft campaigns even when approval metadata exists", async () => {
+  resetInMemoryState();
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+  const originalPost = axios.post;
+  let postCalls = 0;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set("seg-1", makeSegment());
+    campaigns.set("camp-1", makeCampaign({ status: "draft" }));
+
+    await assert.rejects(() => executeCampaign("camp-1", "idem-draft"), /campaign_status_not_executable:draft/);
+    assert.equal(postCalls, 0);
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    resetInMemoryState();
+  }
+});
+
+test("dry run resolves recipient decisions without notification delivery or approval", async () => {
+  resetInMemoryState();
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+  const originalPost = axios.post;
+  let postCalls = 0;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set("seg-1", makeSegment());
+    campaigns.set(
+      "camp-1",
+      makeCampaign({
+        status: "draft",
+        approvalStatus: "pending",
+        approvedBy: null,
+        approvedAt: null
+      })
+    );
+
+    const run = await executeCampaign("camp-1", "idem-dry", { dryRun: true });
+    assert.equal(run.status, "dry_run_completed");
+    assert.equal(run.dryRun, true);
+    assert.equal(run.totalSent, 0);
+    assert.equal(postCalls, 0);
+    assert.ok(run.results.some((r) => r.status === "would_send" && r.decisionReason === "dry_run_would_send"));
+    assert.ok(run.results.some((r) => r.status === "skipped" && r.decisionReason === "unsubscribed"));
+
+    const realRun = await executeCampaign("camp-1", "idem-after-dry", { dryRun: true });
+    assert.equal(realRun.results.filter((r) => r.status === "would_send").length, 1);
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    resetInMemoryState();
+  }
+});
+
+test("scheduler claim prevents duplicate due scheduled execution", async () => {
+  resetInMemoryState();
+  const originalContacts = contacts.slice();
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+  const originalPost = axios.post;
+  let postCalls = 0;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    contacts.splice(0, contacts.length, {
+      id: "auth-scheduled",
+      owner: "auth",
+      email: "scheduled@example.com",
+      preferredChannel: "email",
+      fallbackChannels: [],
+      consent: { marketing: true, unsubscribed: false }
+    });
+    const scheduleAt = "2026-06-13T08:00:00.000Z";
+    segments.set("seg-1", makeSegment());
+    campaigns.set("camp-1", makeCampaign({ scheduleAt }));
+
+    const first = await runDueScheduledCampaigns({
+      schedulerOwner: "scheduler-a",
+      now: new Date("2026-06-13T08:01:00.000Z"),
+      batchSize: 5
+    });
+    const second = await runDueScheduledCampaigns({
+      schedulerOwner: "scheduler-b",
+      now: new Date("2026-06-13T08:01:00.000Z"),
+      batchSize: 5
+    });
+
+    assert.equal(first.claimed, 1);
+    assert.equal(first.executed, 1);
+    assert.equal(second.claimed, 0);
+    assert.equal(second.executed, 0);
+    assert.equal(postCalls, 1);
+    assert.equal(first.runs[0].idempotencyKey, "scheduled:camp-1:2026-06-13T08:00:00.000Z");
+    assert.equal(campaigns.get("camp-1")?.status, "completed");
+    assert.equal(campaigns.get("camp-1")?.lastScheduledRunAt, scheduleAt);
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    contacts.splice(0, contacts.length, ...originalContacts);
+    resetInMemoryState();
+  }
+});
+
+test("scheduler does not execute paused campaigns", async () => {
+  resetInMemoryState();
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+  const originalPost = axios.post;
+  let postCalls = 0;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set("seg-1", makeSegment());
+    campaigns.set(
+      "camp-1",
+      makeCampaign({
+        status: "paused",
+        scheduleAt: "2026-06-13T08:00:00.000Z"
+      })
+    );
+
+    const result = await runDueScheduledCampaigns({
+      schedulerOwner: "scheduler-a",
+      now: new Date("2026-06-13T08:01:00.000Z")
+    });
+
+    assert.equal(result.claimed, 0);
+    assert.equal(result.executed, 0);
+    assert.equal(postCalls, 0);
+    assert.equal(campaigns.get("camp-1")?.status, "paused");
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    resetInMemoryState();
+  }
+});
+
+test("applies campaign throttle between notification sends", async () => {
+  resetInMemoryState();
+  const originalContacts = contacts.slice();
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+  const originalPost = axios.post;
+  const waits: number[] = [];
+  let postCalls = 0;
+  setThrottleWaitForTest(async (ms) => {
+    waits.push(ms);
+  });
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    contacts.splice(
+      0,
+      contacts.length,
+      {
+        id: "auth-throttle-1",
+        owner: "auth",
+        email: "throttle-1@example.com",
+        preferredChannel: "email",
+        fallbackChannels: [],
+        consent: { marketing: true, unsubscribed: false }
+      },
+      {
+        id: "auth-throttle-2",
+        owner: "auth",
+        email: "throttle-2@example.com",
+        preferredChannel: "email",
+        fallbackChannels: [],
+        consent: { marketing: true, unsubscribed: false }
+      }
+    );
+    segments.set("seg-1", makeSegment());
+    campaigns.set("camp-1", makeCampaign({ throttlePerMinute: 120, frequencyCapPerDay: 10 }));
+
+    const run = await executeCampaign("camp-1", "idem-throttle");
+
+    assert.equal(run.totalSent, 2);
+    assert.equal(postCalls, 2);
+    assert.deepEqual(waits, [500]);
+  } finally {
+    setThrottleWaitForTest(async (ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     (axios.post as unknown as typeof originalPost) = originalPost;
     contacts.splice(0, contacts.length, ...originalContacts);
     resetInMemoryState();
@@ -207,7 +441,7 @@ test("uses fallback channel when campaign primary is in fallback list", async ()
   }
 });
 
-test("applies campaign-level max send guardrail", async () => {
+test("fails clearly when campaign-level max send guardrail is exceeded", async () => {
   resetInMemoryState();
   const originalContacts = contacts.slice();
   const originalMax = process.env.CAMPAIGN_MAX_SEND_PER_RUN;
@@ -259,9 +493,11 @@ test("applies campaign-level max send guardrail", async () => {
     campaigns.set("camp-1", makeCampaign());
 
     const run = await executeCampaign("camp-1", "idem-guardrail");
-    assert.equal(sentCount, 2);
-    assert.deepEqual(sentRecipients, ["user1@example.com", "user2@example.com"]);
-    assert.equal(run.totalSent, 2);
+    assert.equal(sentCount, 0);
+    assert.deepEqual(sentRecipients, []);
+    assert.equal(run.status, "failed");
+    assert.equal(run.totalSent, 0);
+    assert.ok(run.results.some((r) => r.status === "failed" && r.decisionReason === "max_send_per_run_exceeded:3>2"));
   } finally {
     (axios.post as unknown as typeof originalPost) = originalPost;
     if (originalMax === undefined) {
@@ -270,6 +506,41 @@ test("applies campaign-level max send guardrail", async () => {
       process.env.CAMPAIGN_MAX_SEND_PER_RUN = originalMax;
     }
     contacts.splice(0, contacts.length, ...originalContacts);
+    resetInMemoryState();
+  }
+});
+
+test("fails clearly when configured notification chunk size exceeds platform max", async () => {
+  resetInMemoryState();
+  const originalChunkSize = process.env.CAMPAIGN_NOTIFICATION_CHUNK_SIZE;
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+  process.env.CAMPAIGN_NOTIFICATION_CHUNK_SIZE = "31";
+  const originalPost = axios.post;
+  let postCalls = 0;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set("seg-1", makeSegment());
+    campaigns.set("camp-1", makeCampaign());
+
+    const run = await executeCampaign("camp-1", "idem-chunk-guardrail");
+    assert.equal(postCalls, 0);
+    assert.equal(run.status, "failed");
+    assert.ok(
+      run.results.some(
+        (r) => r.status === "failed" && r.decisionReason === "notification_chunk_size_exceeds_platform_limit:31>30"
+      )
+    );
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    if (originalChunkSize === undefined) {
+      delete process.env.CAMPAIGN_NOTIFICATION_CHUNK_SIZE;
+    } else {
+      process.env.CAMPAIGN_NOTIFICATION_CHUNK_SIZE = originalChunkSize;
+    }
     resetInMemoryState();
   }
 });

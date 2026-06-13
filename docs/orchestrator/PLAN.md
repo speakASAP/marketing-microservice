@@ -54,4 +54,4 @@ Verification:
 
 ## Next Goal Selection
 
-Goal 1 is complete. Continue to Goal 2 - External Source Integration unless the owner explicitly chooses another goal.
+Goal 1, Goal 2, Goal 3, and Goal 4 are complete. Continue to Goal 5 - Scheduling, Throttling, And Frequency Controls unless the owner explicitly chooses another goal.

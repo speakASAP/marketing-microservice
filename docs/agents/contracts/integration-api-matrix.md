@@ -22,7 +22,9 @@
 - `GET /campaigns`
 - `PUT /campaigns/:id`
 - `DELETE /campaigns/:id`
+- `POST /campaigns/:id/approve`
 - `POST /campaigns/:id/execute`
+- `POST /campaigns/:id/dry-run`
 - `GET /executions`
 
 ## Verification Commands

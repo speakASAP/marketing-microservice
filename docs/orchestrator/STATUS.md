@@ -293,3 +293,240 @@ Next unfinished step:
 
 - Goal 2 acceptance review: confirm all Goal 2 chunks satisfy runtime external-source integration criteria before moving to Goal 3.
 
+
+## 2026-06-13 - Goal 2 Acceptance Review
+
+Current focus: Goal 2 - External Source Integration acceptance review.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Auth and leads remain the sources of truth for contact data, preferences, consent, and unsubscribe state.
+- Orders and catalog remain segmentation signal sources only.
+- Notifications remains the only outbound delivery executor.
+- This review did not execute any real campaign against real recipients.
+
+Acceptance evidence:
+
+- Runtime recipient resolution uses configured auth and leads HTTP clients in src/sources.ts.
+- Runtime hardcoded contact fixtures are absent from src/store.ts and dist; deterministic contacts live under test/fixtures.ts only.
+- Test fixture usage is gated by NODE_ENV=test, MARKETING_USE_TEST_RECIPIENT_FIXTURES=true, and a test-registered provider.
+- Missing or failed auth/leads/orders/catalog source calls produce failed source evidence and no notification calls when no recipients can be safely resolved.
+- Order/catalog integration filters auth/leads recipients and does not create contact records or bypass consent/unsubscribe/frequency checks.
+- Added missing AUTH_USERS_SEGMENT_PATH and AUTH_USERS_SEGMENT_LIMIT keys to .env.example so configured auth resolver options are documented.
+
+Validation:
+
+- Remote npm run build passed on 2026-06-13.
+- Remote npm test passed on 2026-06-13: 15 tests, 15 passing.
+
+Intent Compliance Report:
+
+- Runtime execution no longer depends on hardcoded contact fixtures.
+- Consent and unsubscribe decisions use source-owned auth/leads recipient data when services are configured.
+- API failures fail safely with source failure evidence and do not trigger direct sending.
+- Marketing did not implement direct email, Telegram, or WhatsApp delivery.
+- The max-30 notification chunk rule remains covered by tests and unchanged in src/executor.ts.
+
+Completed goal:
+
+- Goal 2 - External Source Integration.
+
+Next unfinished step:
+
+- Goal 3 - Persistence And Execution State.
+
+## 2026-06-13 - Goal 3 Persistence Schema And Store Chunk
+
+Current focus: Goal 3 - Persistence And Execution State.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Marketing owns persisted campaign definitions, segment definitions, execution runs, delivery outcomes, suppression evidence, idempotency keys, and frequency-cap send history.
+- Auth and leads remain the sources of truth for contact data, preferences, consent, and unsubscribe state.
+- Orders and catalog remain segmentation signal sources only.
+- Notifications remains the only outbound delivery executor; this session did not add direct email, Telegram, or WhatsApp sending.
+- Real campaign execution guardrails remain unchanged; this session did not execute a real campaign against real recipients.
+
+Implementation evidence:
+
+- Added `migrations/0001_persistence_and_execution_state.sql` with PostgreSQL tables for segments, campaigns, campaign runs, delivery outcomes, suppression evidence, idempotency keys, and send history.
+- Added `pg` runtime dependency and `@types/pg` dev dependency.
+- Replaced direct runtime `Map` access with a `MarketingStore` interface in `src/store.ts`.
+- Added `InMemoryMarketingStore` to preserve isolated test/local state and existing reset helpers.
+- Added `PostgresMarketingStore` backed by PostgreSQL and enabled by `MARKETING_STORE=postgres`, `DATABASE_URL`, or `DB_HOST` plus `DB_NAME`.
+- Store initialization can apply the migration when `DB_AUTO_CREATE=true` or `DB_SYNC=true`.
+- Updated `src/executor.ts` so campaign/segment lookup, idempotency lookup, running/completed execution state, outcomes, suppression evidence, and send history are written through the active store.
+- Updated `src/main.ts` so segment CRUD, campaign CRUD, and execution listing use the active store.
+- Added `MARKETING_STORE` and `DATABASE_URL` to `.env.example`.
+
+Validation:
+
+- Remote `npm run build` passed on 2026-06-13.
+- Remote `npm test` passed on 2026-06-13: 15 tests, 15 passing.
+- Remote PostgreSQL smoke test passed against temporary `postgres:16-alpine` container on 2026-06-13:
+  - migration applied through `DB_AUTO_CREATE=true`;
+  - segment and campaign records were saved and read through a fresh store instance;
+  - idempotency key lookup returned the persisted run across store instances;
+  - sent, skipped, and failed delivery outcomes persisted;
+  - send history persisted for frequency-cap decisions.
+
+Intent Compliance Report:
+
+- Persistence was added only for Marketing-owned orchestration and audit state.
+- Marketing did not duplicate auth/leads contact or consent ownership.
+- Marketing did not take ownership of order/catalog records or product truth.
+- Marketing did not implement direct delivery or provider credentials.
+- Consent, unsubscribe, frequency-cap, source-failure safety, and max-30 notification chunk behavior remain covered by tests.
+
+Completed chunk:
+
+- Goal 3 chunk: Add PostgreSQL schema/migrations for segments, campaigns, runs, outcomes, suppression, and idempotency keys.
+- Goal 3 chunk: Replace in-memory maps with repository interfaces backed by PostgreSQL.
+- Goal 3 chunk: Preserve test reset helpers using isolated test stores.
+
+Next unfinished step:
+
+- Goal 3 acceptance review: confirm campaign CRUD and execution state persistence across restart-style PostgreSQL store instances before moving to Goal 4.
+
+## 2026-06-13 - Goal 3 Acceptance Review
+
+Current focus: Goal 3 - Persistence And Execution State acceptance review.
+
+Acceptance evidence:
+
+- Campaign CRUD uses the active `MarketingStore` and persists through `PostgresMarketingStore` when PostgreSQL configuration is present.
+- Execution state is saved when a run starts and after it completes, including delivery outcomes and totals.
+- Idempotency keys are persisted in `marketing_idempotency_keys` and resolved through `findRunByIdempotency` across fresh PostgreSQL store instances.
+- Delivery outcomes persist sent, skipped, and failed evidence; skipped and failed outcomes also write suppression evidence.
+- Frequency-cap send history persists in `marketing_send_history` and is read by execution before delivery decisions.
+- Test reset behavior remains isolated through `resetInMemoryState` and the in-memory store path.
+
+Validation:
+
+- Remote `npm run build` passed on 2026-06-13.
+- Remote `npm test` passed on 2026-06-13: 15 tests, 15 passing.
+- Remote PostgreSQL restart-style smoke test passed on 2026-06-13 using a temporary `postgres:16-alpine` container.
+
+Intent Compliance Report:
+
+- Goal 3 persisted only Marketing-owned campaign, segment, run, outcome, suppression, idempotency, and send-history state.
+- Contact data and consent remain externally owned by auth/leads.
+- Order/catalog data remains segmentation signal input only.
+- Notifications remains the sole delivery executor.
+- No real campaign was executed against real recipients.
+
+Completed goal:
+
+- Goal 3 - Persistence And Execution State.
+
+Next unfinished step:
+
+- Goal 4 - Campaign Approval And Safety Gates.
+
+## 2026-06-13 - Goal 4 Campaign Approval And Safety Gates
+
+Current focus: Goal 4 - Campaign Approval And Safety Gates.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Marketing owns campaign approval state, approval actor metadata, execution dry-run state, safety guardrails, and run approval evidence.
+- Auth and leads remain the sources of truth for contact data, preferences, consent, and unsubscribe state.
+- Orders and catalog remain segmentation signal sources only.
+- Notifications remains the only outbound delivery executor; dry-run and blocked executions do not call notifications.
+- No real campaign was executed against real recipients.
+
+Implementation evidence:
+
+- Added campaign approval fields to `src/types.ts`: `approvalStatus`, `approvedBy`, `approvedAt`, and `approvalNote`.
+- Added run-level `dryRun` and `approvalEvidence` fields so real executions preserve the approval state that authorized that run.
+- Added `migrations/0002_campaign_approval_safety.sql` for campaign approval columns and run approval/dry-run columns.
+- Updated `PostgresMarketingStore` to apply all sorted SQL migrations and persist campaign approval metadata plus run approval evidence.
+- Campaign creation now defaults to `approvalStatus: pending`.
+- Campaign updates no longer silently mutate approval metadata.
+- Added `POST /campaigns/:id/approve` requiring `approvedBy` or `x-owner-actor` and setting approval metadata.
+- Real execution now rejects unapproved campaigns and draft/paused/archived/failed campaigns before recipient delivery work.
+- Added dry-run mode through `POST /campaigns/:id/dry-run` and `POST /campaigns/:id/execute` with `dryRun: true`.
+- Dry-run resolves recipients, consent/unsubscribe/frequency decisions, effective channels, and would-send outcomes without notification calls or send-history writes.
+- Max sends per run now fails clearly with `max_send_per_run_exceeded:<approvedCount>><maxSendPerRun>` and no notification calls instead of silently truncating recipients.
+- Configured notification chunk size above the platform max fails clearly with `notification_chunk_size_exceeds_platform_limit:<configured>>30` and no notification calls.
+- Added `CAMPAIGN_NOTIFICATION_CHUNK_SIZE` to `.env.example`.
+- Updated local contract docs for approval and dry-run API surface.
+
+Validation:
+
+- Remote `npm run build` passed on 2026-06-13.
+- Remote `npm test` passed on 2026-06-13: 19 tests, 19 passing.
+- Remote PostgreSQL smoke test passed against temporary `postgres:16-alpine` container on 2026-06-13:
+  - migrations `0001` and `0002` applied through `DB_AUTO_CREATE=true`;
+  - approved campaign metadata persisted and read through a fresh store instance;
+  - real run approval evidence persisted and read through idempotency lookup;
+  - dry-run run state and `would_send` outcome persisted and read through idempotency lookup.
+
+Intent Compliance Report:
+
+- Goal 4 added owner approval enforcement without moving contact, consent, order, catalog, or provider ownership into marketing.
+- Marketing still does not send directly; real delivery remains delegated only to notifications-microservice.
+- Draft and unapproved campaigns cannot execute against real recipients.
+- Dry-run produces decision evidence without notification calls.
+- Consent, unsubscribe, frequency-cap, source-failure safety, idempotency, max-send, and max-30 chunk behavior are covered by tests.
+
+Completed goal:
+
+- Goal 4 - Campaign Approval And Safety Gates.
+
+Next unfinished step:
+
+- Goal 5 - Scheduling, Throttling, And Frequency Controls.
+
+## 2026-06-13 - Goal 5 Scheduling, Throttling, And Frequency Controls Start
+
+Current focus: Goal 5 - Scheduling, Throttling, And Frequency Controls.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Marketing owns scheduler claim state, run idempotency, throttle policy, frequency-cap enforcement, and campaign/run visibility state.
+- Auth and leads remain the sources of truth for contact data, preferences, consent, and unsubscribe state.
+- Orders and catalog remain segmentation signal sources only.
+- Notifications remains the only outbound delivery executor; scheduler execution still delegates through notifications-microservice and never sends directly.
+- No real campaign was executed against real recipients.
+
+Implementation evidence:
+
+- Added scheduler lock metadata to campaigns: scheduler owner, lock expiry, and last scheduled run timestamp.
+- Added migration `migrations/0003_scheduling_throttling_frequency_controls.sql` for scheduler lock persistence and due-schedule indexes.
+- Added store-level due campaign claiming with PostgreSQL `for update skip locked` semantics and in-memory test-store equivalent behavior.
+- Added `src/scheduler.ts` with `runDueScheduledCampaigns`, deterministic scheduled-run idempotency keys, lock TTL, batch size, and scheduler owner options.
+- Added `POST /scheduler/run-due` for explicit operational scheduler invocation.
+- Scheduled execution only claims approved, scheduled, due campaigns with no active lock and no matching completed `lastScheduledRunAt`.
+- Paused campaigns are not claimed and do not execute through the scheduler.
+- Added campaign throttle pacing so `throttlePerMinute` spaces notification requests while preserving the max-30 chunk guardrail.
+- Frequency caps continue to use persisted send history before notification delegation.
+- Added scheduler environment keys to `.env.example`: `CAMPAIGN_SCHEDULER_OWNER`, `CAMPAIGN_SCHEDULER_BATCH_SIZE`, and `CAMPAIGN_SCHEDULER_LOCK_TTL_MS`.
+- Added tests for duplicate scheduler prevention, paused scheduler skips, and throttle pacing.
+
+Validation:
+
+- Remote `npm run build` passed on 2026-06-13.
+- Remote `npm test` passed on 2026-06-13: 22 tests, 22 passing.
+
+Intent Compliance Report:
+
+- Goal 5 scheduling work did not move delivery into marketing; notifications remains the only delivery executor.
+- Scheduler execution still goes through existing approval, consent, unsubscribe, frequency-cap, max-send, and max-30 chunk checks.
+- Scheduler locks and scheduled-run markers are Marketing-owned execution safety state.
+- Contact, consent, order, catalog, and provider ownership boundaries remain unchanged.
+- Recurring campaigns were not added because the owner did not explicitly require them.
+
+Completed chunk:
+
+- Goal 5 chunk: Add scheduler ownership and locking rules.
+- Goal 5 chunk: Implement per-campaign throttle and persisted frequency-cap enforcement.
+- Goal 5 chunk: Add operational visibility for scheduled execution through campaign/run status and explicit scheduler result output.
+
+Next unfinished step:
+
+- Goal 5 acceptance review: confirm the scheduling/throttling implementation satisfies all Goal 5 acceptance criteria before moving to Goal 6.

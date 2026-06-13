@@ -1,5 +1,5 @@
 export type ContactOwner = "auth" | "leads";
-export type ResultSource = ContactOwner | "orders" | "catalog";
+export type ResultSource = ContactOwner | "orders" | "catalog" | "system";
 export type Channel = "email" | "telegram" | "whatsapp";
 export type Purpose = "marketing" | "retention" | "transactional-not-marketing";
 export type SegmentSource = "auth_users" | "leads" | "orders";
@@ -11,6 +11,7 @@ export type CampaignStatus =
   | "completed"
   | "failed"
   | "archived";
+export type CampaignApprovalStatus = "pending" | "approved" | "revoked";
 
 export interface Segment {
   segmentId: string;
@@ -40,6 +41,13 @@ export interface Campaign {
     body: string;
   };
   status: CampaignStatus;
+  approvalStatus: CampaignApprovalStatus;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  approvalNote?: string | null;
+  schedulerLockOwner?: string | null;
+  schedulerLockUntil?: string | null;
+  lastScheduledRunAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -65,7 +73,7 @@ export interface DeliveryResult {
   recipientAddress: string;
   requestedChannel: Channel;
   effectiveChannel: Channel;
-  status: "queued" | "skipped" | "sent" | "failed";
+  status: "queued" | "skipped" | "sent" | "failed" | "would_send";
   decisionReason: string;
   processedAt: string;
   duration_ms: number;
@@ -77,7 +85,14 @@ export interface ExecutionRun {
   idempotencyKey: string;
   startedAt: string;
   completedAt?: string;
-  status: "running" | "completed";
+  status: "running" | "completed" | "failed" | "dry_run_completed";
+  dryRun?: boolean;
+  schedulerOwner?: string | null;
+  approvalEvidence?: {
+    approvalStatus: CampaignApprovalStatus;
+    approvedBy?: string | null;
+    approvedAt?: string | null;
+  } | null;
   totalRecipients: number;
   totalSent: number;
   results: DeliveryResult[];
