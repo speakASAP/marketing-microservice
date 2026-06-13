@@ -77,6 +77,7 @@ export interface DeliveryResult {
   decisionReason: string;
   processedAt: string;
   duration_ms: number;
+  correlationId?: string;
 }
 
 export interface ExecutionRun {

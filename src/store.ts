@@ -344,8 +344,8 @@ export class PostgresMarketingStore implements MarketingStore {
         await client.query(
           `insert into marketing_delivery_outcomes (
             delivery_id, run_id, campaign_id, recipient_ref, recipient_source, recipient_address,
-            requested_channel, effective_channel, status, decision_reason, processed_at, duration_ms
-          ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+            requested_channel, effective_channel, status, decision_reason, processed_at, duration_ms, correlation_id
+          ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
           [
             outcome.deliveryId,
             run.id,
@@ -358,7 +358,8 @@ export class PostgresMarketingStore implements MarketingStore {
             outcome.status,
             outcome.decisionReason,
             outcome.processedAt,
-            outcome.duration_ms
+            outcome.duration_ms,
+            outcome.correlationId ?? null
           ]
         );
         if (outcome.status === "skipped" || outcome.status === "failed") {
@@ -507,7 +508,8 @@ function rowToDeliveryResult(row: Record<string, unknown>): DeliveryResult {
     status: row.status as DeliveryResult["status"],
     decisionReason: String(row.decision_reason),
     processedAt: iso(row.processed_at) ?? new Date().toISOString(),
-    duration_ms: Number(row.duration_ms)
+    duration_ms: Number(row.duration_ms),
+    correlationId: row.correlation_id === null || row.correlation_id === undefined ? undefined : String(row.correlation_id)
   };
 }
 

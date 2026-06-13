@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import axios from "axios";
 import { executeCampaign, setThrottleWaitForTest } from "../src/executor";
+import { logDecision, setAuditSinkForTest } from "../src/logger";
 import { runDueScheduledCampaigns } from "../src/scheduler";
 import { setTestRecipientFixtureProviderForTest } from "../src/sources";
 import { campaigns, resetInMemoryState, segments } from "../src/store";
@@ -62,6 +63,73 @@ test("rejects test fixture provider registration outside test environment", () =
   } finally {
     process.env.NODE_ENV = originalNodeEnv ?? "test";
     setTestRecipientFixtureProviderForTest(() => contacts);
+  }
+});
+
+test("audit logger sanitizes sensitive fields and adds duration", async () => {
+  const captured: Array<Record<string, unknown>> = [];
+  setAuditSinkForTest((payload) => {
+    captured.push(payload);
+  });
+
+  try {
+    logDecision("audit_sanitization_test", {
+      campaignId: "camp-1",
+      message: "do not log",
+      token: "secret-token",
+      nested: { authorization: "bearer-secret", safe: "ok" }
+    });
+
+    assert.equal(captured.length, 1);
+    assert.equal(captured[0].event, "audit_sanitization_test");
+    assert.equal(typeof captured[0].timestamp, "string");
+    assert.equal(captured[0].duration_ms, 0);
+    assert.equal(captured[0].message, "[redacted]");
+    assert.equal(captured[0].token, "[redacted]");
+    assert.deepEqual(captured[0].nested, { authorization: "[redacted]", safe: "ok" });
+  } finally {
+    setAuditSinkForTest(null);
+  }
+});
+
+test("audit logger forwards sanitized payload to logging service when configured", async () => {
+  const originalLoggingUrl = process.env.LOGGING_SERVICE_URL;
+  const originalLoggingToken = process.env.LOGGING_SERVICE_TOKEN;
+  const originalPost = axios.post;
+  const calls: Array<{ url: string; payload: Record<string, unknown>; headers?: Record<string, string> }> = [];
+  process.env.LOGGING_SERVICE_URL = "http://logging-microservice:3367";
+  process.env.LOGGING_SERVICE_TOKEN = "log-token";
+  (axios.post as unknown as typeof originalPost) = (async (url: string, payload: unknown, config?: unknown) => {
+    calls.push({
+      url,
+      payload: payload as Record<string, unknown>,
+      headers: (config as { headers?: Record<string, string> } | undefined)?.headers
+    });
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    logDecision("audit_forward_test", { campaignId: "camp-1", secret: "hidden", duration_ms: 7 });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, "http://logging-microservice:3367/logs");
+    assert.equal(calls[0].payload.event, "audit_forward_test");
+    assert.equal(calls[0].payload.secret, "[redacted]");
+    assert.equal(calls[0].payload.duration_ms, 7);
+    assert.equal(calls[0].headers?.Authorization, "Bearer log-token");
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    if (originalLoggingUrl === undefined) {
+      delete process.env.LOGGING_SERVICE_URL;
+    } else {
+      process.env.LOGGING_SERVICE_URL = originalLoggingUrl;
+    }
+    if (originalLoggingToken === undefined) {
+      delete process.env.LOGGING_SERVICE_TOKEN;
+    } else {
+      process.env.LOGGING_SERVICE_TOKEN = originalLoggingToken;
+    }
   }
 });
 
@@ -584,6 +652,7 @@ test("sends notifications using per-contact DTO contract", async () => {
     assert.equal(call.payload.service, "marketing-microservice");
     assert.equal(call.payload.channelKey, "flipflop_email_promotions");
     assert.equal(call.headers?.Authorization, "Bearer svc-token");
+    assert.match(String(call.headers?.["x-correlation-id"]), /^marketing:/);
   } finally {
     (axios.post as unknown as typeof originalPost) = originalPost;
     delete process.env.NOTIFICATION_SERVICE_TOKEN;

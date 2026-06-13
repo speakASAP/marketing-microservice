@@ -57,7 +57,7 @@ Contract definitions are frozen in:
 
 ## Configuration
 
-All configuration is provided via `.env`. Do not hardcode values. See `.env.example` for required keys (to be added when the service is implemented). Before any `.env` change, create a backup and add new variable names (keys only) to `.env.example`.
+All configuration is provided via `.env`. Do not hardcode values. See `.env.example` for required keys. Protected write and execution APIs require `MARKETING_API_TOKEN` or `SERVICE_API_TOKEN`; Kubernetes maps `MARKETING_API_TOKEN` from the service secret. Before any `.env` change, create a backup and add new variable names (keys only) to `.env.example`.
 
 ## Deployment (Blue/Green)
 
