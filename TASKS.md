@@ -4,8 +4,6 @@
 
 ## Backlog
 <!-- Human-managed -->
-- TG-3.1 Goal 8 ecosystem ownership contract baseline (pending)
-- TG-3.2 Goal 9 tenant/app registry integration (pending)
 - TG-3.3 Goal 10 cross-service recipient and consent contract hardening (pending)
 - TG-3.4 Goal 11 application signal segmentation contracts (pending)
 - TG-3.5 Goal 12 multi-application campaign catalog (pending)
@@ -24,6 +22,7 @@ None.
 
 ## Completed
 <!-- Coordinator-append-only -->
+- 2026-06-13 tg-3.2-goal-9-tenant-app-registry-integration
 - 2026-04-05 documentation-standard-applied
 - 2026-05-05 sync-a-contracts-approved
 - 2026-05-05 tg-1.1-notifications-validator-approved
@@ -32,3 +31,5 @@ None.
 - 2026-05-05 tg-1.4-integration-validator-approved
 - 2026-06-13 tg-2.x-api-token-runtime-wiring
 - 2026-06-13 tg-3.0-ecosystem-roadmap-created
+- 2026-06-13 tg-3.1-goal-8-ecosystem-ownership-contract-baseline
+- 2026-06-13 tg-3.3-goal-10-cross-service-recipient-consent-hardening

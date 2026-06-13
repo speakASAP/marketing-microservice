@@ -3,6 +3,7 @@ import { getStore } from "./store";
 import { logDecision } from "./logger";
 import { Campaign, Contact, DeliveryResult, ExecutionRun } from "./types";
 import { resolveSegmentRecipients, SourceFailure } from "./sources";
+import { registryScopeFrom, validateRegistryScope } from "./registry";
 
 const PLATFORM_MAX_CHUNK_SIZE = 30;
 const DEFAULT_MAX_SEND_PER_RUN = 300;
@@ -24,9 +25,12 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-async function evaluateRecipient(campaign: Campaign, contact: Contact): Promise<{ allowed: boolean; reason: string }> {
+async function evaluateRecipient(campaign: Campaign, contact: Contact, effectiveChannel: Contact["preferredChannel"]): Promise<{ allowed: boolean; reason: string }> {
   if (!contact.consent.marketing && campaign.purpose === "marketing") {
     return { allowed: false, reason: "consent_missing" };
+  }
+  if (campaign.purpose === "marketing" && contact.consent.channels?.[effectiveChannel] === false) {
+    return { allowed: false, reason: "channel_consent_missing" };
   }
   if (contact.consent.unsubscribed) {
     return { allowed: false, reason: "unsubscribed" };
@@ -329,6 +333,67 @@ export async function executeCampaign(
     throw new Error("segment_not_found");
   }
 
+  const registryValidation = await validateRegistryScope(registryScopeFrom(campaign));
+  if (!registryValidation.ok) {
+    if (!dryRun) {
+      throw new Error(registryValidation.reason + (registryValidation.details ? ":" + registryValidation.details : ""));
+    }
+    const run: ExecutionRun = {
+      id: crypto.randomUUID(),
+      campaignId,
+      idempotencyKey: effectiveIdempotencyKey,
+      startedAt: nowIso(),
+      completedAt: nowIso(),
+      status: "dry_run_completed",
+      dryRun,
+      approvalEvidence: null,
+      totalRecipients: 0,
+      totalSent: 0,
+      results: [guardrailResult(campaign, registryValidation.reason)]
+    };
+    await store.saveRun(run);
+    logDecision("campaign_registry_validation_failed", {
+      campaignId,
+      runId: run.id,
+      dryRun,
+      reason: registryValidation.reason,
+      details: registryValidation.details ?? null,
+      duration_ms: 0
+    });
+    return run;
+  }
+
+  const segmentRegistryValidation = await validateRegistryScope(registryScopeFrom(segment));
+  if (!segmentRegistryValidation.ok) {
+    if (!dryRun) {
+      throw new Error(segmentRegistryValidation.reason + (segmentRegistryValidation.details ? ":" + segmentRegistryValidation.details : ""));
+    }
+    const run: ExecutionRun = {
+      id: crypto.randomUUID(),
+      campaignId,
+      idempotencyKey: effectiveIdempotencyKey,
+      startedAt: nowIso(),
+      completedAt: nowIso(),
+      status: "dry_run_completed",
+      dryRun,
+      approvalEvidence: null,
+      totalRecipients: 0,
+      totalSent: 0,
+      results: [guardrailResult(campaign, segmentRegistryValidation.reason)]
+    };
+    await store.saveRun(run);
+    logDecision("segment_registry_validation_failed", {
+      campaignId,
+      segmentId: segment.segmentId,
+      runId: run.id,
+      dryRun,
+      reason: segmentRegistryValidation.reason,
+      details: segmentRegistryValidation.details ?? null,
+      duration_ms: 0
+    });
+    return run;
+  }
+
   const recipientResolution = await resolveSegmentRecipients(segment, campaign);
   const recipients = recipientResolution.recipients;
 
@@ -366,7 +431,7 @@ export async function executeCampaign(
   for (const recipient of recipients) {
     const channel = resolveEffectiveChannel(campaign, recipient);
     channelSelection.set(recipient.id, channel);
-    const decision = await evaluateRecipient(campaign, recipient);
+    const decision = await evaluateRecipient(campaign, recipient, channel.channel);
     logDecision("recipient_decision", {
       campaignId,
       runId: run.id,

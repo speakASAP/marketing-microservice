@@ -4,6 +4,7 @@ import axios from "axios";
 import { executeCampaign, setThrottleWaitForTest } from "../src/executor";
 import { logDecision, setAuditSinkForTest } from "../src/logger";
 import { runDueScheduledCampaigns } from "../src/scheduler";
+import { setRegistryFixtureProviderForTest } from "../src/registry";
 import { setTestRecipientFixtureProviderForTest } from "../src/sources";
 import { campaigns, resetInMemoryState, segments } from "../src/store";
 import { testRecipientFixtures as contacts } from "./fixtures";
@@ -11,11 +12,24 @@ import { Campaign, Segment } from "../src/types";
 
 process.env.NODE_ENV = "test";
 process.env.MARKETING_USE_TEST_RECIPIENT_FIXTURES = "true";
+process.env.MARKETING_USE_TEST_REGISTRY_FIXTURES = "true";
 setTestRecipientFixtureProviderForTest(() => contacts);
+setRegistryFixtureProviderForTest((scope) => scope.tenantId === "statex" && scope.appId === "flipflop" && scope.brandId === "statex-main" ? { ...scope, status: "active" } : undefined);
 
 function makeSegment(overrides: Partial<Segment> = {}): Segment {
   return {
     segmentId: "seg-1",
+    tenantId: "statex",
+    appId: "flipflop",
+    brandId: "statex-main",
+    businessId: null,
+    environment: "test",
+    defaultLocale: "en",
+    timezone: "Europe/Prague",
+    productLine: null,
+    lifecycleScope: null,
+    legalSenderIdentity: null,
+    policyRef: null,
     name: "segment",
     sourceTypes: ["auth_users"],
     rules: { owner: "auth" },
@@ -29,6 +43,17 @@ function makeCampaign(overrides: Partial<Campaign> = {}): Campaign {
   return {
     campaignId: "camp-1",
     tenant: "statex",
+    tenantId: "statex",
+    appId: "flipflop",
+    brandId: "statex-main",
+    businessId: null,
+    environment: "test",
+    defaultLocale: "en",
+    timezone: "Europe/Prague",
+    productLine: null,
+    lifecycleScope: null,
+    legalSenderIdentity: null,
+    policyRef: null,
     name: "campaign",
     segmentId: "seg-1",
     description: null,
@@ -694,6 +719,22 @@ test("resolves auth user recipients from auth service when configured", async ()
             preferredChannel: "email",
             fallbackChannels: [],
             marketingConsents: { marketing: false }
+          },
+          {
+            id: "auth-api-3",
+            email: "auth-api-3@example.com",
+            preferredChannel: "email",
+            fallbackChannels: [],
+            marketingConsents: { marketing: true },
+            consentByPurposeChannel: { marketing: { email: false } }
+          },
+          {
+            id: "auth-api-4",
+            email: "auth-api-4@example.com",
+            preferredChannel: "email",
+            fallbackChannels: [],
+            marketingConsents: { marketing: true },
+            consentByPurposeChannel: { marketing: { email: { granted: true, unsubscribed: true } } }
           }
         ]
       }
@@ -711,12 +752,20 @@ test("resolves auth user recipients from auth service when configured", async ()
     const run = await executeCampaign("camp-1", "idem-auth-source");
     assert.equal(getCalls.length, 1);
     assert.equal(getCalls[0].headers?.Authorization, "Bearer auth-token");
-    assert.ok(getCalls[0].url.startsWith("http://auth-microservice:3370/auth/admin/users?"));
-    assert.ok(getCalls[0].url.includes("owner=auth"));
+    assert.ok(getCalls[0].url.startsWith("http://auth-microservice:3370/auth/marketing/recipients?"));
+    const authRecipientUrl = new URL(getCalls[0].url);
+    assert.equal(authRecipientUrl.searchParams.get("owner"), "auth");
+    assert.equal(authRecipientUrl.searchParams.get("tenantId"), "statex");
+    assert.equal(authRecipientUrl.searchParams.get("appId"), "flipflop");
+    assert.equal(authRecipientUrl.searchParams.get("brandId"), "statex-main");
+    assert.equal(authRecipientUrl.searchParams.get("purpose"), "marketing");
+    assert.equal(authRecipientUrl.searchParams.get("channel"), "email");
     assert.deepEqual(sentRecipients, ["auth-api-1@example.com"]);
-    assert.equal(run.totalRecipients, 2);
+    assert.equal(run.totalRecipients, 4);
     assert.equal(run.totalSent, 1);
     assert.ok(run.results.some((r) => r.recipientRef === "auth:auth-api-2" && r.decisionReason === "consent_missing"));
+    assert.ok(run.results.some((r) => r.recipientRef === "auth:auth-api-3" && r.decisionReason === "channel_consent_missing"));
+    assert.ok(run.results.some((r) => r.recipientRef === "auth:auth-api-4" && r.decisionReason === "unsubscribed"));
     assert.ok(!run.results.some((r) => r.recipientAddress === "user1@example.com"));
   } finally {
     (axios.get as unknown as typeof originalGet) = originalGet;
@@ -765,6 +814,45 @@ test("does not use in-memory fixtures when the test fixture gate is disabled", a
   } finally {
     (axios.post as unknown as typeof originalPost) = originalPost;
     process.env.MARKETING_USE_TEST_RECIPIENT_FIXTURES = originalFixtureGate ?? "true";
+    if (originalAuthUrl === undefined) {
+      delete process.env.AUTH_SERVICE_URL;
+    } else {
+      process.env.AUTH_SERVICE_URL = originalAuthUrl;
+    }
+    resetInMemoryState();
+  }
+});
+
+test("fails malformed auth recipient responses safely without notification delivery", async () => {
+  resetInMemoryState();
+  const originalAuthUrl = process.env.AUTH_SERVICE_URL;
+  const originalGet = axios.get;
+  const originalPost = axios.post;
+  process.env.AUTH_SERVICE_URL = "http://auth-microservice:3370";
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+
+  let postCalls = 0;
+  (axios.get as unknown as typeof originalGet) = (async () => ({ status: 200, data: { unexpected: true } }) as never) as typeof originalGet;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set("seg-1", makeSegment());
+    campaigns.set("camp-1", makeCampaign());
+
+    const run = await executeCampaign("camp-1", "idem-auth-invalid-response");
+    assert.equal(run.totalRecipients, 0);
+    assert.equal(run.totalSent, 0);
+    assert.equal(postCalls, 0);
+    assert.equal(run.results.length, 1);
+    assert.equal(run.results[0].status, "failed");
+    assert.equal(run.results[0].recipientRef, "auth:source");
+    assert.equal(run.results[0].decisionReason, "auth_source_unavailable:auth_invalid_recipient_response");
+  } finally {
+    (axios.get as unknown as typeof originalGet) = originalGet;
+    (axios.post as unknown as typeof originalPost) = originalPost;
     if (originalAuthUrl === undefined) {
       delete process.env.AUTH_SERVICE_URL;
     } else {
@@ -860,6 +948,22 @@ test("resolves lead recipients from leads service when configured", async () => 
             fallbackChannels: [],
             marketingConsent: true,
             unsubscribedAt: "2026-06-12T10:00:00.000Z"
+          },
+          {
+            id: "lead-api-4",
+            contactMethods: [{ type: "email", value: "lead-api-4@example.com", isPrimary: true }],
+            preferredChannel: "email",
+            fallbackChannels: [],
+            marketingConsent: true,
+            consentByPurposeChannel: { marketing: { email: false } }
+          },
+          {
+            id: "lead-api-5",
+            contactMethods: [{ type: "email", value: "lead-api-5@example.com", isPrimary: true }],
+            preferredChannel: "email",
+            fallbackChannels: [],
+            marketingConsent: true,
+            consentByPurposeChannel: { marketing: { email: { granted: true, unsubscribed: true } } }
           }
         ]
       }
@@ -883,13 +987,21 @@ test("resolves lead recipients from leads service when configured", async () => 
     const run = await executeCampaign("camp-1", "idem-leads-source");
     assert.equal(getCalls.length, 1);
     assert.equal(getCalls[0].headers?.Authorization, "Bearer leads-token");
-    assert.ok(getCalls[0].url.startsWith("http://leads-microservice:4400/leads?"));
-    assert.ok(getCalls[0].url.includes("sourceService=flipflop-service"));
+    assert.ok(getCalls[0].url.startsWith("http://leads-microservice:4400/leads/marketing/recipients?"));
+    const leadsRecipientUrl = new URL(getCalls[0].url);
+    assert.equal(leadsRecipientUrl.searchParams.get("sourceService"), "flipflop-service");
+    assert.equal(leadsRecipientUrl.searchParams.get("tenantId"), "statex");
+    assert.equal(leadsRecipientUrl.searchParams.get("appId"), "flipflop");
+    assert.equal(leadsRecipientUrl.searchParams.get("brandId"), "statex-main");
+    assert.equal(leadsRecipientUrl.searchParams.get("purpose"), "marketing");
+    assert.equal(leadsRecipientUrl.searchParams.get("channel"), "email");
     assert.deepEqual(sentRecipients, ["lead-api-1@example.com"]);
-    assert.equal(run.totalRecipients, 3);
+    assert.equal(run.totalRecipients, 5);
     assert.equal(run.totalSent, 1);
     assert.ok(run.results.some((r) => r.recipientRef === "lead:lead-api-2" && r.decisionReason === "consent_missing"));
     assert.ok(run.results.some((r) => r.recipientRef === "lead:lead-api-3" && r.decisionReason === "unsubscribed"));
+    assert.ok(run.results.some((r) => r.recipientRef === "lead:lead-api-4" && r.decisionReason === "channel_consent_missing"));
+    assert.ok(run.results.some((r) => r.recipientRef === "lead:lead-api-5" && r.decisionReason === "unsubscribed"));
     assert.ok(!run.results.some((r) => r.recipientAddress === "lead1@example.com"));
   } finally {
     (axios.get as unknown as typeof originalGet) = originalGet;
@@ -904,6 +1016,86 @@ test("resolves lead recipients from leads service when configured", async () => 
     } else {
       process.env.LEADS_SERVICE_TOKEN = originalLeadsToken;
     }
+    resetInMemoryState();
+  }
+});
+
+
+test("deduplicates converted leads against linked auth recipients", async () => {
+  resetInMemoryState();
+  const originalAuthUrl = process.env.AUTH_SERVICE_URL;
+  const originalLeadsUrl = process.env.LEADS_SERVICE_URL;
+  const originalGet = axios.get;
+  const originalPost = axios.post;
+  process.env.AUTH_SERVICE_URL = "http://auth-microservice:3370";
+  process.env.LEADS_SERVICE_URL = "http://leads-microservice:4400";
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+
+  const sentRecipients: string[] = [];
+  (axios.get as unknown as typeof originalGet) = (async (url: string) => {
+    if (url.startsWith("http://auth-microservice:3370/auth/marketing/recipients?")) {
+      return {
+        status: 200,
+        data: {
+          users: [
+            {
+              id: "auth-linked-1",
+              email: "auth-linked@example.com",
+              preferredChannel: "email",
+              fallbackChannels: [],
+              marketingConsents: { marketing: true }
+            }
+          ]
+        }
+      } as never;
+    }
+    if (url.startsWith("http://leads-microservice:4400/leads/marketing/recipients?")) {
+      return {
+        status: 200,
+        data: {
+          leads: [
+            {
+              id: "lead-converted-1",
+              contactMethods: [{ type: "email", value: "lead-converted@example.com", isPrimary: true }],
+              preferredChannel: "email",
+              fallbackChannels: [],
+              marketingConsent: true,
+              convertedAuthUserId: "auth-linked-1"
+            }
+          ]
+        }
+      } as never;
+    }
+    throw new Error(`unexpected url:${url}`);
+  }) as typeof originalGet;
+  (axios.post as unknown as typeof originalPost) = (async (_url: string, payload: unknown) => {
+    sentRecipients.push((payload as { recipient: string }).recipient);
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set(
+      "seg-1",
+      makeSegment({
+        sourceTypes: ["auth_users", "leads"],
+        rules: { cohort: "converted" }
+      })
+    );
+    campaigns.set("camp-1", makeCampaign());
+
+    const run = await executeCampaign("camp-1", "idem-converted-lead-dedupe");
+    assert.deepEqual(sentRecipients, ["auth-linked@example.com"]);
+    assert.equal(run.totalRecipients, 1);
+    assert.equal(run.totalSent, 1);
+    assert.ok(run.results.some((r) => r.recipientRef === "auth:auth-linked-1" && r.status === "sent"));
+    assert.ok(!run.results.some((r) => r.recipientRef === "lead:lead-converted-1"));
+  } finally {
+    (axios.get as unknown as typeof originalGet) = originalGet;
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    if (originalAuthUrl === undefined) delete process.env.AUTH_SERVICE_URL;
+    else process.env.AUTH_SERVICE_URL = originalAuthUrl;
+    if (originalLeadsUrl === undefined) delete process.env.LEADS_SERVICE_URL;
+    else process.env.LEADS_SERVICE_URL = originalLeadsUrl;
     resetInMemoryState();
   }
 });
@@ -1009,7 +1201,7 @@ test("filters auth recipients through configured order and catalog signals", asy
       } as never;
     }
 
-    if (url.startsWith("http://auth-microservice:3370/auth/admin/users?")) {
+    if (url.startsWith("http://auth-microservice:3370/auth/marketing/recipients?")) {
       return {
         status: 200,
         data: {
