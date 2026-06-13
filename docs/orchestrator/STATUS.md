@@ -1189,3 +1189,50 @@ Completed chunk:
 Next unfinished step:
 
 - Goal 11.3 - Add signal source client or event ingestion contract.
+
+## 2026-06-13 - Goal 11.3 Application Signal Source Client Contract
+
+Current focus: Goal 11 - Application Signal Segmentation Contracts, chunk 11.3.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Applications remain the source of truth for raw behavior facts and source object state.
+- Marketing reads app signals as segmentation inputs only, extracts source-owned subject references, and still resolves reachable recipients, contact data, consent, and unsubscribe state through auth/leads.
+- Notifications remains the only outbound delivery executor; this chunk does not add direct delivery, provider credentials, local campaign engines inside apps, or event-store ownership in Marketing.
+- No real campaign was executed against real recipients.
+
+Implementation evidence:
+
+- Added `app_signals` to the Marketing segment source contract and result source vocabulary.
+- Added a read-only application signal source client in `src/sources.ts`, enabled by `APPLICATION_SIGNAL_SOURCE_URL` and optional token/path/limit/timeout configuration.
+- The client calls the source endpoint with tenant/app/brand scope plus optional eventType, eventGroup, lifecycleStage, sourceService, sourceObject, subject, and occurred-time filters derived from segment rules.
+- The client validates `marketing.application_signal.v1` envelope basics before use: schema version, signalId, sourceService, appId match, eventType, UTC occurredAt, subject reference, and sourceObject.
+- The client extracts only `auth:user:<id>` and `leads:lead:<id>` subject refs and uses them to filter recipients resolved from auth/leads; anonymous, tenant-only, CRM/account, and unsupported subjects do not create delivery recipients in this chunk.
+- Source outages, missing source URL, malformed envelope data, unsupported schema, mismatched appId, missing subject/sourceObject, or invalid occurredAt fail safely as `app_signals_source_unavailable:*` evidence without notification delegation.
+- Added application signal source configuration keys to `.env.example`.
+- Updated `docs/agents/contracts/application-signal-contract.md` with the source client endpoint, query, response, configuration, subject extraction, and safe failure contract.
+- Updated `docs/agents/contracts/marketing-campaign-contract.md` to include `app_signals` as a segment source type with ownership guardrails.
+- Added tests for configured application signal filtering and safe missing-source failure.
+- Marked Goal 11.3 complete in `docs/orchestrator/GOALS.md` and advanced `STATE.json` to Goal 11.4.
+
+Validation:
+
+- Remote `npm run build` passed on 2026-06-13.
+- Remote `npm test` passed on 2026-06-13: 35 tests, 35 passing.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of raw app behavior truth, source object state, contact data, consent/preferences, tenant registry truth, CRM/account master data, provider delivery, or notification channel registry state.
+- App signals are used only as recipient filters before auth/leads consent and unsubscribe enforcement.
+- Anonymous and unsupported signal subjects do not produce real recipients.
+- App-signal source failures fail safely and do not call notifications.
+- Owner approval, consent, unsubscribe, frequency caps, throttling, max-send limits, idempotency, max-30 notification chunking, registry validation, recipient resolution, and notification delegation remain enforced.
+
+Completed chunk:
+
+- Goal 11.3 - Add signal source client or event ingestion contract.
+
+Next unfinished step:
+
+- Goal 11.4 - Add segment rules for app events and lifecycle states.

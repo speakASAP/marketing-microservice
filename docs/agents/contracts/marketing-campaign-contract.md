@@ -53,6 +53,7 @@ Supported source types:
 - `auth_users`
 - `leads`
 - `orders`
+- `app_signals`
 
 ## Approval Model
 
@@ -113,6 +114,10 @@ Marketing audit logs must include ISO timestamps, `duration_ms`, service name, c
 - Frequency caps must be enforced before notification calls.
 - Recipient delivery work must be chunked at `<=30`.
 - Missing notification configuration must fail safely without direct sending.
+
+## Application Signal Segment Source
+
+Segments may include `app_signals` as a read-only source type. Marketing calls the application signal source contract, validates `marketing.application_signal.v1` envelopes, extracts source-owned subject refs, then resolves reachable recipients through auth/leads before delivery. `app_signals` does not create contacts, own raw app truth, replace consent, or bypass approval/safety gates.
 
 ## Tenant/App Registry Scope
 

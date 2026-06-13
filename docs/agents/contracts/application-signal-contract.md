@@ -148,6 +148,89 @@ Signals must reference subjects without moving contact truth into Marketing. The
 
 Marketing may use quality fields for dry-run evidence or safe skips, but quality fields must not replace source ownership or consent checks.
 
+
+## Signal Source Client Contract
+
+Goal 11.3 adds a read-only application signal source client. Marketing uses this client only when a segment includes `app_signals` in `sourceTypes`.
+
+Default read endpoint:
+
+```text
+GET {APPLICATION_SIGNAL_SOURCE_URL}{APPLICATION_SIGNAL_SOURCE_PATH:-/marketing/application-signals}
+```
+
+Required query scope sent by Marketing:
+
+- `tenantId`
+- `appId`
+- `brandId`
+- `limit`
+
+Optional query scope sent when present on the campaign or segment rules:
+
+- `businessId`
+- `environment`
+- `productLine`
+- `lifecycleScope`
+- `eventType`
+- `eventGroup`
+- `lifecycleStage`
+- `sourceService`
+- `sourceObjectType`
+- `sourceObjectId`
+- `subjectRef`
+- `occurredSince`
+- `occurredUntil`
+
+Accepted response shapes:
+
+```json
+{
+  "signals": [
+    {
+      "schemaVersion": "marketing.application_signal.v1",
+      "signalId": "flipflop:product:123:viewed",
+      "sourceService": "flipflop",
+      "appId": "flipflop",
+      "tenantId": "statex",
+      "brandId": "statex-main",
+      "subject": {
+        "type": "registered_user",
+        "ref": "auth:user:123",
+        "sourceOwner": "auth",
+        "sourceId": "123"
+      },
+      "eventType": "product.viewed",
+      "sourceObject": {
+        "type": "product",
+        "id": "123"
+      },
+      "occurredAt": "2026-06-13T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+Marketing may also accept existing list wrappers already used by source clients, such as `items`, `data`, `results`, or `recipients`, but `signals` is the preferred contract field for application signals.
+
+The client validates the common envelope fields before using a signal. It extracts only source-owned subject references that can be resolved later through recipient owners:
+
+- `auth:user:<id>` becomes an auth recipient filter reference.
+- `leads:lead:<id>` becomes a leads recipient filter reference.
+- Anonymous, tenant-only, CRM/account, and unsupported subjects do not create delivery recipients in this chunk.
+
+The app-signal client filters recipients already resolved from auth/leads. It does not create contacts, store raw event truth, write event-ingestion state, infer consent, or send notifications.
+
+Runtime configuration keys:
+
+- `APPLICATION_SIGNAL_SOURCE_URL`
+- `APPLICATION_SIGNAL_SOURCE_TOKEN`
+- `APPLICATION_SIGNAL_SOURCE_PATH`
+- `APPLICATION_SIGNAL_SOURCE_LIMIT`
+- `APPLICATION_SIGNAL_SOURCE_TIMEOUT_MS`
+
+Missing source URL, source outage, malformed envelope data, unsupported schema version, mismatched appId, missing subject/sourceObject, or non-UTC `occurredAt` all fail safely with `app_signals_source_unavailable:*` evidence and no notification delegation.
+
 ## Safe Failure Rules
 
 - Signal source outage must fail dry-run or execution safely with evidence.

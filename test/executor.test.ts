@@ -1341,6 +1341,172 @@ test("fails orders signal safely without notification delivery", async () => {
   }
 });
 
+
+
+test("filters auth recipients through configured application signals", async () => {
+  resetInMemoryState();
+  const originalAuthUrl = process.env.AUTH_SERVICE_URL;
+  const originalSignalUrl = process.env.APPLICATION_SIGNAL_SOURCE_URL;
+  const originalSignalToken = process.env.APPLICATION_SIGNAL_SOURCE_TOKEN;
+  const originalGet = axios.get;
+  const originalPost = axios.post;
+  process.env.AUTH_SERVICE_URL = "http://auth-microservice:3370";
+  process.env.APPLICATION_SIGNAL_SOURCE_URL = "http://app-signal-service:4700";
+  process.env.APPLICATION_SIGNAL_SOURCE_TOKEN = "signal-token";
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+
+  const getCalls: Array<{ url: string; headers?: Record<string, string> }> = [];
+  const sentRecipients: string[] = [];
+  (axios.get as unknown as typeof originalGet) = (async (url: string, config?: unknown) => {
+    getCalls.push({
+      url,
+      headers: (config as { headers?: Record<string, string> } | undefined)?.headers
+    });
+
+    if (url.startsWith("http://app-signal-service:4700/marketing/application-signals?")) {
+      return {
+        status: 200,
+        data: {
+          signals: [
+            {
+              schemaVersion: "marketing.application_signal.v1",
+              signalId: "flipflop:product:auth-buyer:viewed",
+              sourceService: "flipflop",
+              appId: "flipflop",
+              tenantId: "statex",
+              brandId: "statex-main",
+              subject: { type: "registered_user", ref: "auth:user:auth-buyer", sourceOwner: "auth", sourceId: "auth-buyer" },
+              eventType: "product.viewed",
+              sourceObject: { type: "product", id: "product-1" },
+              occurredAt: "2026-06-13T00:00:00.000Z"
+            },
+            {
+              schemaVersion: "marketing.application_signal.v1",
+              signalId: "flipflop:product:anon:viewed",
+              sourceService: "flipflop",
+              appId: "flipflop",
+              tenantId: "statex",
+              brandId: "statex-main",
+              subject: { type: "anonymous", ref: "anonymous:flipflop:session-1", sourceOwner: "flipflop", sourceId: "session-1" },
+              eventType: "product.viewed",
+              sourceObject: { type: "product", id: "product-1" },
+              occurredAt: "2026-06-13T00:00:00.000Z"
+            }
+          ]
+        }
+      } as never;
+    }
+
+    if (url.startsWith("http://auth-microservice:3370/auth/marketing/recipients?")) {
+      return {
+        status: 200,
+        data: {
+          users: [
+            {
+              id: "auth-buyer",
+              email: "buyer@example.com",
+              preferredChannel: "email",
+              fallbackChannels: [],
+              marketingConsents: { marketing: true }
+            },
+            {
+              id: "auth-other",
+              email: "other@example.com",
+              preferredChannel: "email",
+              fallbackChannels: [],
+              marketingConsents: { marketing: true }
+            }
+          ]
+        }
+      } as never;
+    }
+
+    throw new Error(`unexpected get ${url}`);
+  }) as typeof originalGet;
+  (axios.post as unknown as typeof originalPost) = (async (_url: string, payload: unknown) => {
+    sentRecipients.push((payload as { recipient: string }).recipient);
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set(
+      "seg-1",
+      makeSegment({
+        sourceTypes: ["app_signals", "auth_users"],
+        rules: {
+          signalEventType: "product.viewed",
+          signalSourceService: "flipflop",
+          signalOccurredSince: "2026-06-01T00:00:00.000Z"
+        }
+      })
+    );
+    campaigns.set("camp-1", makeCampaign({ appId: "flipflop" }));
+
+    const run = await executeCampaign("camp-1", "idem-app-signal-source");
+    const signalCall = getCalls.find((call) => call.url.startsWith("http://app-signal-service:4700/marketing/application-signals?"));
+    assert.ok(signalCall);
+    assert.equal(signalCall.headers?.Authorization, "Bearer signal-token");
+    assert.ok(signalCall.url.includes("tenantId=statex"));
+    assert.ok(signalCall.url.includes("appId=flipflop"));
+    assert.ok(signalCall.url.includes("brandId=statex-main"));
+    assert.ok(signalCall.url.includes("eventType=product.viewed"));
+    assert.ok(signalCall.url.includes("sourceService=flipflop"));
+    assert.deepEqual(sentRecipients, ["buyer@example.com"]);
+    assert.equal(run.totalRecipients, 1);
+    assert.equal(run.totalSent, 1);
+    assert.ok(!run.results.some((r) => r.recipientAddress === "other@example.com"));
+  } finally {
+    (axios.get as unknown as typeof originalGet) = originalGet;
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    if (originalAuthUrl === undefined) delete process.env.AUTH_SERVICE_URL;
+    else process.env.AUTH_SERVICE_URL = originalAuthUrl;
+    if (originalSignalUrl === undefined) delete process.env.APPLICATION_SIGNAL_SOURCE_URL;
+    else process.env.APPLICATION_SIGNAL_SOURCE_URL = originalSignalUrl;
+    if (originalSignalToken === undefined) delete process.env.APPLICATION_SIGNAL_SOURCE_TOKEN;
+    else process.env.APPLICATION_SIGNAL_SOURCE_TOKEN = originalSignalToken;
+    resetInMemoryState();
+  }
+});
+
+test("fails application signal source safely without notification delivery", async () => {
+  resetInMemoryState();
+  const originalSignalUrl = process.env.APPLICATION_SIGNAL_SOURCE_URL;
+  const originalPost = axios.post;
+  delete process.env.APPLICATION_SIGNAL_SOURCE_URL;
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+
+  let postCalls = 0;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set(
+      "seg-1",
+      makeSegment({
+        sourceTypes: ["app_signals", "auth_users"],
+        rules: { signalEventType: "product.viewed" }
+      })
+    );
+    campaigns.set("camp-1", makeCampaign({ appId: "flipflop" }));
+
+    const run = await executeCampaign("camp-1", "idem-app-signal-failure");
+    assert.equal(run.totalRecipients, 0);
+    assert.equal(run.totalSent, 0);
+    assert.equal(postCalls, 0);
+    assert.equal(run.results.length, 1);
+    assert.equal(run.results[0].status, "failed");
+    assert.equal(run.results[0].recipientRef, "app_signals:source");
+    assert.match(run.results[0].decisionReason, /^app_signals_source_unavailable:/);
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    if (originalSignalUrl === undefined) delete process.env.APPLICATION_SIGNAL_SOURCE_URL;
+    else process.env.APPLICATION_SIGNAL_SOURCE_URL = originalSignalUrl;
+    resetInMemoryState();
+  }
+});
+
 test("fails catalog signal safely without notification delivery", async () => {
   resetInMemoryState();
   const originalAuthUrl = process.env.AUTH_SERVICE_URL;

@@ -212,7 +212,7 @@ Chunks:
 
 - [x] 11.1 Define common application signal envelope.
 - [x] 11.2 Define signal catalog for Flipflop, SpeakASap, Marathon, Bazos, Rent-A-Box, RunLayer, Shop Assistant, and Statics.
-- [ ] 11.3 Add signal source client or event ingestion contract.
+- [x] 11.3 Add signal source client or event ingestion contract.
 - [ ] 11.4 Add segment rules for app events and lifecycle states.
 - [ ] 11.5 Add dry-run preview support and failure evidence.
 

@@ -1,8 +1,8 @@
 export type ContactOwner = "auth" | "leads";
-export type ResultSource = ContactOwner | "orders" | "catalog" | "system";
+export type ResultSource = ContactOwner | "orders" | "catalog" | "app_signals" | "system";
 export type Channel = "email" | "telegram" | "whatsapp";
 export type Purpose = "marketing" | "retention" | "transactional-not-marketing";
-export type SegmentSource = "auth_users" | "leads" | "orders";
+export type SegmentSource = "auth_users" | "leads" | "orders" | "app_signals";
 export type RegistryEnvironment = "production" | "staging" | "development" | "test";
 export type RegistryStatus = "active" | "suspended" | "archived" | "test-only";
 export type CampaignStatus =

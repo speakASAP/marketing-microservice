@@ -3,7 +3,7 @@ import { Campaign, CampaignStatus, Channel, ContactOwner, Purpose, RegistryEnvir
 
 const CHANNELS: Channel[] = ["email", "telegram", "whatsapp"];
 const PURPOSES: Purpose[] = ["marketing", "retention", "transactional-not-marketing"];
-const SEGMENT_SOURCES: SegmentSource[] = ["auth_users", "leads", "orders"];
+const SEGMENT_SOURCES: SegmentSource[] = ["auth_users", "leads", "orders", "app_signals"];
 const CAMPAIGN_STATUSES: CampaignStatus[] = ["draft", "scheduled", "running", "paused", "completed", "failed", "archived"];
 const READ_ONLY_APPROVAL_FIELDS = ["approvalStatus", "approvedBy", "approvedAt", "approvalNote"];
 const REGISTRY_ENVIRONMENTS: RegistryEnvironment[] = ["production", "staging", "development", "test"];
