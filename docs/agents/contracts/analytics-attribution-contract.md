@@ -60,6 +60,47 @@ Future event emission should use a stable envelope:
 - Attribution dashboards should distinguish sent, skipped, failed, delivered, converted, and revenue/value attributed.
 - Recipient identifiers must use stable references and avoid exposing raw contact addresses in analytics events.
 
+## Goal 18 Read-Only Analytics Aggregation
+
+Marketing may build read-only summary models from Marketing-owned campaign and run state. The initial safe aggregation surface is code-only and may group existing records by:
+
+- Tenant, app, brand, business, product line, lifecycle scope, environment, campaign, segment, lifecycle stage, campaign family, channel, decision reason, and time range.
+- Outcome statuses already stored by Marketing: `sent`, `skipped`, `failed`, `would_send`, and `queued`.
+- Campaign/run identifiers, idempotency keys, correlation IDs, requested/effective channels, source-owner recipient references, and sanitized decision reasons.
+
+The aggregation surface must not store or display raw recipient addresses, message subjects/bodies, provider credentials, service tokens, authorization headers, notification-provider payloads, source-owned contact/preference truth, order truth, catalog product truth, CRM master data, or raw application event truth.
+
+When no external attribution facts are supplied, delivered, converted, and attributed value fields must remain explicitly unavailable with `external_analytics_required` evidence instead of being inferred from Marketing sends.
+
+## External Attribution Fact Contract
+
+Delivery, conversion, and value facts remain externally owned. A future dashboard or analytics-service integration may join externally supplied facts to Marketing summaries only by stable references:
+
+- `sourceService`
+- `factType`: `delivered`, `converted`, or `attributed_value`
+- `occurredAt`
+- `campaignId`
+- Optional `runId`
+- Optional `correlationId`
+- Optional `count`
+- Optional `value`
+- Optional `currency`
+
+`delivered` facts should come from notifications-microservice or another approved delivery-read source. `converted` and `attributed_value` facts should come from an analytics/customer-insights service or the source-owning app/domain through an approved analytics contract. Marketing may aggregate these supplied facts for display, but the source service remains the truth owner.
+
+## Normalized Marketing Facts
+
+Read-only normalized facts emitted or exported from Marketing must be sanitized. Supported initial fact categories are:
+
+- `marketing.campaign.run.recorded`
+- `marketing.recipient.outcome.recorded`
+
+These facts may include campaign/run IDs, idempotency key, tenant/app/brand scope, segment ID, recipient source owner, stable recipient reference, correlation ID, requested/effective channel, status, decision reason, lifecycle stage, campaign family, duration, dry-run flag, total recipient count, total sent count, and approval status evidence. They must not include raw addresses, message content, provider credentials, tokens, or notification-provider payloads.
+
+## Dashboard UI Gate
+
+The protected analytics dashboard UI remains dependency-gated until Goal 15 admin auth/RBAC is conclusively reconciled and shared Goal 16/17 admin navigation is stable. Until then, Goal 18 implementation is limited to contracts, normalized fact helpers, read-only aggregation helpers, and tests that do not expose browser admin data.
+
 ## Guardrails
 
 - Do not log or emit secrets, provider credentials, raw authorization headers, message bodies, or raw recipient addresses.

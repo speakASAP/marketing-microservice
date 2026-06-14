@@ -16,7 +16,7 @@
 | Shop Assistant | Cart, recommendation, merchant setup, and product intent signals | Optional application signal source | App must not become campaign engine |
 | Statics | Report, dashboard, workspace, and subscription usage signals | Optional application signal source | App must not become campaign engine |
 | tenant/app/business registry | Tenant, business, app, brand, sender identity, locale/timezone, policy references | Validate canonical tenant/app/brand scope | Marketing stores references only, not registry truth |
-| future CRM/account service | Accounts, companies, opportunities, account owners, health, onboarding, renewal, customer-success notes | Read B2B account lifecycle signals | Marketing must not become CRM master database |
+| future CRM/account service | Accounts, companies, opportunities, account owners, health, onboarding, renewal, customer-success notes | Read B2B account, opportunity, owner, lifecycle, health, onboarding, renewal, upsell, and winback signals as segmentation inputs through disabled-by-default `crm_accounts` source | Marketing must not become CRM master database; production use requires configured `CRM_ACCOUNT_SERVICE_URL` and source-owned contact refs only |
 | analytics/customer-insights service | Attribution, funnels, cohorts, LTV, cross-app read models | Consume analytics read models and emit campaign facts | Marketing campaign facts are not complete customer truth |
 | database-server | PostgreSQL storage | Persist campaigns, segments, runs, outcomes | Do not store secrets in application tables |
 | logging-microservice | Centralized logs | Send structured operational/audit logs | Do not log secrets or sensitive tokens |
@@ -31,6 +31,7 @@
 - `docs/agents/contracts/unsubscribe-source-write-contract.md`
 - `docs/agents/contracts/application-portfolio-taxonomy.md`
 - `docs/agents/contracts/crm-account-boundary-contract.md`
+- `docs/agents/contracts/crm-account-signal-contract.md`
 - `docs/agents/contracts/tenant-app-registry-contract.md`
 - `docs/agents/contracts/analytics-attribution-contract.md`
 - `docs/agents/contracts/application-signal-contract.md`
@@ -38,6 +39,7 @@
 - `docs/agents/contracts/marketing-campaign-contract.md`
 - `docs/agents/contracts/preferences-consent-contract.md`
 - `docs/agents/contracts/channel-registry-contract.md`
+- `docs/agents/contracts/production-governance-readiness-contract.md`
 
 ## Current Local API Surface
 
@@ -54,9 +56,20 @@
 - `POST /campaigns/:id/execute`
 - `POST /campaigns/:id/dry-run`
 - `GET /executions`
+- `GET /campaign-catalog/blueprints`
+- `GET /campaign-catalog/blueprints/:blueprintId`
+- `GET /campaign-catalog/campaigns`
+- `POST /journeys`
+- `GET /journeys`
+- `GET /journeys/:id`
+- `PUT /journeys/:id`
+- `POST /journeys/:id/approve`
+- `POST /journeys/:id/activate`
+- `POST /journeys/:id/dry-run`
+- `DELETE /journeys/:id`
 - `GET /preferences/:owner/:recipientId`
 - `POST /preferences/unsubscribe`
-- `POST /scheduler/run-due`
+- `POST /scheduler/run-due` claims due scheduled campaigns and due active journey steps; journey steps use persisted claims and deterministic campaign-executor idempotency.
 
 ## Verification Commands
 

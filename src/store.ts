@@ -1,11 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Pool } from "pg";
-import { Campaign, CampaignApprovalStatus, DeliveryResult, ExecutionRun, Segment } from "./types";
+import { buildJourneyStepDecisionEvidence } from "./journey-audit";
+import { Campaign, CampaignApprovalStatus, DeliveryResult, ExecutionRun, Journey, JourneyStepClaim, Segment } from "./types";
 
 export const segments = new Map<string, Segment>();
 export const campaigns = new Map<string, Campaign>();
 export const runs = new Map<string, ExecutionRun>();
+export const journeys = new Map<string, Journey>();
+export const journeyStepClaims = new Map<string, JourneyStepClaim>();
 export const sendHistory = new Map<string, string[]>();
 
 export interface MarketingStore {
@@ -19,11 +22,17 @@ export interface MarketingStore {
   listCampaigns(filters?: Partial<Pick<Campaign, "tenantId" | "appId" | "brandId" | "businessId" | "productLine" | "lifecycleScope" | "environment">>): Promise<Campaign[]>;
   saveCampaign(campaign: Campaign): Promise<Campaign>;
   deleteCampaign(id: string): Promise<boolean>;
+  getJourney(id: string): Promise<Journey | undefined>;
+  listJourneys(filters?: Partial<Pick<Journey, "tenantId" | "appId" | "brandId" | "businessId" | "productLine" | "lifecycleScope" | "environment">>): Promise<Journey[]>;
+  saveJourney(journey: Journey): Promise<Journey>;
+  deleteJourney(id: string): Promise<boolean>;
   findRunByIdempotency(campaignId: string, idempotencyKey: string): Promise<ExecutionRun | undefined>;
   listRuns(): Promise<ExecutionRun[]>;
   saveRun(run: ExecutionRun): Promise<ExecutionRun>;
   claimDueScheduledCampaigns(schedulerOwner: string, now: string, lockUntil: string, limit: number): Promise<Campaign[]>;
   completeScheduledCampaign(campaignId: string, scheduleAt: string | undefined, status: Campaign["status"]): Promise<Campaign | undefined>;
+  claimDueJourneySteps(schedulerOwner: string, now: string, lockUntil: string, limit: number): Promise<JourneyStepClaim[]>;
+  completeJourneyStepClaim(claimId: string, runId: string | null, status: "completed" | "failed", error?: string | null): Promise<JourneyStepClaim | undefined>;
   getSendHistory(recipientRef: string): Promise<string[]>;
   recordSend(recipientRef: string, campaignId: string, runId: string, sentAt: string): Promise<void>;
 }
@@ -35,6 +44,8 @@ export class InMemoryMarketingStore implements MarketingStore {
     segments.clear();
     campaigns.clear();
     runs.clear();
+    journeys.clear();
+    journeyStepClaims.clear();
     sendHistory.clear();
   }
 
@@ -71,6 +82,24 @@ export class InMemoryMarketingStore implements MarketingStore {
   async deleteCampaign(id: string): Promise<boolean> {
     return campaigns.delete(id);
   }
+
+  async getJourney(id: string): Promise<Journey | undefined> {
+    return journeys.get(id);
+  }
+
+  async listJourneys(filters: Partial<Pick<Journey, "tenantId" | "appId" | "brandId" | "businessId" | "productLine" | "lifecycleScope" | "environment">> = {}): Promise<Journey[]> {
+    return Array.from(journeys.values()).filter((journey) => matchesScopeFilters(journey, filters));
+  }
+
+  async saveJourney(journey: Journey): Promise<Journey> {
+    journeys.set(journey.journeyId, journey);
+    return journey;
+  }
+
+  async deleteJourney(id: string): Promise<boolean> {
+    return journeys.delete(id);
+  }
+
 
   async findRunByIdempotency(campaignId: string, idempotencyKey: string): Promise<ExecutionRun | undefined> {
     return Array.from(runs.values()).find((r) => r.campaignId === campaignId && r.idempotencyKey === idempotencyKey);
@@ -128,6 +157,62 @@ export class InMemoryMarketingStore implements MarketingStore {
     return updated;
   }
 
+  async claimDueJourneySteps(schedulerOwner: string, now: string, lockUntil: string, limit: number): Promise<JourneyStepClaim[]> {
+    const nowTime = new Date(now).getTime();
+    const claimed: JourneyStepClaim[] = [];
+    const dueSteps = Array.from(journeys.values())
+      .filter((journey) => journey.status === "active" && journey.approvalStatus === "approved" && Boolean(journey.approvedBy) && Boolean(journey.approvedAt) && Boolean(journey.activatedAt))
+      .flatMap((journey) => journey.steps.map((step) => {
+        const dueAt = new Date(new Date(journey.activatedAt as string).getTime() + step.delayMinutes * 60_000).toISOString();
+        return { journey, step, dueAt };
+      }))
+      .filter(({ dueAt }) => new Date(dueAt).getTime() <= nowTime)
+      .sort((a, b) => a.dueAt.localeCompare(b.dueAt) || a.journey.journeyId.localeCompare(b.journey.journeyId) || a.step.stepId.localeCompare(b.step.stepId));
+
+    for (const due of dueSteps) {
+      if (claimed.length >= limit) break;
+      const id = journeyStepClaimId(due.journey.journeyId, due.step.stepId, due.dueAt);
+      const existing = journeyStepClaims.get(id);
+      if (existing?.status === "completed" || existing?.status === "failed") continue;
+      if (existing?.schedulerLockUntil && new Date(existing.schedulerLockUntil).getTime() > nowTime) continue;
+      const claim: JourneyStepClaim = {
+        id,
+        journeyId: due.journey.journeyId,
+        stepId: due.step.stepId,
+        campaignId: due.step.campaignId,
+        dueAt: due.dueAt,
+        schedulerOwner,
+        schedulerLockUntil: lockUntil,
+        status: "claimed",
+        runId: existing?.runId ?? null,
+        error: null,
+        claimedAt: now,
+        completedAt: null,
+        decisionEvidence: buildJourneyStepDecisionEvidence(due.journey, due.step, due.dueAt, now),
+        journey: due.journey,
+        step: due.step
+      };
+      journeyStepClaims.set(id, claim);
+      claimed.push(claim);
+    }
+    return claimed;
+  }
+
+  async completeJourneyStepClaim(claimId: string, runId: string | null, status: "completed" | "failed", error?: string | null): Promise<JourneyStepClaim | undefined> {
+    const existing = journeyStepClaims.get(claimId);
+    if (!existing) return undefined;
+    const completed: JourneyStepClaim = {
+      ...existing,
+      status,
+      runId,
+      error: error ?? null,
+      completedAt: new Date().toISOString(),
+      schedulerLockUntil: new Date().toISOString()
+    };
+    journeyStepClaims.set(claimId, completed);
+    return completed;
+  }
+
   async getSendHistory(recipientRef: string): Promise<string[]> {
     return sendHistory.get(recipientRef) ?? [];
   }
@@ -168,6 +253,21 @@ function asJsonObject<T extends object>(value: unknown): T {
   return value as T;
 }
 
+function journeyStepDecisionEvidence(
+  value: unknown,
+  journey: Journey,
+  step: Journey["steps"][number],
+  dueAt: string
+): JourneyStepClaim["decisionEvidence"] {
+  if (value !== null && value !== undefined) {
+    const evidence = asJsonObject<Partial<JourneyStepClaim["decisionEvidence"]>>(value);
+    if (evidence.decision === "execute_campaign_step" && typeof evidence.idempotencyKey === "string") {
+      return evidence as JourneyStepClaim["decisionEvidence"];
+    }
+  }
+  return buildJourneyStepDecisionEvidence(journey, step, dueAt);
+}
+
 function iso(value: unknown): string | undefined {
   if (!value) return undefined;
   if (value instanceof Date) return value.toISOString();
@@ -192,7 +292,7 @@ export class PostgresMarketingStore implements MarketingStore {
   }
 
   async reset(): Promise<void> {
-    await this.pool.query("truncate table marketing_send_history, marketing_idempotency_keys, marketing_suppression_evidence, marketing_delivery_outcomes, marketing_campaign_runs, marketing_campaigns, marketing_segments restart identity cascade");
+    await this.pool.query("truncate table marketing_journey_step_claims, marketing_journeys, marketing_send_history, marketing_idempotency_keys, marketing_suppression_evidence, marketing_delivery_outcomes, marketing_campaign_runs, marketing_campaigns, marketing_segments restart identity cascade");
   }
 
   async getSegment(id: string): Promise<Segment | undefined> {
@@ -250,7 +350,7 @@ export class PostgresMarketingStore implements MarketingStore {
 
   async saveCampaign(campaign: Campaign): Promise<Campaign> {
     await this.pool.query(
-      "insert into marketing_campaigns (campaign_id, tenant, tenant_id, app_id, brand_id, business_id, environment, default_locale, timezone, product_line, lifecycle_scope, legal_sender_identity, policy_ref, name, segment_id, description, purpose, primary_channel, fallback_channels, channel_key, template_ref, schedule_at, throttle_per_minute, frequency_cap_per_day, message, status, approval_status, approved_by, approved_at, approval_note, scheduler_lock_owner, scheduler_lock_until, last_scheduled_run_at, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20, $21, $22, $23, $24, $25::jsonb, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35) on conflict (campaign_id) do update set tenant = excluded.tenant, tenant_id = excluded.tenant_id, app_id = excluded.app_id, brand_id = excluded.brand_id, business_id = excluded.business_id, environment = excluded.environment, default_locale = excluded.default_locale, timezone = excluded.timezone, product_line = excluded.product_line, lifecycle_scope = excluded.lifecycle_scope, legal_sender_identity = excluded.legal_sender_identity, policy_ref = excluded.policy_ref, name = excluded.name, segment_id = excluded.segment_id, description = excluded.description, purpose = excluded.purpose, primary_channel = excluded.primary_channel, fallback_channels = excluded.fallback_channels, channel_key = excluded.channel_key, template_ref = excluded.template_ref, schedule_at = excluded.schedule_at, throttle_per_minute = excluded.throttle_per_minute, frequency_cap_per_day = excluded.frequency_cap_per_day, message = excluded.message, status = excluded.status, approval_status = excluded.approval_status, approved_by = excluded.approved_by, approved_at = excluded.approved_at, approval_note = excluded.approval_note, scheduler_lock_owner = excluded.scheduler_lock_owner, scheduler_lock_until = excluded.scheduler_lock_until, last_scheduled_run_at = excluded.last_scheduled_run_at, updated_at = excluded.updated_at",
+      "insert into marketing_campaigns (campaign_id, tenant, tenant_id, app_id, brand_id, business_id, environment, default_locale, timezone, product_line, lifecycle_scope, legal_sender_identity, policy_ref, name, segment_id, description, purpose, primary_channel, fallback_channels, channel_key, template_ref, schedule_at, throttle_per_minute, frequency_cap_per_day, catalog_metadata, message, status, approval_status, approved_by, approved_at, approval_note, scheduler_lock_owner, scheduler_lock_until, last_scheduled_run_at, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20, $21, $22, $23, $24, $25::jsonb, $26::jsonb, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36) on conflict (campaign_id) do update set tenant = excluded.tenant, tenant_id = excluded.tenant_id, app_id = excluded.app_id, brand_id = excluded.brand_id, business_id = excluded.business_id, environment = excluded.environment, default_locale = excluded.default_locale, timezone = excluded.timezone, product_line = excluded.product_line, lifecycle_scope = excluded.lifecycle_scope, legal_sender_identity = excluded.legal_sender_identity, policy_ref = excluded.policy_ref, name = excluded.name, segment_id = excluded.segment_id, description = excluded.description, purpose = excluded.purpose, primary_channel = excluded.primary_channel, fallback_channels = excluded.fallback_channels, channel_key = excluded.channel_key, template_ref = excluded.template_ref, schedule_at = excluded.schedule_at, throttle_per_minute = excluded.throttle_per_minute, frequency_cap_per_day = excluded.frequency_cap_per_day, catalog_metadata = excluded.catalog_metadata, message = excluded.message, status = excluded.status, approval_status = excluded.approval_status, approved_by = excluded.approved_by, approved_at = excluded.approved_at, approval_note = excluded.approval_note, scheduler_lock_owner = excluded.scheduler_lock_owner, scheduler_lock_until = excluded.scheduler_lock_until, last_scheduled_run_at = excluded.last_scheduled_run_at, updated_at = excluded.updated_at",
       [
         campaign.campaignId,
         campaign.tenant,
@@ -276,6 +376,7 @@ export class PostgresMarketingStore implements MarketingStore {
         campaign.scheduleAt ?? null,
         campaign.throttlePerMinute ?? null,
         campaign.frequencyCapPerDay,
+        JSON.stringify(campaign.catalogMetadata ?? null),
         JSON.stringify(campaign.message),
         campaign.status,
         campaign.approvalStatus ?? "pending",
@@ -294,6 +395,58 @@ export class PostgresMarketingStore implements MarketingStore {
 
   async deleteCampaign(id: string): Promise<boolean> {
     const result = await this.pool.query("delete from marketing_campaigns where campaign_id = $1", [id]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+
+  async getJourney(id: string): Promise<Journey | undefined> {
+    const result = await this.pool.query("select * from marketing_journeys where journey_id = $1", [id]);
+    return result.rows[0] ? rowToJourney(result.rows[0]) : undefined;
+  }
+
+  async listJourneys(filters: Partial<Pick<Journey, "tenantId" | "appId" | "brandId" | "businessId" | "productLine" | "lifecycleScope" | "environment">> = {}): Promise<Journey[]> {
+    const scoped = scopeFiltersWhere(filters);
+    const result = await this.pool.query("select * from marketing_journeys" + scoped.where + " order by created_at asc, journey_id asc", scoped.values);
+    return result.rows.map(rowToJourney);
+  }
+
+  async saveJourney(journey: Journey): Promise<Journey> {
+    await this.pool.query(
+      "insert into marketing_journeys (journey_id, tenant_id, app_id, brand_id, business_id, environment, default_locale, timezone, product_line, lifecycle_scope, legal_sender_identity, policy_ref, name, description, trigger, steps, exit_rules, suppression_rules, status, approval_status, approved_by, approved_at, approval_note, activated_at, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb, $19, $20, $21, $22, $23, $24, $25, $26) on conflict (journey_id) do update set tenant_id = excluded.tenant_id, app_id = excluded.app_id, brand_id = excluded.brand_id, business_id = excluded.business_id, environment = excluded.environment, default_locale = excluded.default_locale, timezone = excluded.timezone, product_line = excluded.product_line, lifecycle_scope = excluded.lifecycle_scope, legal_sender_identity = excluded.legal_sender_identity, policy_ref = excluded.policy_ref, name = excluded.name, description = excluded.description, trigger = excluded.trigger, steps = excluded.steps, exit_rules = excluded.exit_rules, suppression_rules = excluded.suppression_rules, status = excluded.status, approval_status = excluded.approval_status, approved_by = excluded.approved_by, approved_at = excluded.approved_at, approval_note = excluded.approval_note, activated_at = excluded.activated_at, updated_at = excluded.updated_at",
+      [
+        journey.journeyId,
+        journey.tenantId,
+        journey.appId,
+        journey.brandId,
+        journey.businessId ?? null,
+        journey.environment ?? null,
+        journey.defaultLocale ?? null,
+        journey.timezone ?? null,
+        journey.productLine ?? null,
+        journey.lifecycleScope ?? null,
+        journey.legalSenderIdentity ?? null,
+        journey.policyRef ?? null,
+        journey.name,
+        journey.description ?? null,
+        JSON.stringify(journey.trigger),
+        JSON.stringify(journey.steps),
+        JSON.stringify(journey.exitRules),
+        JSON.stringify(journey.suppressionRules),
+        journey.status,
+        journey.approvalStatus ?? "pending",
+        journey.approvedBy ?? null,
+        journey.approvedAt ?? null,
+        journey.approvalNote ?? null,
+        journey.activatedAt ?? null,
+        journey.createdAt,
+        journey.updatedAt
+      ]
+    );
+    return journey;
+  }
+
+  async deleteJourney(id: string): Promise<boolean> {
+    const result = await this.pool.query("delete from marketing_journeys where journey_id = $1", [id]);
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -446,6 +599,81 @@ export class PostgresMarketingStore implements MarketingStore {
     return result.rows[0] ? rowToCampaign(result.rows[0]) : undefined;
   }
 
+  async claimDueJourneySteps(schedulerOwner: string, now: string, lockUntil: string, limit: number): Promise<JourneyStepClaim[]> {
+    const result = await this.pool.query(
+      `with due as (
+        select
+          j.journey_id,
+          step.value->>'stepId' as step_id,
+          step.value->>'campaignId' as campaign_id,
+          j.activated_at + make_interval(mins => ((step.value->>'delayMinutes')::int)) as due_at
+        from marketing_journeys j
+        cross join lateral jsonb_array_elements(j.steps) as step(value)
+        where j.status = 'active'
+          and j.approval_status = 'approved'
+          and j.approved_by is not null
+          and j.approved_at is not null
+          and j.activated_at is not null
+          and j.activated_at + make_interval(mins => ((step.value->>'delayMinutes')::int)) <= $1
+        order by due_at asc, j.journey_id asc, step.value->>'stepId' asc
+        limit $4
+      ), claimed as (
+        insert into marketing_journey_step_claims (
+          id, journey_id, step_id, campaign_id, due_at, scheduler_lock_owner, scheduler_lock_until, status, claimed_at
+        )
+        select
+          'journey-step:' || journey_id || ':' || step_id || ':' || to_char(due_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+          journey_id,
+          step_id,
+          campaign_id,
+          due_at,
+          $2,
+          $3,
+          'claimed',
+          $1
+        from due
+        on conflict (journey_id, step_id, due_at) do update
+          set scheduler_lock_owner = excluded.scheduler_lock_owner,
+              scheduler_lock_until = excluded.scheduler_lock_until,
+              status = 'claimed',
+              error = null,
+              claimed_at = excluded.claimed_at,
+              updated_at = now()
+          where marketing_journey_step_claims.status = 'claimed'
+            and marketing_journey_step_claims.scheduler_lock_until <= $1
+        returning *
+      )
+      select * from claimed order by due_at asc, journey_id asc, step_id asc`,
+      [now, schedulerOwner, lockUntil, limit]
+    );
+
+    const claims: JourneyStepClaim[] = [];
+    for (const row of result.rows) {
+      const claim = await this.rowToJourneyStepClaim(row);
+      if (claim) {
+        await this.pool.query("update marketing_journey_step_claims set decision_evidence = $2::jsonb, updated_at = now() where id = $1", [claim.id, JSON.stringify(claim.decisionEvidence)]);
+        claims.push(claim);
+      }
+    }
+    return claims;
+  }
+
+  async completeJourneyStepClaim(claimId: string, runId: string | null, status: "completed" | "failed", error?: string | null): Promise<JourneyStepClaim | undefined> {
+    const result = await this.pool.query(
+      `update marketing_journey_step_claims
+       set status = $2,
+           run_id = $3,
+           error = $4,
+           completed_at = now(),
+           scheduler_lock_until = now(),
+           updated_at = now()
+       where id = $1
+       returning *`,
+      [claimId, status, runId, error ?? null]
+    );
+    return result.rows[0] ? this.rowToJourneyStepClaim(result.rows[0]) : undefined;
+  }
+
   async getSendHistory(recipientRef: string): Promise<string[]> {
     const result = await this.pool.query(
       "select sent_at from marketing_send_history where recipient_ref = $1 order by sent_at desc",
@@ -467,6 +695,34 @@ export class PostgresMarketingStore implements MarketingStore {
     const outcomes = await this.pool.query("select * from marketing_delivery_outcomes where run_id = $1 order by processed_at asc, delivery_id asc", [id]);
     return rowToRun(runResult.rows[0], outcomes.rows.map(rowToDeliveryResult));
   }
+
+  private async rowToJourneyStepClaim(row: Record<string, unknown>): Promise<JourneyStepClaim | undefined> {
+    const journey = await this.getJourney(String(row.journey_id));
+    if (!journey) return undefined;
+    const step = journey.steps.find((item) => item.stepId === String(row.step_id));
+    if (!step) return undefined;
+    return {
+      id: String(row.id),
+      journeyId: String(row.journey_id),
+      stepId: String(row.step_id),
+      campaignId: String(row.campaign_id),
+      dueAt: iso(row.due_at) ?? new Date().toISOString(),
+      schedulerOwner: String(row.scheduler_lock_owner),
+      schedulerLockUntil: iso(row.scheduler_lock_until) ?? new Date().toISOString(),
+      status: row.status as JourneyStepClaim["status"],
+      runId: row.run_id === null || row.run_id === undefined ? null : String(row.run_id),
+      error: row.error === null || row.error === undefined ? null : String(row.error),
+      claimedAt: iso(row.claimed_at) ?? new Date().toISOString(),
+      completedAt: iso(row.completed_at) ?? null,
+      decisionEvidence: journeyStepDecisionEvidence(row.decision_evidence, journey, step, iso(row.due_at) ?? new Date().toISOString()),
+      journey,
+      step
+    };
+  }
+}
+
+function journeyStepClaimId(journeyId: string, stepId: string, dueAt: string): string {
+  return `journey-step:${journeyId}:${stepId}:${dueAt}`;
 }
 
 function rowToSegment(row: Record<string, unknown>): Segment {
@@ -517,6 +773,7 @@ function rowToCampaign(row: Record<string, unknown>): Campaign {
     scheduleAt: iso(row.schedule_at),
     throttlePerMinute: row.throttle_per_minute === null ? null : Number(row.throttle_per_minute),
     frequencyCapPerDay: Number(row.frequency_cap_per_day),
+    catalogMetadata: row.catalog_metadata === null || row.catalog_metadata === undefined ? null : asJsonObject(row.catalog_metadata),
     message: asJsonObject(row.message),
     status: row.status as Campaign["status"],
     approvalStatus: (row.approval_status as Campaign["approvalStatus"]) ?? "pending",
@@ -526,6 +783,38 @@ function rowToCampaign(row: Record<string, unknown>): Campaign {
     schedulerLockOwner: row.scheduler_lock_owner === null || row.scheduler_lock_owner === undefined ? null : String(row.scheduler_lock_owner),
     schedulerLockUntil: iso(row.scheduler_lock_until) ?? null,
     lastScheduledRunAt: iso(row.last_scheduled_run_at) ?? null,
+    createdAt: iso(row.created_at) ?? new Date().toISOString(),
+    updatedAt: iso(row.updated_at) ?? new Date().toISOString()
+  };
+}
+
+
+function rowToJourney(row: Record<string, unknown>): Journey {
+  return {
+    journeyId: String(row.journey_id),
+    tenantId: String(row.tenant_id ?? ""),
+    appId: String(row.app_id ?? ""),
+    brandId: String(row.brand_id ?? ""),
+    businessId: row.business_id === null || row.business_id === undefined ? null : String(row.business_id),
+    environment: row.environment === null || row.environment === undefined ? null : row.environment as Journey["environment"],
+    defaultLocale: row.default_locale === null || row.default_locale === undefined ? null : String(row.default_locale),
+    timezone: row.timezone === null || row.timezone === undefined ? null : String(row.timezone),
+    productLine: row.product_line === null || row.product_line === undefined ? null : String(row.product_line),
+    lifecycleScope: row.lifecycle_scope === null || row.lifecycle_scope === undefined ? null : String(row.lifecycle_scope),
+    legalSenderIdentity: row.legal_sender_identity === null || row.legal_sender_identity === undefined ? null : String(row.legal_sender_identity),
+    policyRef: row.policy_ref === null || row.policy_ref === undefined ? null : String(row.policy_ref),
+    name: String(row.name),
+    description: row.description === null || row.description === undefined ? null : String(row.description),
+    trigger: asJsonObject(row.trigger),
+    steps: asJsonArray(row.steps),
+    exitRules: asJsonArray(row.exit_rules),
+    suppressionRules: asJsonArray(row.suppression_rules),
+    status: row.status as Journey["status"],
+    approvalStatus: (row.approval_status as Journey["approvalStatus"]) ?? "pending",
+    approvedBy: row.approved_by === null || row.approved_by === undefined ? null : String(row.approved_by),
+    approvedAt: iso(row.approved_at) ?? null,
+    approvalNote: row.approval_note === null || row.approval_note === undefined ? null : String(row.approval_note),
+    activatedAt: iso(row.activated_at) ?? null,
     createdAt: iso(row.created_at) ?? new Date().toISOString(),
     updatedAt: iso(row.updated_at) ?? new Date().toISOString()
   };
@@ -611,6 +900,8 @@ export function resetInMemoryState(): void {
   segments.clear();
   campaigns.clear();
   runs.clear();
+  journeys.clear();
+  journeyStepClaims.clear();
   sendHistory.clear();
   activeStore = new InMemoryMarketingStore();
 }

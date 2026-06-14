@@ -7,6 +7,7 @@ const LEADS_DEFAULT_PATH = "/leads/marketing/recipients";
 const ORDERS_DEFAULT_PATH = "/api/orders";
 const CATALOG_PRODUCTS_DEFAULT_PATH = "/api/products";
 const APPLICATION_SIGNALS_DEFAULT_PATH = "/marketing/application-signals";
+const CRM_ACCOUNT_SIGNALS_DEFAULT_PATH = "/marketing/account-signals";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -24,6 +25,13 @@ interface OrderSignal {
 interface ApplicationSignal {
   recipientRefs: Set<string>;
   signalCount: number;
+  matchedSignalCount: number;
+}
+
+interface CrmAccountSignal {
+  recipientRefs: Set<string>;
+  signalCount: number;
+  matchedSignalCount: number;
 }
 
 export interface RecipientResolution {
@@ -34,6 +42,7 @@ export interface RecipientResolution {
 export interface SourceFailure {
   source: ResultSource;
   reason: string;
+  status?: "failed" | "skipped";
 }
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -351,6 +360,11 @@ function applicationSignalRequestHeaders(): Record<string, string> | undefined {
   return token ? { Authorization: `Bearer ${token}` } : undefined;
 }
 
+function crmAccountRequestHeaders(): Record<string, string> | undefined {
+  const token = process.env.CRM_ACCOUNT_SERVICE_TOKEN;
+  return token ? { Authorization: `Bearer ${token}` } : undefined;
+}
+
 function withAuthRecipientQuery(basePath: string, segment: Segment, campaign: Campaign): string {
   const params = new URLSearchParams();
   params.set("limit", String(process.env.AUTH_USERS_SEGMENT_LIMIT ?? 100));
@@ -457,6 +471,40 @@ function withApplicationSignalQuery(basePath: string, segment: Segment, campaign
   return `${basePath}?${params.toString()}`;
 }
 
+function withCrmAccountSignalQuery(basePath: string, segment: Segment, campaign: Campaign, cursor?: string): string {
+  const params = new URLSearchParams();
+  params.set("limit", String(process.env.CRM_ACCOUNT_SIGNAL_LIMIT ?? 100));
+  params.set("tenantId", campaign.tenantId);
+  params.set("appId", campaign.appId);
+  params.set("brandId", campaign.brandId);
+  if (campaign.businessId) params.set("businessId", campaign.businessId);
+  if (campaign.environment) params.set("environment", campaign.environment);
+  if (cursor) params.set("cursor", cursor);
+
+  const queryRules: Array<[string, string[]]> = [
+    ["accountId", ["accountId", "crmAccountId"]],
+    ["companyId", ["companyId", "crmCompanyId"]],
+    ["accountOwnerId", ["accountOwnerId", "ownerId"]],
+    ["opportunityId", ["opportunityId"]],
+    ["lifecycleStage", ["lifecycleStage", "accountLifecycleStage"]],
+    ["opportunityStage", ["opportunityStage"]],
+    ["opportunityStatus", ["opportunityStatus"]],
+    ["opportunityType", ["opportunityType"]],
+    ["healthStatus", ["healthStatus"]],
+    ["onboardingStatus", ["onboardingStatus"]],
+    ["renewalDateFrom", ["renewalDateFrom"]],
+    ["renewalDateUntil", ["renewalDateUntil"]],
+    ["sourceUpdatedSince", ["sourceUpdatedSince"]],
+    ["sourceUpdatedUntil", ["sourceUpdatedUntil"]]
+  ];
+  for (const [queryKey, ruleKeys] of queryRules) {
+    const value = readRule(segment, ruleKeys);
+    if (value) params.set(queryKey, value);
+  }
+
+  return `${basePath}?${params.toString()}`;
+}
+
 function withCatalogProductsQuery(basePath: string, segment: Segment): string {
   const params = new URLSearchParams();
   params.set("limit", String(process.env.CATALOG_PRODUCT_LIMIT ?? 100));
@@ -490,6 +538,100 @@ function toAppSignalRecipientRef(subjectRef: string | undefined): string | undef
   return undefined;
 }
 
+function readNestedRuleString(record: UnknownRecord, parentKey: string, keys: string[]): string | undefined {
+  const parent = readNestedRecord(record, parentKey);
+  return parent ? readString(parent, keys) : undefined;
+}
+
+function normalizeRuleList(value: string | undefined): string[] {
+  return value ? value.split(",").map((item) => item.trim()).filter(Boolean) : [];
+}
+
+function matchesRuleValue(actual: string | undefined, expected: string | undefined): boolean {
+  const expectedValues = normalizeRuleList(expected);
+  if (expectedValues.length === 0) return true;
+  return Boolean(actual && expectedValues.includes(actual));
+}
+
+function matchesOccurredWindow(item: UnknownRecord, segment: Segment): boolean {
+  const occurredAt = readString(item, ["occurredAt"]);
+  if (!occurredAt) return false;
+  const occurredTime = Date.parse(occurredAt);
+  const since = readRule(segment, ["signalOccurredSince", "occurredSince", "occurredAfter"]);
+  const until = readRule(segment, ["signalOccurredUntil", "occurredUntil", "occurredBefore"]);
+  return (!since || occurredTime >= Date.parse(since)) && (!until || occurredTime <= Date.parse(until));
+}
+
+function matchesApplicationSignalRules(item: UnknownRecord, segment: Segment): boolean {
+  return (
+    matchesRuleValue(readString(item, ["eventType"]), readRule(segment, ["signalEventType", "eventType"])) &&
+    matchesRuleValue(readString(item, ["eventGroup"]), readRule(segment, ["signalEventGroup", "eventGroup"])) &&
+    matchesRuleValue(readString(item, ["lifecycleStage"]), readRule(segment, ["signalLifecycleStage", "lifecycleStage"])) &&
+    matchesRuleValue(readString(item, ["sourceService"]), readRule(segment, ["signalSourceService", "sourceService"])) &&
+    matchesRuleValue(readNestedRuleString(item, "sourceObject", ["type"]), readRule(segment, ["signalSourceObjectType", "sourceObjectType"])) &&
+    matchesRuleValue(readNestedRuleString(item, "sourceObject", ["id", "ref"]), readRule(segment, ["signalSourceObjectId", "sourceObjectId"])) &&
+    matchesRuleValue(appSignalSubjectRef(item), readRule(segment, ["signalSubjectRef", "subjectRef"])) &&
+    matchesOccurredWindow(item, segment)
+  );
+}
+
+function readNumberRule(segment: Segment, keys: string[]): number | undefined {
+  const value = readRule(segment, keys);
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function readNumberValue(record: UnknownRecord, key: string): number | undefined {
+  const value = record[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function matchesDateWindow(value: string | undefined, from: string | undefined, until: string | undefined): boolean {
+  if (!from && !until) return true;
+  if (!value) return false;
+  const time = Date.parse(value);
+  return (!from || time >= Date.parse(from)) && (!until || time <= Date.parse(until));
+}
+
+function relatedOpportunityMatches(item: UnknownRecord, expected: string | undefined): boolean {
+  if (!expected) return true;
+  if (readString(item, ["opportunityId"]) === expected) return true;
+  const related = item.relatedOpportunityIds;
+  return Array.isArray(related) && related.some((value) => value === expected);
+}
+
+function matchesCrmAccountRules(item: UnknownRecord, segment: Segment): boolean {
+  const healthScore = readNumberValue(item, "healthScore");
+  const healthScoreMin = readNumberRule(segment, ["healthScoreMin"]);
+  const healthScoreMax = readNumberRule(segment, ["healthScoreMax"]);
+  if (healthScoreMin !== undefined && (healthScore === undefined || healthScore < healthScoreMin)) return false;
+  if (healthScoreMax !== undefined && (healthScore === undefined || healthScore > healthScoreMax)) return false;
+
+  return (
+    matchesRuleValue(readString(item, ["accountId"]), readRule(segment, ["accountId", "crmAccountId"])) &&
+    matchesRuleValue(readString(item, ["companyId"]), readRule(segment, ["companyId", "crmCompanyId"])) &&
+    matchesRuleValue(readString(item, ["accountOwnerId", "ownerId"]), readRule(segment, ["accountOwnerId", "ownerId"])) &&
+    relatedOpportunityMatches(item, readRule(segment, ["opportunityId"])) &&
+    matchesRuleValue(readString(item, ["lifecycleStage"]), readRule(segment, ["lifecycleStage", "accountLifecycleStage"])) &&
+    matchesRuleValue(readString(item, ["opportunityStage"]), readRule(segment, ["opportunityStage"])) &&
+    matchesRuleValue(readString(item, ["opportunityStatus"]), readRule(segment, ["opportunityStatus"])) &&
+    matchesRuleValue(readString(item, ["opportunityType"]), readRule(segment, ["opportunityType"])) &&
+    matchesRuleValue(readString(item, ["healthStatus"]), readRule(segment, ["healthStatus"])) &&
+    matchesRuleValue(readString(item, ["onboardingStatus"]), readRule(segment, ["onboardingStatus"])) &&
+    matchesRuleValue(readString(item, ["planTier"]), readRule(segment, ["planTier"])) &&
+    matchesRuleValue(readString(item, ["riskLevel"]), readRule(segment, ["riskLevel"])) &&
+    matchesDateWindow(readString(item, ["renewalDate"]), readRule(segment, ["renewalDateFrom"]), readRule(segment, ["renewalDateUntil"])) &&
+    matchesDateWindow(readString(item, ["expectedCloseDate"]), readRule(segment, ["expectedCloseDateFrom"]), readRule(segment, ["expectedCloseDateUntil"])) &&
+    matchesDateWindow(readString(item, ["sourceUpdatedAt"]), readRule(segment, ["sourceUpdatedSince"]), readRule(segment, ["sourceUpdatedUntil"]))
+  );
+}
+
 function validateApplicationSignalEnvelope(item: unknown, campaign: Campaign): UnknownRecord {
   if (!isRecord(item)) throw new Error("app_signal_invalid_response:not_object");
   for (const field of ["schemaVersion", "signalId", "sourceService", "appId", "eventType", "occurredAt"] as const) {
@@ -508,6 +650,116 @@ function validateApplicationSignalEnvelope(item: unknown, campaign: Campaign): U
   return item;
 }
 
+function crmContactRefToRecipientRef(value: unknown): string | undefined {
+  if (!isRecord(value)) return undefined;
+  const ref = readString(value, ["ref", "subjectRef", "recipientRef"]);
+  const owner = readString(value, ["owner"]);
+  if (ref?.startsWith("auth:user:")) return "auth:" + ref.slice("auth:user:".length);
+  if (ref?.startsWith("leads:lead:")) return "lead:" + ref.slice("leads:lead:".length);
+  if (owner === "auth") {
+    const id = readString(value, ["id", "userId", "authUserId"]);
+    return id ? "auth:" + id : undefined;
+  }
+  if (owner === "leads") {
+    const id = readString(value, ["id", "leadId"]);
+    return id ? "lead:" + id : undefined;
+  }
+  return undefined;
+}
+
+function addCrmContactRefs(signal: CrmAccountSignal, item: UnknownRecord): void {
+  if (!Array.isArray(item.contactRefs)) return;
+  for (const contactRef of item.contactRefs) {
+    const recipientRef = crmContactRefToRecipientRef(contactRef);
+    if (recipientRef) signal.recipientRefs.add(recipientRef);
+  }
+}
+
+function validateCrmAccountSignalEnvelope(item: unknown, campaign: Campaign): UnknownRecord {
+  if (!isRecord(item)) throw new Error("crm_account_invalid_response:not_object");
+  const schemaVersion = readString(item, ["schemaVersion"]);
+  if (schemaVersion !== "marketing.crm_account_signal.v1" && schemaVersion !== "marketing.crm_opportunity_signal.v1") {
+    throw new Error("crm_account_invalid_response:schemaVersion");
+  }
+  if (readString(item, ["tenantId"]) !== campaign.tenantId) throw new Error("crm_account_invalid_response:tenantId");
+  const appId = readString(item, ["appId"]);
+  const appIds = Array.isArray(item.appIds) ? item.appIds.filter((value): value is string => typeof value === "string") : [];
+  if (appId && appId !== campaign.appId) throw new Error("crm_account_invalid_response:appId");
+  if (appIds.length > 0 && !appIds.includes(campaign.appId)) throw new Error("crm_account_invalid_response:appIds");
+  const sourceUpdatedAt = readString(item, ["sourceUpdatedAt"]);
+  if (!sourceUpdatedAt || !isIsoUtc(sourceUpdatedAt)) throw new Error("crm_account_invalid_response:sourceUpdatedAt");
+  if (schemaVersion === "marketing.crm_account_signal.v1" && !readString(item, ["accountId"])) {
+    throw new Error("crm_account_invalid_response:accountId");
+  }
+  if (schemaVersion === "marketing.crm_opportunity_signal.v1" && !readString(item, ["opportunityId"])) {
+    throw new Error("crm_account_invalid_response:opportunityId");
+  }
+  return item;
+}
+
+function extractNextCursor(data: unknown): string | undefined {
+  return isRecord(data) && typeof data.nextCursor === "string" && data.nextCursor.trim() ? data.nextCursor : undefined;
+}
+
+async function fetchCrmAccountSignal(segment: Segment, campaign: Campaign): Promise<CrmAccountSignal> {
+  const crmUrl = process.env.CRM_ACCOUNT_SERVICE_URL;
+  if (!crmUrl) {
+    throw new Error("crm_account_service_url_missing");
+  }
+
+  const path = process.env.CRM_ACCOUNT_SIGNAL_PATH ?? CRM_ACCOUNT_SIGNALS_DEFAULT_PATH;
+  const timeout = Number(process.env.CRM_ACCOUNT_SIGNAL_TIMEOUT_MS ?? 5000);
+  const maxPages = Math.max(1, Math.floor(Number(process.env.CRM_ACCOUNT_SIGNAL_MAX_PAGES ?? 1)));
+  const signal: CrmAccountSignal = { recipientRefs: new Set(), signalCount: 0, matchedSignalCount: 0 };
+  let cursor: string | undefined;
+  let lastEndpoint = "";
+
+  for (let page = 0; page < maxPages; page += 1) {
+    lastEndpoint = crmUrl.replace(/\/$/, "") + withCrmAccountSignalQuery(path, segment, campaign, cursor);
+    const response = await axios.get(lastEndpoint, {
+      timeout: Number.isFinite(timeout) && timeout > 0 ? timeout : 5000,
+      headers: crmAccountRequestHeaders()
+    });
+
+    for (const raw of extractItems(response.data)) {
+      const item = validateCrmAccountSignalEnvelope(raw, campaign);
+      signal.signalCount += 1;
+      if (!matchesCrmAccountRules(item, segment)) {
+        continue;
+      }
+      signal.matchedSignalCount += 1;
+      addCrmContactRefs(signal, item);
+    }
+
+    cursor = extractNextCursor(response.data);
+    if (!cursor) break;
+  }
+
+  logDecision("recipient_source_resolved", {
+    campaignId: campaign.campaignId,
+    segmentId: segment.segmentId,
+    source: "crm_accounts",
+    signalCount: signal.signalCount,
+    matchedSignalCount: signal.matchedSignalCount,
+    recipientRefCount: signal.recipientRefs.size,
+    endpoint: lastEndpoint
+  });
+  return signal;
+}
+
+function crmAccountPreviewEvidence(signal: CrmAccountSignal): SourceFailure | undefined {
+  if (signal.signalCount === 0) {
+    return { source: "crm_accounts", reason: "crm_account_no_source_signals", status: "skipped" };
+  }
+  if (signal.matchedSignalCount === 0) {
+    return { source: "crm_accounts", reason: "crm_account_no_matching_accounts", status: "skipped" };
+  }
+  if (signal.recipientRefs.size === 0) {
+    return { source: "crm_accounts", reason: "crm_account_no_resolvable_contact_refs", status: "skipped" };
+  }
+  return undefined;
+}
+
 async function fetchApplicationSignal(segment: Segment, campaign: Campaign): Promise<ApplicationSignal> {
   const signalUrl = process.env.APPLICATION_SIGNAL_SOURCE_URL;
   if (!signalUrl) {
@@ -522,23 +774,43 @@ async function fetchApplicationSignal(segment: Segment, campaign: Campaign): Pro
     headers: applicationSignalRequestHeaders()
   });
 
-  const signal: ApplicationSignal = { recipientRefs: new Set(), signalCount: 0 };
+  const signal: ApplicationSignal = { recipientRefs: new Set(), signalCount: 0, matchedSignalCount: 0 };
+  let matchedSignalCount = 0;
   for (const raw of extractItems(response.data)) {
     const item = validateApplicationSignalEnvelope(raw, campaign);
     signal.signalCount += 1;
+    if (!matchesApplicationSignalRules(item, segment)) {
+      continue;
+    }
+    matchedSignalCount += 1;
     const recipientRef = toAppSignalRecipientRef(appSignalSubjectRef(item));
     if (recipientRef) signal.recipientRefs.add(recipientRef);
   }
+  signal.matchedSignalCount = matchedSignalCount;
 
   logDecision("recipient_source_resolved", {
     campaignId: campaign.campaignId,
     segmentId: segment.segmentId,
     source: "app_signals",
     signalCount: signal.signalCount,
+    matchedSignalCount,
     recipientRefCount: signal.recipientRefs.size,
     endpoint
   });
   return signal;
+}
+
+function appSignalPreviewEvidence(signal: ApplicationSignal): SourceFailure | undefined {
+  if (signal.signalCount === 0) {
+    return { source: "app_signals", reason: "app_signals_no_source_signals", status: "skipped" };
+  }
+  if (signal.matchedSignalCount === 0) {
+    return { source: "app_signals", reason: "app_signals_no_matching_signals", status: "skipped" };
+  }
+  if (signal.recipientRefs.size === 0) {
+    return { source: "app_signals", reason: "app_signals_no_resolvable_subject_refs", status: "skipped" };
+  }
+  return undefined;
 }
 
 async function fetchAuthRecipients(segment: Segment, campaign: Campaign): Promise<Contact[]> {
@@ -809,12 +1081,60 @@ export async function resolveSegmentRecipients(segment: Segment, campaign: Campa
   const failures: SourceFailure[] = [];
   const requiresOrderSignal = segment.sourceTypes.includes("orders");
   const requiresApplicationSignal = segment.sourceTypes.includes("app_signals");
+  const requiresCrmAccountSignal = segment.sourceTypes.includes("crm_accounts");
   let orderSignal: OrderSignal | undefined;
   let applicationSignal: ApplicationSignal | undefined;
+  let crmAccountSignal: CrmAccountSignal | undefined;
+
+  if (requiresCrmAccountSignal) {
+    try {
+      crmAccountSignal = await fetchCrmAccountSignal(segment, campaign);
+      const previewEvidence = crmAccountPreviewEvidence(crmAccountSignal);
+      if (previewEvidence) {
+        failures.push(previewEvidence);
+        logDecision("recipient_source_preview", {
+          campaignId: campaign.campaignId,
+          segmentId: segment.segmentId,
+          source: "crm_accounts",
+          signalCount: crmAccountSignal.signalCount,
+          matchedSignalCount: crmAccountSignal.matchedSignalCount,
+          recipientRefCount: crmAccountSignal.recipientRefs.size,
+          reason: previewEvidence.reason,
+          duration_ms: 0
+        });
+        return { recipients: [], failures };
+      }
+    } catch (error) {
+      const message = (error as Error).message;
+      failures.push({ source: "crm_accounts", reason: "crm_account_source_unavailable:" + message });
+      logDecision("recipient_source_failed", {
+        campaignId: campaign.campaignId,
+        segmentId: segment.segmentId,
+        source: "crm_accounts",
+        reason: message
+      });
+      return { recipients: [], failures };
+    }
+  }
 
   if (requiresApplicationSignal) {
     try {
       applicationSignal = await fetchApplicationSignal(segment, campaign);
+      const previewEvidence = appSignalPreviewEvidence(applicationSignal);
+      if (previewEvidence) {
+        failures.push(previewEvidence);
+        logDecision("recipient_source_preview", {
+          campaignId: campaign.campaignId,
+          segmentId: segment.segmentId,
+          source: "app_signals",
+          signalCount: applicationSignal.signalCount,
+          matchedSignalCount: applicationSignal.matchedSignalCount,
+          recipientRefCount: applicationSignal.recipientRefs.size,
+          reason: previewEvidence.reason,
+          duration_ms: 0
+        });
+        return { recipients: [], failures };
+      }
     } catch (error) {
       const message = (error as Error).message;
       failures.push({ source: "app_signals", reason: `app_signals_source_unavailable:${message}` });
@@ -859,7 +1179,7 @@ export async function resolveSegmentRecipients(segment: Segment, campaign: Campa
     }
   }
 
-  const signalOnly = requiresOrderSignal || requiresApplicationSignal;
+  const signalOnly = requiresOrderSignal || requiresApplicationSignal || requiresCrmAccountSignal;
   const shouldResolveAuth = segment.sourceTypes.includes("auth_users") || (signalOnly && !segment.sourceTypes.includes("leads"));
   const shouldResolveLeads = segment.sourceTypes.includes("leads") || (signalOnly && !segment.sourceTypes.includes("auth_users"));
 
@@ -899,6 +1219,9 @@ export async function resolveSegmentRecipients(segment: Segment, campaign: Campa
       continue;
     }
     if (applicationSignal && !matchesApplicationSignal(recipient, applicationSignal)) {
+      continue;
+    }
+    if (crmAccountSignal && !matchesApplicationSignal(recipient, crmAccountSignal)) {
       continue;
     }
     const identityKey = recipientIdentityKey(recipient);

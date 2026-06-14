@@ -5,7 +5,7 @@
   "description": "Marketing core service with campaign execution",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-public.mjs",
     "start": "node dist/main.js",
     "dev": "tsx src/main.ts",
     "check": "tsc --noEmit",
