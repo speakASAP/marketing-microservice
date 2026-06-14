@@ -1,10 +1,46 @@
 import { Request, Response, NextFunction } from "express";
-import { Campaign, CampaignStatus, Channel, ContactOwner, Purpose, RegistryEnvironment, Segment, SegmentSource } from "./types";
+import { Campaign, CampaignFamily, CampaignLifecycleStage, CampaignStatus, Channel, ContactOwner, Journey, JourneyExitRuleType, JourneyStatus, JourneySuppressionRuleType, JourneyTriggerType, Purpose, RegistryEnvironment, Segment, SegmentSource } from "./types";
 
 const CHANNELS: Channel[] = ["email", "telegram", "whatsapp"];
 const PURPOSES: Purpose[] = ["marketing", "retention", "transactional-not-marketing"];
-const SEGMENT_SOURCES: SegmentSource[] = ["auth_users", "leads", "orders", "app_signals"];
+const SEGMENT_SOURCES: SegmentSource[] = ["auth_users", "leads", "orders", "app_signals", "crm_accounts"];
 const CAMPAIGN_STATUSES: CampaignStatus[] = ["draft", "scheduled", "running", "paused", "completed", "failed", "archived"];
+const JOURNEY_STATUSES: JourneyStatus[] = ["draft", "active", "paused", "archived"];
+const JOURNEY_TRIGGER_TYPES: JourneyTriggerType[] = ["manual", "segment_entry", "app_signal"];
+const JOURNEY_EXIT_RULE_TYPES: JourneyExitRuleType[] = ["segment_match", "app_signal", "campaign_engagement", "manual"];
+const JOURNEY_SUPPRESSION_RULE_TYPES: JourneySuppressionRuleType[] = ["recently_sent", "frequency_cap", "unsubscribed", "segment_match"];
+const CAMPAIGN_LIFECYCLE_STAGES: CampaignLifecycleStage[] = [
+  "acquisition",
+  "activation",
+  "onboarding",
+  "education",
+  "feature_adoption",
+  "retention",
+  "reactivation",
+  "winback",
+  "renewal",
+  "upsell",
+  "cross_sell",
+  "post_purchase",
+  "abandoned_intent",
+  "operational_notice"
+];
+const CAMPAIGN_FAMILIES: CampaignFamily[] = [
+  "acquisition",
+  "activation",
+  "onboarding",
+  "education",
+  "feature_adoption",
+  "retention",
+  "reactivation",
+  "winback",
+  "renewal",
+  "upsell",
+  "cross_sell",
+  "post_purchase",
+  "abandoned_intent",
+  "operational_notice"
+];
 const READ_ONLY_APPROVAL_FIELDS = ["approvalStatus", "approvedBy", "approvedAt", "approvalNote"];
 const REGISTRY_ENVIRONMENTS: RegistryEnvironment[] = ["production", "staging", "development", "test"];
 const REQUIRED_SCOPE_FIELDS = ["tenantId", "appId", "brandId"] as const;
@@ -116,6 +152,69 @@ function validateOptionalNonNegativeInteger(value: unknown, field: string, field
   return value;
 }
 
+function readOptionalStringField(record: Record<string, unknown>, key: string, field: string, fields: Record<string, string>): string | null | undefined {
+  const value = record[key];
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (!isNonEmptyString(value)) {
+    fields[field] = "must_be_non_empty_string_or_null";
+    return undefined;
+  }
+  return value.trim();
+}
+
+function validateCatalogMetadata(value: unknown, fields: Record<string, string>): Campaign["catalogMetadata"] | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (!isRecord(value)) {
+    fields.catalogMetadata = "must_be_object_or_null";
+    return undefined;
+  }
+
+  const readOnlyExecutionFields = ["approvalStatus", "approvedBy", "approvedAt", "status", "scheduleAt", "execute", "dryRun"] as const;
+  for (const field of readOnlyExecutionFields) {
+    if (value[field] !== undefined) {
+      fields[`catalogMetadata.${field}`] = "not_catalog_metadata";
+    }
+  }
+
+  const metadata: NonNullable<Campaign["catalogMetadata"]> = {};
+  const campaignFamily = readOptionalStringField(value, "campaignFamily", "catalogMetadata.campaignFamily", fields);
+  if (campaignFamily !== undefined) {
+    if (campaignFamily !== null && !CAMPAIGN_FAMILIES.includes(campaignFamily as CampaignFamily)) {
+      fields["catalogMetadata.campaignFamily"] = `unsupported_value:${campaignFamily}`;
+    } else {
+      metadata.campaignFamily = campaignFamily as CampaignFamily | null;
+    }
+  }
+
+  const lifecycleStage = readOptionalStringField(value, "lifecycleStage", "catalogMetadata.lifecycleStage", fields);
+  if (lifecycleStage !== undefined) {
+    if (lifecycleStage !== null && !CAMPAIGN_LIFECYCLE_STAGES.includes(lifecycleStage as CampaignLifecycleStage)) {
+      fields["catalogMetadata.lifecycleStage"] = `unsupported_value:${lifecycleStage}`;
+    } else {
+      metadata.lifecycleStage = lifecycleStage as CampaignLifecycleStage | null;
+    }
+  }
+
+  for (const key of ["audienceKey", "audienceLabel", "catalogCategory", "sourceBlueprintId"] as const) {
+    const normalized = readOptionalStringField(value, key, `catalogMetadata.${key}`, fields);
+    if (normalized !== undefined) {
+      metadata[key] = normalized;
+    }
+  }
+
+  if (value.catalogTags !== undefined) {
+    if (!Array.isArray(value.catalogTags) || value.catalogTags.some((item) => !isNonEmptyString(item))) {
+      fields["catalogMetadata.catalogTags"] = "must_be_string_array";
+    } else {
+      metadata.catalogTags = value.catalogTags.map((item) => item.trim());
+    }
+  }
+
+  return metadata;
+}
+
 export function validateSegmentBody(body: unknown, partial = false): ValidationResult<Partial<Segment>> {
   if (!isRecord(body)) {
     return { ok: false, error: contractError("invalid_request_body", "Request body must be a JSON object.") };
@@ -222,6 +321,9 @@ export function validateCampaignBody(body: unknown, partial = false): Validation
   const frequencyCap = validateOptionalPositiveInteger(body.frequencyCapPerDay, "frequencyCapPerDay", fields);
   if (frequencyCap !== undefined && frequencyCap !== null) value.frequencyCapPerDay = frequencyCap;
 
+  const catalogMetadata = validateCatalogMetadata(body.catalogMetadata, fields);
+  if (catalogMetadata !== undefined) value.catalogMetadata = catalogMetadata;
+
   if (body.status !== undefined) {
     if (!CAMPAIGN_STATUSES.includes(body.status as CampaignStatus)) fields.status = `unsupported_value:${String(body.status)}`;
     else value.status = body.status as CampaignStatus;
@@ -244,6 +346,179 @@ export function validateCampaignBody(body: unknown, partial = false): Validation
 
   if (Object.keys(fields).length > 0) {
     return { ok: false, error: contractError("invalid_campaign_request", "Campaign request failed contract validation.", fields) };
+  }
+  return { ok: true, value };
+}
+
+
+function validateRulesObject(value: unknown, field: string, fields: Record<string, string>): Record<string, string | number | boolean> | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (!isRecord(value) || Object.values(value).some((item) => !["string", "number", "boolean"].includes(typeof item))) {
+    fields[field] = "must_be_flat_object_or_null";
+    return undefined;
+  }
+  return value as Record<string, string | number | boolean>;
+}
+
+function validateJourneyTrigger(value: unknown, fields: Record<string, string>): Journey["trigger"] | undefined {
+  if (!isRecord(value)) {
+    fields.trigger = "required_object";
+    return undefined;
+  }
+  const trigger: Partial<Journey["trigger"]> = {};
+  if (!JOURNEY_TRIGGER_TYPES.includes(value.type as JourneyTriggerType)) {
+    fields["trigger.type"] = `unsupported_value:${String(value.type)}`;
+  } else {
+    trigger.type = value.type as JourneyTriggerType;
+  }
+  const segmentId = readOptionalStringField(value, "segmentId", "trigger.segmentId", fields);
+  if (segmentId !== undefined) trigger.segmentId = segmentId;
+  const rules = validateRulesObject(value.rules, "trigger.rules", fields);
+  if (rules !== undefined) trigger.rules = rules;
+  if ((trigger.type === "segment_entry") && !trigger.segmentId) {
+    fields["trigger.segmentId"] = "required_for_segment_entry";
+  }
+  return trigger.type ? trigger as Journey["trigger"] : undefined;
+}
+
+function validateJourneySteps(value: unknown, fields: Record<string, string>): Journey["steps"] | undefined {
+  if (!Array.isArray(value) || value.length === 0) {
+    fields.steps = "required_non_empty_array";
+    return undefined;
+  }
+  const seen = new Set<string>();
+  const steps: Journey["steps"] = [];
+  value.forEach((item, index) => {
+    const prefix = `steps.${index}`;
+    if (!isRecord(item)) {
+      fields[prefix] = "must_be_object";
+      return;
+    }
+    const step: Partial<Journey["steps"][number]> = {};
+    for (const field of ["stepId", "name", "campaignId"] as const) {
+      if (!isNonEmptyString(item[field])) fields[`${prefix}.${field}`] = "required_non_empty_string";
+      else step[field] = item[field].trim();
+    }
+    if (step.stepId) {
+      if (seen.has(step.stepId)) fields[`${prefix}.stepId`] = "duplicate_step_id";
+      seen.add(step.stepId);
+    }
+    const delay = validateOptionalNonNegativeInteger(item.delayMinutes, `${prefix}.delayMinutes`, fields);
+    if (delay === undefined || delay === null) fields[`${prefix}.delayMinutes`] = fields[`${prefix}.delayMinutes`] ?? "required_non_negative_integer";
+    else step.delayMinutes = delay;
+    const maxExecutions = validateOptionalPositiveInteger(item.maxExecutionsPerRecipient, `${prefix}.maxExecutionsPerRecipient`, fields);
+    if (maxExecutions !== undefined) step.maxExecutionsPerRecipient = maxExecutions;
+    const conditions = validateRulesObject(item.conditions, `${prefix}.conditions`, fields);
+    if (conditions !== undefined) step.conditions = conditions;
+    for (const readOnly of ["message", "templateRef", "channelKey", "execute", "dryRun", "approvalStatus"] as const) {
+      if (item[readOnly] !== undefined) fields[`${prefix}.${readOnly}`] = "not_journey_step_metadata";
+    }
+    if (step.stepId && step.name && step.campaignId && step.delayMinutes !== undefined) steps.push(step as Journey["steps"][number]);
+  });
+  return steps;
+}
+
+function validateJourneyExitRules(value: unknown, fields: Record<string, string>): Journey["exitRules"] | undefined {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    fields.exitRules = "must_be_array";
+    return undefined;
+  }
+  const rules: Journey["exitRules"] = [];
+  value.forEach((item, index) => {
+    const prefix = `exitRules.${index}`;
+    if (!isRecord(item)) {
+      fields[prefix] = "must_be_object";
+      return;
+    }
+    const rule: Partial<Journey["exitRules"][number]> = {};
+    if (!isNonEmptyString(item.ruleId)) fields[`${prefix}.ruleId`] = "required_non_empty_string";
+    else rule.ruleId = item.ruleId.trim();
+    if (!JOURNEY_EXIT_RULE_TYPES.includes(item.type as JourneyExitRuleType)) fields[`${prefix}.type`] = `unsupported_value:${String(item.type)}`;
+    else rule.type = item.type as JourneyExitRuleType;
+    for (const key of ["segmentId", "campaignId"] as const) {
+      const normalized = readOptionalStringField(item, key, `${prefix}.${key}`, fields);
+      if (normalized !== undefined) rule[key] = normalized;
+    }
+    const ruleBody = validateRulesObject(item.rules, `${prefix}.rules`, fields);
+    if (ruleBody !== undefined) rule.rules = ruleBody;
+    if (rule.ruleId && rule.type) rules.push(rule as Journey["exitRules"][number]);
+  });
+  return rules;
+}
+
+function validateJourneySuppressionRules(value: unknown, fields: Record<string, string>): Journey["suppressionRules"] | undefined {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    fields.suppressionRules = "must_be_array";
+    return undefined;
+  }
+  const rules: Journey["suppressionRules"] = [];
+  value.forEach((item, index) => {
+    const prefix = `suppressionRules.${index}`;
+    if (!isRecord(item)) {
+      fields[prefix] = "must_be_object";
+      return;
+    }
+    const rule: Partial<Journey["suppressionRules"][number]> = {};
+    if (!isNonEmptyString(item.ruleId)) fields[`${prefix}.ruleId`] = "required_non_empty_string";
+    else rule.ruleId = item.ruleId.trim();
+    if (!JOURNEY_SUPPRESSION_RULE_TYPES.includes(item.type as JourneySuppressionRuleType)) fields[`${prefix}.type`] = `unsupported_value:${String(item.type)}`;
+    else rule.type = item.type as JourneySuppressionRuleType;
+    for (const key of ["segmentId", "campaignId"] as const) {
+      const normalized = readOptionalStringField(item, key, `${prefix}.${key}`, fields);
+      if (normalized !== undefined) rule[key] = normalized;
+    }
+    const windowMinutes = validateOptionalPositiveInteger(item.windowMinutes, `${prefix}.windowMinutes`, fields);
+    if (windowMinutes !== undefined) rule.windowMinutes = windowMinutes;
+    const ruleBody = validateRulesObject(item.rules, `${prefix}.rules`, fields);
+    if (ruleBody !== undefined) rule.rules = ruleBody;
+    if (rule.ruleId && rule.type) rules.push(rule as Journey["suppressionRules"][number]);
+  });
+  return rules;
+}
+
+export function validateJourneyBody(body: unknown, partial = false): ValidationResult<Partial<Journey>> {
+  if (!isRecord(body)) {
+    return { ok: false, error: contractError("invalid_request_body", "Request body must be a JSON object.") };
+  }
+
+  const fields: Record<string, string> = {};
+  const value: Partial<Journey> = {};
+  for (const field of ["journeyId", "status", "approvalStatus", "approvedBy", "approvedAt", "scheduleAt", "execute", "dryRun", "createdAt", "updatedAt"] as const) {
+    if (body[field] !== undefined) fields[field] = "read_only";
+  }
+
+  validateScopeFields(body, partial, value, fields);
+
+  if (body.name !== undefined || !partial) {
+    if (!isNonEmptyString(body.name)) fields.name = "required_non_empty_string";
+    else value.name = body.name.trim();
+  }
+  if (body.description !== undefined) {
+    if (body.description !== null && typeof body.description !== "string") fields.description = "must_be_string_or_null";
+    else value.description = body.description as string | null;
+  }
+  if (body.trigger !== undefined || !partial) {
+    const trigger = validateJourneyTrigger(body.trigger, fields);
+    if (trigger) value.trigger = trigger;
+  }
+  if (body.steps !== undefined || !partial) {
+    const steps = validateJourneySteps(body.steps, fields);
+    if (steps) value.steps = steps;
+  }
+  if (body.exitRules !== undefined || !partial) {
+    const exitRules = validateJourneyExitRules(body.exitRules, fields);
+    if (exitRules) value.exitRules = exitRules;
+  }
+  if (body.suppressionRules !== undefined || !partial) {
+    const suppressionRules = validateJourneySuppressionRules(body.suppressionRules, fields);
+    if (suppressionRules) value.suppressionRules = suppressionRules;
+  }
+
+  if (Object.keys(fields).length > 0) {
+    return { ok: false, error: contractError("invalid_journey_request", "Journey request failed contract validation.", fields) };
   }
   return { ok: true, value };
 }

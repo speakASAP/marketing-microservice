@@ -119,7 +119,7 @@ function sourceFailureResult(campaign: Campaign, failure: SourceFailure): Delive
     recipientAddress: "",
     requestedChannel: campaign.primaryChannel,
     effectiveChannel: campaign.primaryChannel,
-    status: "failed",
+    status: failure.status ?? "failed",
     decisionReason: failure.reason,
     processedAt: nowIso(),
     duration_ms: 0

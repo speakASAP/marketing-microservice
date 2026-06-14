@@ -22,13 +22,19 @@ Marketing exists to define audiences, manage campaigns, schedule or execute appr
 
 ## Required Workflow For Every Session
 
-1. Read `BUSINESS.md`, `SYSTEM.md`, `README.md`, `TASKS.md`, `STATE.json`, `docs/orchestrator/INTENT.md`, `docs/orchestrator/GOALS.md`, and `docs/orchestrator/PLAN.md`.
-2. Identify the earliest unfinished goal in `docs/orchestrator/GOALS.md` unless the owner explicitly selects another goal.
-3. Restate the exact preserved intent and ownership boundary affected by the goal.
-4. Implement the smallest complete chunk that satisfies the selected goal's acceptance criteria.
-5. Run the goal's verification commands or document why they could not run.
-6. Append evidence to `docs/orchestrator/STATUS.md`.
-7. Do not broaden the goal, silently change intent, or move work into another service unless the goal explicitly requires a contract boundary.
+1. Read `BUSINESS.md`, `SYSTEM.md`, `README.md`, `TASKS.md`, `STATE.json`, `docs/orchestrator/INTENT.md`, `docs/orchestrator/GOALS.md`, `docs/orchestrator/PLAN.md`, `docs/orchestrator/STATUS.md`, and `docs/orchestrator/PROMPTS.md`.
+2. Identify the active goal, next ready goal, blocked checkpoint, and any independently startable parallel workstreams unless the owner explicitly selects another goal.
+3. For planning or worker assignment, produce a parallel execution assessment with blockers, allowed/forbidden files, owner role, expected output, validation, and integration order.
+4. Restate the exact preserved intent and ownership boundary affected by the assigned goal.
+5. Implement the smallest complete assigned chunk that satisfies the selected goal's acceptance criteria.
+6. Run the goal's verification commands or document why they could not run.
+7. Append evidence to `docs/orchestrator/STATUS.md` without overwriting other agents' entries.
+8. Do not broaden the goal, silently change intent, or move work into another service unless the goal explicitly requires a contract boundary.
+
+
+## Parallel Agent Standard
+
+Planning should maximize safe parallel execution. A workstream can run in parallel only when it has disjoint write ownership, independent validation, no unresolved upstream schema/API dependency, and a named integration order. If a workstream depends on shared migrations, public contracts, protected route shape, generated artifacts, journey runtime behavior, or auth/RBAC foundations, mark the exact blocker and wait.
 
 ## Completion Standard
 

@@ -1236,3 +1236,1529 @@ Completed chunk:
 Next unfinished step:
 
 - Goal 11.4 - Add segment rules for app events and lifecycle states.
+
+## 2026-06-13 - Goal 11.4 Segment Rules For App Events And Lifecycle States
+
+Current focus: Goal 11 - Application Signal Segmentation Contracts.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Application services remain the source of app event and lifecycle truth.
+- App events and lifecycle stages are read-only segmentation inputs only; they do not create contacts, consent truth, unsubscribe truth, campaign engines, or notification delivery behavior inside applications.
+- Marketing still resolves reachable recipients through auth/leads and still delegates outbound delivery only to notifications-microservice.
+- This session did not execute any real campaign against real recipients.
+
+Implementation evidence:
+
+- Added local executable matching for application signal segment rules in `src/sources.ts`.
+- Supported app-signal segment predicates now include event type, event group, lifecycle stage, source service, source object type/id, subject ref, and inclusive `occurredAt` windows.
+- The source client still sends these rule filters to the configured application signal source, but Marketing also evaluates returned envelopes locally so a broad or partially filtered provider response cannot widen the audience.
+- App signal resolution now records `matchedSignalCount` in `recipient_source_resolved` audit evidence.
+- Unsupported subjects such as anonymous, tenant-only, CRM/account, or other refs still do not create delivery recipients in this chunk.
+- Updated `docs/agents/contracts/application-signal-contract.md` with the executable segment rule contract and guardrails.
+- Added a test proving lifecycle/event rules select only the matching app-signal recipient from a broader source response while excluding non-matching event/lifecycle records and out-of-window records.
+
+Validation:
+
+- Remote `npm run build` passed.
+- Remote `npm test` passed: 36 tests, 36 passing.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of raw app event stores, app lifecycle truth, contacts, preferences, consent, unsubscribe state, CRM master data, provider credentials, or channel registry behavior.
+- Segment definitions remain Marketing-owned, while app signals remain source-owned facts.
+- Recipient contact and consent enforcement remains delegated to auth/leads recipient contracts before notification delegation.
+- Direct email, Telegram, and WhatsApp sending was not added.
+- Owner approval, consent, unsubscribe, frequency caps, throttling, max-send limits, idempotency, max-30 chunking, and notification delegation remain on the existing execution path.
+
+Completed chunk:
+
+- Goal 11.4 - Add segment rules for app events and lifecycle states.
+
+Next unfinished step:
+
+- Goal 11.5 - Add dry-run preview support and failure evidence.
+
+## 2026-06-13 - Goal 11.5 Dry-Run Preview Support And Failure Evidence
+
+Current focus: Goal 11 - Application Signal Segmentation Contracts.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Applications remain the source of app event and lifecycle truth.
+- App-signal dry-run evidence is derived from source-owned envelopes and Marketing-owned segment rules; it does not create contact, consent, unsubscribe, CRM, or app event master data in Marketing.
+- Marketing still resolves reachable recipients through auth/leads and delegates outbound delivery only to notifications-microservice.
+- This session did not execute any real campaign against real recipients.
+
+Implementation evidence:
+
+- Added app-signal preview evidence for reachable-but-empty signal audiences.
+- App-signal segments now record skipped source evidence with `recipientRef: app_signals:source` for:
+  - `app_signals_no_source_signals`
+  - `app_signals_no_matching_signals`
+  - `app_signals_no_resolvable_subject_refs`
+- Source outages, missing source URL, malformed envelopes, unsupported schema, app mismatch, missing subject/sourceObject, and invalid `occurredAt` remain failed source evidence as `app_signals_source_unavailable:*`.
+- App-signal preview evidence returns before broad auth/leads recipient resolution when no signal-backed subject refs can produce recipients.
+- Dry-run app-signal failure evidence still completes as `dry_run_completed` and never calls notifications.
+- Updated `docs/agents/contracts/application-signal-contract.md` with dry-run preview and failure evidence behavior.
+- Added tests for dry-run no-matching-signal preview evidence and dry-run app-signal source failure evidence without notification delivery.
+
+Validation:
+
+- Remote `npm run build` passed.
+- Remote `npm test` passed: 38 tests, 38 passing.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of raw app signals, app lifecycle truth, auth/leads contact data, consent, unsubscribe state, CRM/account master data, notification provider execution, provider credentials, or channel registry behavior.
+- App-signal preview evidence only explains segmentation outcomes and does not authorize delivery.
+- Owner approval, consent, unsubscribe, frequency caps, throttling, max-send limits, idempotency, max-30 notification chunking, registry validation, recipient resolution, and notification delegation remain enforced on the execution path.
+- Applications can contribute signals without implementing campaign engines.
+
+Completed chunk:
+
+- Goal 11.5 - Add dry-run preview support and failure evidence.
+
+Completed goal:
+
+- Goal 11 - Application Signal Segmentation Contracts.
+
+Next unfinished step:
+
+- Goal 12.1 - Add campaign catalog metadata model.
+
+## 2026-06-13 - Goal 12.1 Campaign Catalog Metadata Model
+
+Current focus: Goal 12 - Multi-Application Campaign Catalog.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Campaign catalog metadata is Marketing-owned discovery metadata for organizing campaigns across tenant, app, product line, lifecycle, audience, family, category, tags, and future blueprint references.
+- Catalog metadata is non-executable and does not approve, schedule, dry-run, execute, send, or bypass any delivery guardrails.
+- Template references remain references; Marketing does not own notification provider templates or outbound provider execution.
+- This session did not execute any real campaign against real recipients.
+
+Implementation evidence:
+
+- Added `CampaignCatalogMetadata` to `src/types.ts` and optional `catalogMetadata` on `Campaign`.
+- Added campaign API validation for `catalogMetadata` fields:
+  - `campaignFamily`
+  - `lifecycleStage`
+  - `audienceKey`
+  - `audienceLabel`
+  - `catalogCategory`
+  - `catalogTags`
+  - `sourceBlueprintId`
+- Validation rejects execution/control fields inside catalog metadata, including approval, status, schedule, execute, and dry-run fields.
+- Campaign create/update now carries catalog metadata through the API model and audit logs.
+- Updated `docs/agents/contracts/marketing-campaign-contract.md` with the campaign catalog metadata contract and non-executable guardrails.
+- Added API contract coverage proving catalog metadata is accepted as discovery metadata and cannot smuggle execution/approval controls.
+- PostgreSQL persistence/migration remains intentionally deferred to Goal 12.5, which is the migration and tests chunk.
+
+Validation:
+
+- Remote `npm run build` passed.
+- Remote `npm test` passed: 39 tests, 39 passing.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of provider templates, notification provider execution, channel registry behavior, auth/leads contacts, consent, unsubscribe truth, raw app events, order truth, catalog product truth, tenant registry truth, CRM/account master data, or analytics truth.
+- Catalog metadata does not authorize real delivery; campaigns still require explicit owner approval and all existing consent, unsubscribe, frequency-cap, throttling, max-send, idempotency, max-30 chunking, registry validation, and notification delegation gates.
+- Future blueprint references are stored as references only and do not execute.
+
+Completed chunk:
+
+- Goal 12.1 - Add campaign catalog metadata model.
+
+Next unfinished step:
+
+- Goal 12.2 - Add lifecycle stage and campaign family enums/contracts.
+
+## 2026-06-13 - Goal 12.2 Lifecycle Stage And Campaign Family Enums
+
+Current focus: Goal 12 - Multi-Application Campaign Catalog.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Campaign family and lifecycle stage are Marketing-owned catalog taxonomy values for discovery and organization only.
+- The enum contract does not approve, schedule, execute, dry-run, send, or bypass any delivery guardrail.
+- Template references remain references; Marketing does not own notification provider templates or outbound provider execution.
+- This session did not execute any real campaign against real recipients.
+
+Implementation evidence:
+
+- Added shared `CampaignLifecycleStage` and `CampaignFamily` union types in `src/types.ts`.
+- Added API validation arrays for the shared lifecycle stage and campaign family vocabularies in `src/api-contracts.ts`.
+- `catalogMetadata.lifecycleStage` now accepts only the shared lifecycle values from `docs/agents/contracts/application-portfolio-taxonomy.md`.
+- `catalogMetadata.campaignFamily` now accepts only the shared campaign family values documented in the campaign contract and portfolio taxonomy.
+- Unsupported family/stage values fail with stable `invalid_campaign_request` field errors instead of becoming ad hoc taxonomy.
+- Updated `docs/agents/contracts/marketing-campaign-contract.md` with the Goal 12.2 enum contract and guardrails.
+- Updated `docs/agents/contracts/application-portfolio-taxonomy.md` with the shared campaign family vocabulary.
+- Extended API contract tests to cover accepted enum values and rejected custom family/stage values.
+
+Validation:
+
+- Remote `npm run build` passed.
+- Remote `npm test` passed: 39 tests, 39 passing.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of provider templates, notification provider execution, channel registry behavior, auth/leads contacts, consent, unsubscribe truth, raw app events, order truth, catalog product truth, tenant registry truth, CRM/account master data, or analytics truth.
+- Campaign family and lifecycle stage metadata do not authorize real delivery; campaigns still require explicit owner approval and all existing consent, unsubscribe, frequency-cap, throttling, max-send, idempotency, max-30 chunking, registry validation, and notification delegation gates.
+- Future blueprint work remains separate and cannot execute without normal campaign creation and approval gates.
+
+Completed chunk:
+
+- Goal 12.2 - Add lifecycle stage and campaign family enums/contracts.
+
+Next unfinished step:
+
+- Goal 12.3 - Add application-specific default campaign blueprints.
+
+## 2026-06-13 - Goal 12.3 Application-Specific Default Campaign Blueprints
+
+Current focus: Goal 12 - Multi-Application Campaign Catalog.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Default campaign blueprints are Marketing-owned catalog suggestions for business users and future catalog APIs.
+- Blueprints are non-executable: they do not approve, schedule, execute, dry-run, send, or bypass delivery guardrails.
+- Template references remain references; Marketing does not own notification provider templates or outbound provider execution.
+- Applications contribute signal semantics only and do not become campaign engines.
+- This session did not execute any real campaign against real recipients.
+
+Implementation evidence:
+
+- Added `CampaignBlueprint` to `src/types.ts` with app, family, lifecycle, audience, category, tags, suggested channels, `templateRef`, and segment-rule suggestion fields.
+- Added `src/campaign-blueprints.ts` with one default blueprint each for Flipflop, SpeakASap, Marathon, Bazos, Rent-A-Box, RunLayer, Shop Assistant, and Statics.
+- Added deterministic blueprint lookup and filter helpers for future Goal 12.4 catalog API work.
+- Blueprints carry `catalogMetadata.sourceBlueprintId` back to their `blueprintId` and align family/lifecycle/audience metadata with the blueprint root fields.
+- Blueprint objects intentionally omit approval state, campaign status, schedule fields, execution commands, dry-run flags, message bodies, contact data, consent truth, unsubscribe truth, provider credentials, and provider-template content.
+- Updated `docs/agents/contracts/marketing-campaign-contract.md` with the default blueprint contract and initial blueprint table.
+- Updated `docs/agents/contracts/application-portfolio-taxonomy.md` with the default application blueprint table and blueprint guardrails.
+- Added `test/campaign-blueprints.test.ts` covering application coverage, uniqueness, metadata alignment, deterministic filters/lookups, and non-executable field exclusions.
+
+Validation:
+
+- Remote `npm run build` passed.
+- Remote `npm test` passed: 42 tests, 42 passing.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of provider templates, notification provider execution, channel registry behavior, auth/leads contacts, consent, unsubscribe truth, raw app events, order truth, catalog product truth, tenant registry truth, CRM/account master data, or analytics truth.
+- Blueprints do not authorize real delivery; campaigns created from a future blueprint flow must still start as draft/pending approval and pass all existing consent, unsubscribe, frequency-cap, throttling, max-send, idempotency, max-30 chunking, registry validation, and notification delegation gates.
+- Application-specific blueprint defaults organize campaign discovery without moving campaign ownership into applications.
+
+Completed chunk:
+
+- Goal 12.3 - Add application-specific default campaign blueprints.
+
+Next unfinished step:
+
+- Goal 12.4 - Add catalog APIs and filters.
+
+## 2026-06-13 - Goal 12.4 Catalog APIs And Filters
+
+Current focus: Goal 12 - Multi-Application Campaign Catalog.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Catalog APIs are read-only discovery surfaces for campaign definitions and default blueprints.
+- Catalog APIs do not approve, schedule, execute, dry-run, resolve recipients, send, or bypass delivery guardrails.
+- Template references remain references; Marketing does not own notification provider templates or outbound provider execution.
+- This session did not execute any real campaign against real recipients.
+
+Implementation evidence:
+
+- Added read-only `GET /campaign-catalog/blueprints` with filters for app, product line, purpose, campaign family, lifecycle stage, audience key, catalog category, and catalog tag.
+- Added read-only `GET /campaign-catalog/blueprints/:blueprintId` detail lookup with `blueprint_not_found` for missing blueprints.
+- Added read-only `GET /campaign-catalog/campaigns` for campaign discovery with scope filters plus purpose, campaign family, lifecycle stage, audience key, catalog category, catalog tag, and source blueprint filters.
+- Campaign discovery passes only tenant/app/brand/business/product-line/lifecycle-scope/environment fields into the store and applies catalog metadata filters in the API layer.
+- Blueprint filter helpers now support audience, category, and tag filtering for the upcoming persisted catalog work.
+- Updated `docs/agents/contracts/marketing-campaign-contract.md` and `docs/agents/contracts/integration-api-matrix.md` with the catalog API contract.
+- Extended API tests to cover blueprint list/detail/tag filters, not-found behavior, and campaign catalog filtering by tenant/app/product line/lifecycle/purpose/tag.
+
+Validation:
+
+- Remote `npm run build` passed.
+- Remote `npm test` passed: 43 tests, 43 passing.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of provider templates, notification provider execution, channel registry behavior, auth/leads contacts, consent, unsubscribe truth, raw app events, order truth, catalog product truth, tenant registry truth, CRM/account master data, or analytics truth.
+- Catalog APIs are read-only and do not authorize real delivery; campaigns still require explicit owner approval and all existing consent, unsubscribe, frequency-cap, throttling, max-send, idempotency, max-30 chunking, registry validation, and notification delegation gates.
+- Blueprint APIs expose suggestions only and do not move campaign ownership into applications.
+
+Completed chunk:
+
+- Goal 12.4 - Add catalog APIs and filters.
+
+Next unfinished step:
+
+- Goal 12.5 - Add migration and tests.
+
+
+## 2026-06-13 - Goal 12.5 Migration And Tests
+
+Current focus: Goal 12 - Multi-Application Campaign Catalog.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Campaign catalog metadata is Marketing-owned discovery metadata persisted with campaign definitions.
+- The migration does not add delivery behavior, approval bypasses, recipient/contact ownership, consent truth, unsubscribe truth, provider template ownership, or notification provider execution.
+- Template references remain references; Marketing does not own provider template delivery.
+- This session did not execute any real campaign against real recipients.
+
+Implementation evidence:
+
+- Added `migrations/0006_campaign_catalog_metadata.sql` with `marketing_campaigns.catalog_metadata jsonb` plus indexes for campaign family, lifecycle stage, audience key, catalog category, source blueprint, and catalog tags.
+- Updated `PostgresMarketingStore.saveCampaign` to persist `catalogMetadata` as JSONB and preserve it during campaign updates.
+- Updated PostgreSQL campaign row mapping to return `catalogMetadata` on `getCampaign`, `listCampaigns`, scheduler claims, and other persisted campaign reads.
+- Added `test/store.test.ts` covering PostgreSQL campaign persistence SQL/value mapping and catalog metadata round-trip behavior.
+
+Validation:
+
+- Remote `npm run build` passed.
+- Remote `npm test` passed: 44 tests, 44 passing.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of provider templates, notification provider execution, channel registry behavior, auth/leads contacts, consent, unsubscribe truth, raw app events, order truth, catalog product truth, tenant registry truth, CRM/account master data, or analytics truth.
+- Catalog metadata remains non-executable discovery metadata; it does not approve, schedule, execute, dry-run, resolve recipients, send, or bypass existing consent, unsubscribe, frequency-cap, throttling, max-send, idempotency, max-30 chunking, registry validation, and notification delegation gates.
+- Goal 12 acceptance criteria remain satisfied: campaigns can be discovered by scope and catalog metadata, blueprints remain non-executable, and template refs remain references.
+
+Completed chunk:
+
+- Goal 12.5 - Add migration and tests.
+
+Completed goal:
+
+- Goal 12 - Multi-Application Campaign Catalog.
+
+Next unfinished step:
+
+- Goal 13 - Lifecycle Journey Engine.
+
+
+## 2026-06-13 - Goal 13.1 Journey Definitions
+
+Current focus: Goal 13 - Lifecycle Journey Engine.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Journey definitions are Marketing-owned orchestration metadata for future approved multi-step journeys.
+- Journey steps reference existing campaign definitions; they do not duplicate message bodies, templates, provider settings, contact data, consent truth, unsubscribe truth, or notification delivery behavior.
+- Goal 13.1 is definition-only: it does not activate journeys, enroll recipients, execute steps, dry-run journeys, call notifications, or bypass campaign approval and recipient safety gates.
+- This session did not execute any real campaign or journey against real recipients.
+
+Implementation evidence:
+
+- Added Journey model types for triggers, ordered campaign steps, exit rules, suppression rules, and draft status in `src/types.ts`.
+- Added journey request validation in `src/api-contracts.ts`, including read-only execution/approval fields, trigger type checks, non-empty step validation, duplicate step ID checks, flat condition/rule object validation, and allowed exit/suppression rule types.
+- Added protected journey definition CRUD endpoints and read endpoints in `src/main.ts`:
+  - `POST /journeys`
+  - `GET /journeys`
+  - `GET /journeys/:id`
+  - `PUT /journeys/:id`
+  - `DELETE /journeys/:id`
+- Journey creation/update validates tenant/app/brand registry scope and verifies referenced campaign and segment IDs before saving.
+- Added in-memory and PostgreSQL store support for journey definitions in `src/store.ts`.
+- Added `migrations/0007_journey_definitions.sql` for durable journey definition storage and scope/status/trigger indexes.
+- Updated `docs/agents/contracts/marketing-campaign-contract.md` and `docs/agents/contracts/integration-api-matrix.md` with the journey definition contract and API surface.
+- Added API tests for draft non-executable journey creation/list/detail behavior, executable metadata rejection, and missing reference rejection.
+- Added store tests for PostgreSQL journey trigger/steps/suppression persistence mapping.
+
+Validation:
+
+- Remote `npm run build` passed.
+- Remote `npm test` passed: 47 tests, 47 passing.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of provider templates, notification provider execution, channel registry behavior, auth/leads contacts, consent, unsubscribe truth, raw app events, order truth, catalog product truth, tenant registry truth, CRM/account master data, or analytics truth.
+- Journey definitions do not authorize real delivery; future step execution must reuse existing campaign execution and keep explicit owner approval, consent, unsubscribe, frequency-cap, throttling, max-send, idempotency, max-30 chunking, registry validation, notification delegation, and audit gates intact.
+- Exit and suppression rules are stored as future decision metadata only in this chunk; they do not create source-owned facts or directly suppress outside journey execution logic.
+
+Completed chunk:
+
+- Goal 13.1 - Add journey definitions, steps, triggers, exit rules, and suppression rules.
+
+Next unfinished step:
+
+- Goal 13.2 - Add approval gate for journey activation.
+
+
+## 2026-06-13 - Goal 13.2 Journey Activation Approval Gate
+
+Current focus: Goal 13 - Lifecycle Journey Engine.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Journey approval evidence is Marketing-owned activation governance for journey definitions.
+- Journey activation is status-only in this chunk: it does not enroll recipients, schedule steps, execute campaigns, dry-run journeys, resolve contacts, call notifications, or modify source-owned preferences.
+- Future journey step execution must still reuse campaign execution so explicit campaign approval, recipient consent, unsubscribe checks, frequency caps, throttling, max-send, idempotency, max-30 chunking, registry validation, notification delegation, and audit gates remain enforced.
+- This session did not execute any real campaign or journey against real recipients.
+
+Implementation evidence:
+
+- Added journey approval metadata to `Journey`: `approvalStatus`, `approvedBy`, `approvedAt`, `approvalNote`, and `activatedAt`.
+- New journeys now start as `status: draft` with `approvalStatus: pending`.
+- Added protected `POST /journeys/:id/approve` to require explicit owner actor evidence and record approval metadata.
+- Added protected `POST /journeys/:id/activate` to require approved journey evidence before marking a journey `active` and recording `activatedAt`.
+- Activation does not create execution runs, enqueue work, call notifications, or execute referenced campaign steps.
+- Updated `PostgresMarketingStore` and `rowToJourney` to persist and return journey approval/activation metadata.
+- Added `migrations/0008_journey_activation_approval.sql` for journey approval columns and indexes.
+- Updated `docs/agents/contracts/marketing-campaign-contract.md` and `docs/agents/contracts/integration-api-matrix.md` with the approval/activation endpoints and guardrails.
+- Added API tests covering pending draft journeys, unapproved activation rejection, missing approval actor rejection, approval evidence recording, status-only activation, and no execution runs created by activation.
+- Updated store tests to cover journey approval metadata persistence defaults.
+
+Validation:
+
+- Remote `npm run build` passed.
+- Remote `npm test` passed: 48 tests, 48 passing.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of provider templates, notification provider execution, channel registry behavior, auth/leads contacts, consent, unsubscribe truth, raw app events, order truth, catalog product truth, tenant registry truth, CRM/account master data, or analytics truth.
+- Active journey status does not authorize real delivery in this chunk; future step execution remains blocked until Goal 13 scheduler/idempotency logic explicitly reuses existing approved campaign execution and safety gates.
+- Approval metadata is governance evidence only and does not duplicate campaign approval, contact ownership, or source-owned consent/preference state.
+
+Completed chunk:
+
+- Goal 13.2 - Add approval gate for journey activation.
+
+Next unfinished step:
+
+- Goal 13.3 - Add scheduler/idempotency integration for journey steps.
+
+## 2026-06-13 - Parallel Planning Refactor
+
+Current focus: orchestrator planning refactor for parallel agent execution.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Notifications remains the owner of outbound provider execution and channel registry behavior.
+- Auth and leads remain the owners of identity, contact data, preferences, and consent.
+- Domain/app/CRM/analytics services remain source-signal or read-model owners and do not become campaign engines.
+- This session changed planning and orchestration documents only; it did not execute campaigns, deploy, or alter runtime delivery behavior.
+
+Implementation evidence:
+
+- Updated `docs/orchestrator/PLAN.md` to make maximum safe parallelism the default planning rule.
+- Reconciled the current next focus to Goal 13.3 based on `STATE.json` and completed evidence, replacing the stale Goal 11 pointer.
+- Added a current parallel execution assessment with blockers, allowed/forbidden files, expected outputs, validation, and integration order for Goal 13.3, Goal 14, Goal 15, Goal 19, and Goal 20.
+- Updated `AGENTS.md` so Codex planning for this repository must identify independently startable workstreams, blockers, file ownership, validation, and merge order.
+- Updated `docs/orchestrator/MASTER_PROMPT.md` and `docs/orchestrator/PROMPTS.md` so future sessions and handoffs include parallel execution assessment before assigning agents.
+- Reconciled stale coordinator task state by removing completed Goal 10 and Goal 12 backlog/open-task references from `TASKS.md` and `STATE.json`.
+
+Parallel tasks currently startable:
+
+- Track A: Goal 13.3 journey scheduler/idempotency integration can start now as the backend runtime priority.
+- Track B: Goal 14.1/14.2 public landing/static pipeline can start now if it avoids admin API/RBAC and journey runtime files.
+- Track C: Goal 15 auth/RBAC shell can start after auth session verification contract discovery; isolated backend discovery can run in parallel.
+- Track D: Goal 19 CRM/account contract draft can start now as documentation/contract work only; runtime client work is blocked by missing CRM/account service contract.
+- Track E: Goal 20 governance/readiness draft can start now as documentation/policy work only; enforcement code is blocked by policy decisions and runtime/admin foundations.
+
+Validation:
+
+- Documentation/state validation only: `STATE.json` was parsed and rewritten as valid JSON.
+- Runtime `npm run build` and `npm test` were not run because no application source code changed.
+
+Intent Compliance Report:
+
+- The refactor increases orchestration clarity without expanding Marketing ownership.
+- Planning now names blockers instead of allowing agents to invent contracts or duplicate ownership.
+- Parallel execution is limited to disjoint files/workstreams with a final integration/validation owner.
+- Real campaign execution remains prohibited without explicit owner approval.
+
+Next unfinished step:
+
+- Goal 13.3 - Add scheduler/idempotency integration for journey steps.
+
+
+## 2026-06-13 - Goal 13.3 Journey Step Scheduler And Idempotency
+
+Current focus: Goal 13 - Lifecycle Journey Engine.
+
+Preserved intent and ownership boundary:
+
+- Marketing owns journey definition state, journey step scheduler claims, campaign execution orchestration, idempotency evidence, and audit state.
+- Notifications remains the only outbound provider executor; journey steps do not send directly and still delegate through the existing campaign executor.
+- Auth and leads remain the owners of identity, contact data, preferences, consent, and unsubscribe truth.
+- Journey step execution remains behind explicit journey approval/activation and explicit campaign approval; this session did not execute any real campaign or journey against real recipients.
+
+Implementation evidence:
+
+- Added `JourneyStepClaim` state for due journey step claims, scheduler owner/lock expiry, run reference, completion status, and errors.
+- Added in-memory and PostgreSQL store support for claiming due active approved journey steps and completing step claims.
+- Added `migrations/0009_journey_step_scheduler_idempotency.sql` with `marketing_journey_step_claims`, uniqueness on `journey_id + step_id + due_at`, due/claim indexes, and run references.
+- Extended `runDueScheduledCampaigns` so `POST /scheduler/run-due` also claims due journey steps from active approved journeys after step delay from `activatedAt`.
+- Journey step execution uses deterministic idempotency keys in the form `journey:<journeyId>:<stepId>:<dueAt>` and calls `executeCampaign` for the referenced campaign.
+- Duplicate scheduler calls cannot execute the same due journey step twice once the step claim is completed.
+- Updated scheduler API output and audit events with journey step claimed/executed/failed counts.
+- Updated contracts with the Goal 13.3 scheduler/idempotency behavior and guardrails.
+- Added API coverage for active approved journey step claiming, deterministic journey idempotency keys, and duplicate scheduler no-op behavior.
+
+Validation:
+
+- Remote `npm run build` passed.
+- Remote `npm test` passed: 49 tests, 49 passing.
+
+Intent Compliance Report:
+
+- Journey steps reuse the existing campaign executor, preserving campaign approval, consent enforcement, unsubscribe checks, frequency caps, throttling, max-send limits, max-30 notification chunking, registry validation, notification delegation, and execution audit evidence.
+- Marketing did not add direct provider calls, provider credentials, contact storage, consent truth, unsubscribe truth, or a separate recipient engine.
+- Step claim idempotency is Marketing-owned scheduler state and does not change source-owned identity/preference boundaries.
+- Real delivery remains possible only through explicitly invoked scheduler execution of approved active journeys and approved executable campaigns; no automatic daemon or real recipient execution was run in this session.
+
+Completed chunk:
+
+- Goal 13.3 - Add scheduler/idempotency integration for journey steps.
+
+Next unfinished step:
+
+- Goal 13.4 - Add dry-run preview for journey enrollment and next actions.
+
+
+## 2026-06-13 - Goal 13.4 Journey Dry-Run Preview
+
+Current focus: Goal 13 - Lifecycle Journey Engine.
+
+Preserved intent and ownership boundary:
+
+- Marketing owns journey preview orchestration, journey definitions, campaign dry-run summaries, and audit state.
+- Notifications remains the only outbound provider executor; journey dry-run preview does not call notifications or send messages.
+- Auth and leads remain the owners of identity, contact data, preferences, consent, and unsubscribe truth; preview reads recipient decisions through the existing campaign dry-run path only.
+- This session did not execute any real campaign or journey against real recipients.
+
+Implementation evidence:
+
+- Added protected `POST /journeys/:id/dry-run`.
+- Journey dry-run preview returns trigger/enrollment context, calculated step due times from `previewStartAt` or activation time, and per-step next-action summaries.
+- Per-step summaries reuse `executeCampaign(..., { dryRun: true })` and return counts/status/reason summaries instead of message bodies or notification provider data.
+- Preview supports draft, approved, or active journeys for planning, but does not activate journeys, create scheduler claims, complete step claims, call notifications, or record sent history.
+- Added API coverage proving preview leaves the journey in draft state, creates only campaign dry-run runs, and leaves scheduler journey-step claims at zero.
+- Updated the journey contract and integration API matrix with the dry-run preview endpoint and delivery-free constraints.
+
+Validation:
+
+- Remote `npm run build` passed.
+- Remote `npm test` passed: 50 tests, 50 passing.
+
+Intent Compliance Report:
+
+- Journey preview remains planning-only and does not authorize or perform real delivery.
+- Existing campaign dry-run continues to enforce recipient consent/unsubscribe/frequency decision logic without notification delegation or send-history writes.
+- Marketing did not take ownership of provider execution, provider credentials, auth/leads contacts, source-owned consent, source-owned unsubscribe truth, application event truth, order truth, or catalog truth.
+- Preview output summarizes decision evidence without embedding message bodies, provider credentials, authorization tokens, or notification-provider data.
+
+Completed chunk:
+
+- Goal 13.4 - Add dry-run preview for journey enrollment and next actions.
+
+Next unfinished step:
+
+- Goal 13.5 - Add audit evidence for step decisions.
+
+
+## 2026-06-13 - Goal 13.3 Delegated Track A Verification
+
+Current focus: Goal 13 - Lifecycle Journey Engine.
+
+Delegation: Track A / Goal 13.3 scheduler/idempotency integration for journey steps.
+
+Preserved intent and boundaries:
+- Marketing remains the campaign and segmentation control plane for journey definitions, scheduler claims, campaign execution orchestration, idempotency evidence, and audit state.
+- Journey steps do not send directly and do not own provider behavior; execution delegates to the existing campaign executor and notifications-microservice remains the outbound provider executor.
+- Auth and leads remain source owners for contact data, preferences, and consent; this verification did not change source-of-truth models.
+- This session did not execute a real campaign or journey against real recipients.
+
+Verification evidence:
+- Confirmed current implementation includes persisted `JourneyStepClaim` state, deterministic journey step idempotency keys, scheduler output for journey step claims/executions/failures, and `marketing_journey_step_claims` uniqueness on `journey_id + step_id + due_at`.
+- Confirmed `runDueScheduledCampaigns` claims due active approved journey steps and calls `executeCampaign` with `journey:<journeyId>:<stepId>:<dueAt>` keys, keeping campaign approval, recipient consent, unsubscribe, frequency cap, throttling, max-send, max-30 chunking, registry validation, notification delegation, and audit behavior on the existing campaign path.
+- `npm run build` passed on remote repository.
+- `npm test` passed on remote repository: 49 tests, 49 passing.
+- Targeted coverage observed: `journey scheduler claims due active steps idempotently`, `scheduler claim prevents duplicate due scheduled execution`, and existing executor safety tests for approval, consent, unsubscribe, frequency cap, idempotency, max-send guardrails, notification chunk size, and `<=30` notification chunking.
+
+Intent Compliance Report:
+- Delivery delegation preserved: yes, journey steps use `executeCampaign`; no direct email, Telegram, WhatsApp, or provider calls were added.
+- Approval gates preserved: yes, due journey steps require active approved journey evidence and execute only through approved campaign execution.
+- Consent and unsubscribe enforcement preserved: yes, recipient decisions remain in the campaign executor path.
+- Frequency caps, throttling, max-send, max-30 chunking, and idempotency preserved: yes, journey scheduler integration reuses existing campaign executor controls and deterministic step idempotency keys.
+- Contact/source ownership preserved: yes, no auth/leads ownership model or preference truth was changed.
+- Validation complete: yes, remote `npm run build` and `npm test` passed.
+
+Next handoff:
+- Goal 13.3 is verified complete in the current remote worktree.
+- Goal 13.4 dry-run preview for journey enrollment and next actions may start after integration ownership accepts the current Goal 13.3 worktree state.
+
+## 2026-06-13 - Goal 19.1-19.2 CRM Account Read-Only Signal Contract Draft
+
+Current focus: Goal 19 - CRM/Account Service Integration, chunks 19.1 and 19.2.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- CRM/account master data remains owned by a future CRM/account service, not Marketing.
+- Account, company, opportunity, owner, lifecycle, health, onboarding, renewal, upsell, and winback fields are read-only segmentation signals only.
+- Marketing may store source references, decision snapshots, dry-run evidence, run outcomes, suppression/frequency-cap evidence, and audit metadata; it must not store or edit CRM master records.
+- CRM account lifecycle or opportunity state must never imply recipient marketing consent.
+- Real delivery still requires explicit campaign approval, source-owned recipient consent, unsubscribe checks, frequency caps, throttling, idempotency, max-send limits, max-30 chunking, registry validation, and notification delegation through notifications-microservice.
+- This session did not implement a runtime CRM client, database ownership migration, journey runtime behavior, admin UI, deployment, or real campaign execution.
+
+Implementation evidence:
+
+- Added `docs/agents/contracts/crm-account-signal-contract.md` as the Goal 19.1-19.2 read-only signal draft.
+- Defined the future preferred read endpoint draft: `GET {CRM_ACCOUNT_SERVICE_URL}{CRM_ACCOUNT_SIGNAL_PATH:-/marketing/account-signals}`.
+- Defined account signal fields for account/company IDs, tenant/app/brand scope, owner references, lifecycle stage, health status/score, onboarding status, plan tier, risk level, renewal date, customer-success touch timestamp, source update timestamp, related opportunities, and relationship-only `contactRefs`.
+- Defined opportunity signal fields for opportunity/account/company IDs, tenant/app/brand scope, opportunity stage/status/type, owner reference, amount/currency/probability, expected close date, source update timestamp, and relationship-only `contactRefs`.
+- Added initial enum drafts for lifecycle stage, opportunity stage/status/type, health status, and onboarding status.
+- Documented contact and consent boundaries: CRM `contactRefs` must not include raw addresses, channel handles, consent truth, unsubscribe truth, or preferred-channel truth; reachable recipients must still resolve through auth/leads.
+- Documented future CRM/account segment predicate placeholders and safe failure/audit reasons.
+- Updated `docs/agents/contracts/crm-account-boundary-contract.md` to point to the new signal contract.
+- Updated `docs/agents/contracts/integration-api-matrix.md` to reference the CRM account signal contract and runtime blocker.
+- Marked Goal 19 chunks 19.1 and 19.2 complete in `docs/orchestrator/GOALS.md`; chunks 19.3-19.5 remain open.
+
+Blockers recorded:
+
+- `[MISSING: CRM/account service base URL]`
+- `[MISSING: CRM/account service auth method]`
+- `[MISSING: CRM/account read endpoint path]`
+- `[MISSING: CRM/account sample account signal response]`
+- `[MISSING: CRM/account sample opportunity signal response]`
+- `[MISSING: CRM/account pagination and rate-limit contract]`
+- `[MISSING: CRM/account error response contract]`
+
+Validation:
+
+- Documentation review completed against `docs/orchestrator/GOALS.md`, `docs/orchestrator/PLAN.md`, `docs/agents/contracts/crm-account-boundary-contract.md`, and `docs/agents/contracts/integration-api-matrix.md`.
+- `npm run build` was not run because this session changed only Markdown contract/status documentation and added no generated docs, imports, runtime code, or tests.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of CRM/account master data, company records, opportunities, lifecycle state, account owner assignments, health state, onboarding state, customer-success notes, contact data, consent, unsubscribe state, provider credentials, or direct delivery.
+- CRM/account signals are documented as read-only segmentation inputs and future dry-run/audit evidence only.
+- Runtime CRM chunks 19.3-19.5 remain blocked until the missing service contract facts are approved.
+- Notification delegation, explicit owner approval, source-owned consent, unsubscribe enforcement, frequency caps, throttling, max-send limits, idempotency, max-30 chunks, and registry validation remain preserved.
+
+Completed chunks:
+
+- Goal 19.1 - Define CRM/account read-only signal contract.
+- Goal 19.2 - Define account, opportunity, lifecycle stage, owner, health, and onboarding status fields.
+
+Next unfinished step:
+
+- Goal 19.3 - Add CRM signal source client once service exists; blocked by missing CRM/account service contract, base URL, auth method, endpoint path, and sample responses.
+
+## 2026-06-13 - Goal 20.1-20.5 Governance And Readiness Draft
+
+Current focus: Goal 20 - Production Governance And Readiness, documentation/policy draft only.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane for campaign risk, approval evidence, execution readiness, policy references, and operational audit state.
+- Notifications remains the only outbound provider executor; this session did not add provider calls, provider credentials, or notification sending behavior.
+- Auth and leads remain the owners of identity, contact data, consent, preferences, and unsubscribe truth.
+- Tenant/app/business registry remains the owner of tenant/app timezone, policy reference, and canonical scope truth.
+- This session did not deploy and did not execute any real campaign or journey against real recipients.
+
+Implementation evidence:
+
+- Added `docs/agents/contracts/production-governance-readiness-contract.md` defining production risk classes (`low`, `standard`, `high`, `restricted`), stronger high-risk approval design, quiet-hour and tenant/app policy guardrail proposal, readiness checklist, and future enforcement boundaries.
+- Added `docs/operations/production-readiness-playbook.md` with pre-execution, deployment, rollback, incident review, and unsubscribe escalation checklists.
+- Marked unresolved production decisions as `[MISSING: ...]`: recipient-count thresholds, high-risk approver identity sources, governance/operations approver identity source, restricted exception owner, quiet-hour defaults by weekend/channel/emergency override, and confirmed rollback command/version policy.
+- Kept enforcement code explicitly blocked until owner confirms thresholds, approvers, quiet-hour defaults, rollback procedure, and until journey runtime plus admin auth foundations are stable.
+
+Validation:
+
+- Documentation review against `docs/orchestrator/GOALS.md`, `docs/orchestrator/PLAN.md`, `docs/agents/contracts/marketing-campaign-contract.md`, `docs/agents/contracts/preferences-consent-contract.md`, `docs/agents/contracts/channel-registry-contract.md`, and `docs/agents/contracts/integration-api-matrix.md`.
+- Runtime `npm run build` and `npm test` were not run because only new governance/playbook documentation changed.
+- No deployment was run; deployment remains blocked without explicit owner approval.
+
+Intent Compliance Report:
+
+- The governance draft strengthens owner approval, auditability, production readiness, unsubscribe escalation, and policy review without weakening existing campaign approval, consent, unsubscribe, frequency-cap, throttling, idempotency, max-send, max-30 chunking, registry validation, or notification delegation gates.
+- The draft does not move provider execution into Marketing, does not duplicate auth/leads contact or consent ownership, and does not create tenant/app policy truth inside Marketing.
+- High-risk and restricted campaign controls are documented as additional gates, not replacements for existing execution safety controls.
+
+Completed draft chunks:
+
+- Goal 20.1 - Campaign risk classification draft.
+- Goal 20.2 - High-risk approval workflow draft.
+- Goal 20.3 - Quiet-hour and tenant/app policy guardrail proposal.
+- Goal 20.4 - Real-execution confirmation and rollback/incident/unsubscribe playbook draft.
+- Goal 20.5 - Production readiness validation and deployment checklist draft.
+
+Next unfinished step:
+
+- Owner confirmation required for missing production policy decisions before enforcement code or production deployment.
+
+
+## 2026-06-13 - Goal 14.1-14.2 Public Landing And Static Pipeline
+
+Current focus: Goal 14 - Landing Page And Auth Entry Points, Track B partial implementation.
+
+Preserved intent and ownership boundary:
+
+- Marketing may present a public entry point for business users, but it remains the campaign and segmentation control plane.
+- Auth remains the owner of registration, login, user identity, session verification, contact data, and registered-user consent/preferences.
+- Notifications remains the owner of outbound provider execution and channel registry behavior.
+- The public landing page does not expose service tokens, admin data, recipient/contact data, campaign execution controls, journey runtime controls, provider credentials, or protected admin APIs.
+- This session did not execute any real campaign or journey against real recipients.
+
+Implementation evidence:
+
+- Added a minimal frontend/static build pipeline: npm run build now runs TypeScript compilation and copies public assets into dist/public through scripts/copy-public.mjs.
+- Updated Dockerfile builder stage to include scripts and public assets before the build, so the runtime image receives dist/public through the existing dist copy.
+- Added public/index.html and public/assets/landing.css for the anonymous Marketing landing page.
+- Added public/assets/marketing-dashboard-bg.png as a generated bitmap dashboard backdrop for the landing page.
+- Added Express static serving for /assets plus anonymous GET / and GET /landing routes in src/main.ts.
+- Register and Log in are intentionally disabled placeholder buttons because final auth login/register URLs and return URL format remain blocked pending auth-microservice contract confirmation.
+- Admin navigation is intentionally not linked because the Goal 15 protected admin shell route is not defined yet.
+- Added API smoke coverage proving the public landing and CSS are anonymous static content and do not expose MARKETING_API_TOKEN, SERVICE_API_TOKEN, x-service-token, campaign execution paths, or scheduler execution paths.
+
+Validation:
+
+- Remote npm run build passed on 2026-06-13.
+- Remote npm test passed on 2026-06-13: 51 tests, 51 passing.
+- Rendered validation used ssh port forwarding to http://127.0.0.1:4614 with MARKETING_STORE=memory.
+- In-app Browser validation was attempted first but failed because the browser webview did not attach.
+- Unsandboxed Playwright fallback captured desktop 1440x960 and mobile 390x844 screenshots at /private/tmp/marketing-landing-desktop.png and /private/tmp/marketing-landing-mobile.png.
+- Playwright validation passed: HTTP 200, title Statex Marketing, expected landing content present, no console errors or warnings, no horizontal overflow, and the public Status link navigated to /health with status ok.
+
+Intent Compliance Report:
+
+- Marketing did not implement auth-owned registration, login, session verification, or RBAC.
+- Marketing did not expose service tokens, Authorization headers, source-owner tokens, protected admin data, campaign execution controls, journey scheduler controls, recipient/contact data, provider credentials, message bodies, or notification provider controls on the public page.
+- Public landing content describes Marketing-owned orchestration capability without taking ownership of auth, leads, notifications, registry, app signal, order, catalog, CRM, or analytics truth.
+- Real campaign and journey execution remain protected by existing service-token and approval gates and were not triggered.
+
+Completed chunks:
+
+- Goal 14.1 - Add frontend build pipeline and static serving.
+- Goal 14.2 - Build landing page for Marketing platform capabilities.
+
+Blocked next chunks:
+
+- Goal 14.3 - Add register, login, and admin buttons remains partially blocked for final destinations. Register and login require confirmed auth-microservice URLs and return URL format. Admin requires the Goal 15 shell route.
+- Goal 14.4 - Route login/register through auth-microservice with return URLs is blocked by missing confirmed auth URL and return URL contract.
+- Goal 14.5 - Deployment/static asset validation waits for final auth/admin navigation and owner-approved deployment.
+
+## 2026-06-13 - Goal 15 Track C Admin Auth And RBAC Shell Discovery
+
+Current focus: Goal 15 - Admin Auth And RBAC Shell, isolated Track C discovery plus backend shell.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Auth remains the source of truth for user identity, JWT/session validation, and RBAC role claims.
+- Browser admin requests use Auth-issued user tokens only; the browser is not given `MARKETING_API_TOKEN` or `SERVICE_API_TOKEN`.
+- Existing service-token API consumers remain compatible and continue using the existing protected API contract.
+- This session did not change journey scheduler/runtime files, campaign/segment management UI, runs/audit/analytics views, notification delivery, source-owned contact data, consent truth, or real campaign execution behavior.
+
+Discovery report:
+
+- Marketing docs require Goal 15 to add auth-microservice session verification, server-side RBAC, `/admin/api/session`, admin route protection, and viewer/operator/admin/owner mapping.
+- Auth repository evidence confirmed `docs/CONSUMER_JWT_VALIDATION_STANDARD.md` approves the default browser-facing consumer pattern: server-side `POST /auth/validate` with `{ token }`, returning `valid: true` plus an Auth-owned user object and roles.
+- Auth repository evidence confirmed `docs/UNIFIED_AUTH_CONTRACT.md` defines Auth as owner of identity, JWT shape, and RBAC role claims; current token/user payload includes `roles` as centralized RBAC role strings.
+- Auth implementation evidence confirmed `src/auth/auth.controller.ts` exposes `POST /auth/validate`, and `src/auth/auth.service.ts` verifies the JWT with Auth `JWT_SECRET`, checks active user state, and returns sanitized user data plus roles.
+- Auth implementation evidence confirmed `src/roles/roles.service.ts` emits full scoped role strings in the forms `global:<role>`, `app:<application-name>:<role>`, and `internal:<application-name>:<role>`.
+- Auth seed evidence found current generic platform/internal roles such as `global:superadmin`, `global:platform_admin`, and `internal:marketing-microservice:admin`; `[MISSING: production assignment/seeding evidence for marketing_viewer and marketing_operator role grants]` remains for operations before broad admin rollout.
+
+Implementation evidence:
+
+- Added `src/admin-auth.ts` with server-side Auth session verification through `AUTH_SERVICE_URL` + `AUTH_SESSION_VALIDATE_PATH` defaulting to `/auth/validate`.
+- Added server-side RBAC mapping for `viewer`, `operator`, `admin`, and `owner`, with configurable role env keys `MARKETING_ADMIN_VIEWER_ROLES`, `MARKETING_ADMIN_OPERATOR_ROLES`, `MARKETING_ADMIN_ADMIN_ROLES`, and `MARKETING_ADMIN_OWNER_ROLES`.
+- Default RBAC mapping accepts recommended Marketing roles plus confirmed Auth scoped role formats; `global:superadmin` maps to owner, `global:platform_admin` and `internal:marketing-microservice:admin` map to admin.
+- Added `src/admin-shell.ts` as a minimal protected admin shell renderer with navigation only; it does not implement campaign, segment, run, audit, analytics, or execution controls.
+- Added protected `GET /admin` and `GET /admin/api/session` routes in `src/main.ts`; anonymous requests are rejected before shell/session data is returned.
+- `/admin/api/session` returns sanitized user metadata, roles, and access level only; it does not return Auth tokens, `MARKETING_API_TOKEN`, `SERVICE_API_TOKEN`, provider credentials, message bodies, or recipient data.
+- Added admin auth tests covering anonymous rejection, Auth validate calls, viewer/operator/admin/owner role mapping, configurable auth cookie support, and rejection of service tokens as browser identity.
+- Added ignored local `.env.example` key documentation for the new auth/session/RBAC settings; the repository currently ignores `.env.example` via `.gitignore`.
+
+Validation:
+
+- Remote `npm run build` passed on 2026-06-13.
+- Remote `npm test` passed on 2026-06-13: 54 tests, 54 passing.
+- New targeted contract tests passed:
+  - `admin shell rejects anonymous browser requests`
+  - `admin session is verified through auth and maps viewer operator admin owner roles`
+  - `admin session supports configurable auth cookie and does not accept service tokens as browser identity`
+
+Intent Compliance Report:
+
+- Marketing did not become the identity, session, JWT, or RBAC role-claim authority; it validates Auth-owned user tokens server-side.
+- Marketing did not expose service tokens to browser code or admin session responses.
+- Marketing did not modify service-token protected API compatibility for existing machine consumers.
+- Marketing did not add direct email, Telegram, or WhatsApp delivery and did not execute any real campaign or journey.
+- Marketing did not take ownership of auth/leads contact data, preferences, consent, unsubscribe truth, provider credentials, channel registry behavior, tenant truth, CRM master data, or analytics truth.
+
+Completed chunk:
+
+- Goal 15 discovery plus isolated admin auth/RBAC shell foundation: anonymous admin rejection and server-side viewer/operator/admin/owner mapping.
+
+Next unfinished step:
+
+- Goal 15 follow-up: confirm/provision production Auth role grants for `marketing_viewer`, `marketing_operator`, `marketing_admin`, and `marketing_owner`, then integrate login/return-url handoff from Goal 14 before Goals 16, 17, and 18 admin UI tracks.
+
+## 2026-06-13 - Goal 20 Governance Draft Discoverability Fix
+
+Current focus: Goal 20 documentation integration correction.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- This correction changed documentation references only; it did not add enforcement code, notification sending behavior, auth/leads ownership changes, deployment, or real campaign execution.
+
+Implementation evidence:
+
+- Added `docs/agents/contracts/production-governance-readiness-contract.md` to the contract document list in `docs/agents/contracts/integration-api-matrix.md` so the Goal 20 policy contract is discoverable with the other integration contracts.
+- Added documentation draft evidence under Goal 20 in `docs/orchestrator/GOALS.md`, linking the governance contract and production readiness playbook.
+- Kept Goal 20 enforcement explicitly blocked by missing production risk thresholds, high-risk approver identities, quiet-hour policy defaults, and owner-approved deployment/rollback procedure instead of marking runtime enforcement complete.
+
+Validation:
+
+- Documentation review only; no runtime code changed.
+- `npm run build`, `npm test`, deployment, and real campaign execution were not run.
+
+Intent Compliance Report:
+
+- The fix improves traceability without weakening campaign approval, consent, unsubscribe, frequency-cap, throttling, idempotency, max-send, max-30, registry validation, notification delegation, or audit requirements.
+
+## 2026-06-13 - Goal 19.3 CRM Account Runtime Client Blocked Evidence
+
+Current focus: Goal 19 - CRM/Account Service Integration, chunk 19.3 readiness verification.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- CRM/account master data remains owned outside Marketing by a future or external CRM/account service.
+- Marketing may use CRM/account lifecycle signals only as read-only segmentation inputs after the real source contract exists and is approved.
+- CRM account lifecycle, opportunity, owner, health, onboarding, renewal, upsell, or winback state must never imply recipient consent.
+- Reachable recipients must still resolve through auth/leads and all existing explicit approval, source-owned consent, unsubscribe, frequency-cap, throttling, idempotency, max-send, max-30 chunking, registry validation, and notification delegation gates must remain enforced.
+- This session did not implement a runtime CRM client, CRM source type, CRM master-data migration, journey runtime change, admin UI, deployment, or real campaign execution.
+
+Readiness verification evidence:
+
+- Reviewed the mandatory orchestrator files and required CRM/account, integration, campaign, consent, and channel contracts before changing documentation.
+- `docs/agents/contracts/crm-account-signal-contract.md` still marks CRM runtime work blocked until all required facts are available and approved.
+- `docs/agents/contracts/integration-api-matrix.md` still identifies the CRM/account dependency as a future service and says runtime work is blocked until service URL, auth, endpoint, and sample responses are approved.
+- `docs/orchestrator/PLAN.md` still limits Goal 19 runtime work to after a real CRM/account service contract exists.
+- Repository search for `CRM`, `crm`, `CRM_ACCOUNT`, `crm_account`, `account-signals`, `account service`, `account signal`, and `opportunity` found only draft/ownership documentation and historical status references, not an approved runtime service contract.
+- `.env.example` contains no `CRM_ACCOUNT_SERVICE_URL`, `CRM_ACCOUNT_SIGNAL_PATH`, CRM auth token key, CRM timeout, CRM pagination, or CRM rate-limit configuration.
+- `k8s/configmap.yaml` contains configured URLs for auth, leads, logging, notifications, and tenant/app registry only; no CRM/account service URL or endpoint path is configured.
+- `k8s/external-secret.yaml` contains DB, notification, marketing API, tenant/app registry, and JWT secret references only; no CRM/account service token or auth method is configured.
+- `src/types.ts` still limits executable segment sources to `auth_users`, `leads`, `orders`, and `app_signals`; no CRM/account segment source exists.
+- `src/sources.ts` contains executable clients for auth, leads, orders/catalog, and application signals only; no CRM/account read client, pagination handling, rate-limit handling, or error contract handling exists.
+
+Blockers confirmed still unresolved:
+
+- `[MISSING: CRM/account service base URL]`
+- `[MISSING: CRM/account service auth method]`
+- `[MISSING: CRM/account read endpoint path]`
+- `[MISSING: CRM/account sample account signal response]`
+- `[MISSING: CRM/account sample opportunity signal response]`
+- `[MISSING: CRM/account pagination and rate-limit contract]`
+- `[MISSING: CRM/account error response contract]`
+
+Decision:
+
+- Goal 19.3 remains blocked.
+- No runtime CRM source client was added because the required source contract facts are still missing and the existing CRM signal contract explicitly forbids executable CRM runtime work until those facts exist.
+
+Validation:
+
+- Documentation/status review only.
+- `npm run build` and `npm test` were not run because no runtime code, generated documentation, imports, tests, or configuration files were changed.
+- No deployment was run.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of CRM/account master data, companies, opportunities, account owners, lifecycle state, health state, onboarding state, customer-success notes, account-contact relationships, contact data, consent, unsubscribe truth, notification provider execution, provider credentials, channel registry behavior, tenant/app registry truth, or analytics truth.
+- Marketing did not infer consent from CRM/account state and did not create an executable path that could bypass auth/leads recipient resolution.
+- Existing approval, consent, unsubscribe, frequency-cap, throttling, idempotency, max-send, max-30 chunking, registry validation, and notification delegation gates remain unchanged.
+
+Next unfinished step:
+
+- Goal 19.3 can start only after an approved real CRM/account service contract supplies the base URL, auth method, read endpoint path, account sample response, opportunity sample response, pagination/rate-limit contract, and error response contract.
+
+## 2026-06-13 - Goal 18 Analytics And Attribution Contract/Aggregation Foundation
+
+Current focus: Goal 18 - Analytics And Attribution Dashboard, contract and read-only aggregation foundation.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- Marketing analytics may summarize Marketing-owned campaign definitions, run state, delivery decisions, suppression reasons, correlation IDs, and sanitized audit/outcome evidence.
+- Notifications remains the owner of provider delivery truth. Auth and leads remain owners of contact, preference, consent, and unsubscribe truth. Domain apps, orders/catalog, CRM/account, and analytics/customer-insights services remain owners of their source facts and read models.
+- This session did not add dashboard UI because Goal 15 is not conclusively marked complete and shared Goal 16/17 admin navigation is still integration-gated.
+- This session did not change campaign execution behavior, journey scheduler behavior, notification provider implementation, auth/leads models, order/catalog truth models, CRM runtime behavior, deployment, or real campaign execution.
+
+Implementation evidence:
+
+- Added `src/analytics.ts` as a read-only analytics helper.
+- Added `buildMarketingAnalyticsSummary` to aggregate existing Campaign and ExecutionRun records by tenant/app/brand/business/product-line/lifecycle/environment/campaign/segment/channel/time filters.
+- Summary output distinguishes Marketing-owned outcome statuses: sent, skipped, failed, would_send, and queued.
+- Summary output groups by channel, campaign, segment, lifecycle stage, and decision reason while preserving campaign family/lifecycle catalog metadata.
+- Added optional externally supplied attribution facts for delivered, converted, and attributed_value counts/values. When no external facts are supplied, delivered/converted/value fields remain unavailable with `external_analytics_required` instead of being inferred by Marketing.
+- Added `buildMarketingAnalyticsEvents` to create sanitized normalized facts for `marketing.campaign.run.recorded` and `marketing.recipient.outcome.recorded`.
+- Normalized facts include stable campaign/run/idempotency/correlation/scope/recipient-reference fields and explicitly omit raw recipient addresses, message content, channel keys, provider credentials, service tokens, and notification-provider payloads.
+- Extended `docs/agents/contracts/analytics-attribution-contract.md` with Goal 18 read-only aggregation, external attribution fact, normalized marketing fact, and dashboard UI gate sections.
+- Added `test/analytics.test.ts` covering summary aggregation, external fact joins, and redaction of raw addresses/message content.
+
+Validation:
+
+- Remote `npm run build` passed on 2026-06-13.
+- Remote `npm test` passed on 2026-06-13: 62 tests, 62 passing.
+- New targeted tests passed:
+  - `analytics summary aggregates Marketing-owned outcomes without inventing attribution truth`
+  - `analytics summary can join externally supplied attribution facts by campaign and run`
+  - `analytics events redact raw recipient addresses and message content`
+- Dashboard smoke/redaction tests were not run because no dashboard UI was changed.
+
+Intent Compliance Report:
+
+- Marketing did not become the owner of notifications delivery status, conversion truth, revenue/value truth, customer-insights read models, app behavior facts, order truth, catalog truth, CRM master data, contact data, consent, or unsubscribe state.
+- Marketing did not infer delivered/converted/revenue facts from sent outcomes; those fields require externally supplied facts.
+- Analytics helpers are read-only and do not execute campaigns, claim scheduler work, call notifications, resolve contacts, write source preferences, or bypass approval, consent, unsubscribe, frequency-cap, throttling, idempotency, max-send, max-30 chunking, registry validation, notification delegation, or audit requirements.
+- Browser admin UI remains blocked behind Goal 15/16/17 integration readiness.
+
+Completed chunk:
+
+- Goal 18 contract and read-only aggregation foundation for normalized Marketing facts and externally owned attribution joins.
+
+Blocked next chunks:
+
+- Goal 18 protected analytics dashboard UI remains blocked by `[MISSING: conclusive Goal 15 completion/reconciliation]` and `[MISSING: stable shared Goal 16/17 admin navigation integration]`.
+- Goal 18 runtime analytics-service integration remains blocked by `[MISSING: approved analytics-service ingestion/read endpoint contract]`, `[MISSING: analytics-service auth method]`, and `[MISSING: delivery/conversion/value sample fact responses]`.
+
+
+## 2026-06-13 - Goal 13.5 Journey Step Decision Audit Evidence
+
+Current focus: Goal 13 - Lifecycle Journey Engine, chunk 13.5.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane for journey definitions, due-step claims, scheduler decisions, campaign execution orchestration, idempotency evidence, and audit state.
+- Notifications remains the only outbound provider executor; journey steps still delegate to the existing campaign executor and do not call provider APIs directly.
+- Auth and leads remain owners of identity, contact data, preferences, consent, and unsubscribe truth; audit evidence stores decision summaries and source references only.
+- This session did not execute a real campaign or journey against real recipients.
+
+Implementation evidence:
+
+- Added sanitized `journey_step_decision_audited` audit events from the journey scheduler after each claimed step completes or fails.
+- Scheduler results now include `journeySteps.decisions` with per-step run status, recipient status counts, decision reason counts, sent/skipped/failed totals, due timestamp, deterministic idempotency key, step condition keys, max-executions metadata, and journey exit/suppression rule types.
+- Added/finished persisted `decisionEvidence` on `JourneyStepClaim`, backed by `src/journey-audit.ts`, with journey approval/activation evidence, due timestamp, delay, idempotency key, condition keys, max-executions metadata, and exit/suppression rule references.
+- Updated `migrations/0009_journey_step_scheduler_idempotency.sql` with `decision_evidence jsonb` for durable step decision evidence.
+- Reconciled incomplete shared worktree code in `src/store.ts` by fixing PostgreSQL decision-evidence persistence and row mapping fallback.
+- Added targeted test coverage: `journey scheduler emits sanitized step decision audit evidence`.
+- Updated the journey contract with Goal 13.5 audit evidence behavior and redaction constraints.
+- Marked Goal 13.5 complete and Goal 13 done in `docs/orchestrator/GOALS.md`; updated `STATE.json` and `docs/orchestrator/PLAN.md` to require coordinator selection/reconciliation for the next implementation chunk.
+
+Validation:
+
+- Remote `npm run build` passed.
+- Remote targeted test `npx tsx --test --test-concurrency=1 test/executor.test.ts` passed: 32 tests, 32 passing.
+- Remote `npm test` passed: 56 tests, 56 passing.
+
+Intent Compliance Report:
+
+- Delivery delegation preserved: yes, journey steps still call `executeCampaign`; no direct email, Telegram, WhatsApp, notification provider, or credential behavior was added.
+- Approval gates preserved: yes, due step claims still require active approved journeys and campaign execution still requires approved executable campaigns for real delivery.
+- Consent and unsubscribe enforcement preserved: yes, recipient decisions remain in the campaign executor and auth/leads remain source owners.
+- Frequency caps, throttling, max-send, max-30 chunking, registry validation, and idempotency preserved: yes, audit evidence summarizes the existing campaign executor output instead of replacing it.
+- Audit redaction preserved: yes, step decision evidence uses counts, reason summaries, rule references, IDs, and timestamps; it does not include message bodies, recipient addresses, authorization tokens, provider credentials, or notification-provider payloads.
+
+Completed chunks:
+
+- Goal 13.5 - Add audit evidence for step decisions.
+- Goal 13 - Lifecycle Journey Engine is complete through chunks 13.1-13.5.
+
+Next unfinished step:
+
+- Coordinator reconciliation of existing Goal 14/15/19/20 parallel worktree evidence before assigning dependent Goal 16/17/18 work. Goal 14.3/14.4 remain blocked by missing auth URL, return URL, and admin route contracts.
+
+## 2026-06-13 - Goal 13.5 Journey Step Decision Audit Evidence
+
+Current focus: Goal 13 - Lifecycle Journey Engine, chunk 13.5.
+
+Preserved intent and ownership boundary:
+
+- Marketing owns journey definitions, journey step claims, scheduler decisions, campaign execution orchestration, idempotency evidence, and campaign audit state.
+- Notifications remains the only outbound provider executor; no direct email, Telegram, WhatsApp, or provider calls were added.
+- Auth and leads remain owners of identity, contact data, preferred channels, consent, preferences, and unsubscribe truth.
+- Application, order, catalog, and source services remain read-only signal owners and were not changed.
+- This session did not deploy and did not execute a real campaign or journey against real recipients.
+
+Implementation evidence:
+
+- Added sanitized journey step decision evidence for due step claims.
+- Due journey step claims now record journey approval and activation snapshot, due timestamp, delay, campaign ID, deterministic journey idempotency key, condition key names, max-execution metadata, and exit or suppression rule references.
+- Added persistent decision_evidence JSONB storage for marketing_journey_step_claims, including migration 0010_journey_step_decision_evidence.sql.
+- Scheduler run-due now returns journey step decision summaries and emits journey_step_decision_audited with aggregate run status counts, decision reason counts, and rule metadata.
+- Journey step execution still delegates to the campaign executor; campaign approval, recipient consent, unsubscribe, frequency caps, throttling, max-send, max-30 chunking, registry validation, idempotency, notification delegation, and recipient audit evidence remain in that path.
+- Updated the Marketing campaign contract with the Goal 13.5 audit evidence shape and redaction boundary.
+- Added test coverage for sanitized journey step decision audit evidence returned from the scheduler path.
+
+Validation:
+
+- Remote npm run build passed.
+- Remote npm test passed: 56 tests, 56 passing.
+
+Intent Compliance Report:
+
+- Delivery delegation preserved: yes.
+- Approval gates preserved: yes.
+- Consent and unsubscribe ownership preserved: yes.
+- Frequency caps, throttling, max-send, max-30 chunking, registry validation, and idempotency preserved: yes.
+- Audit redaction preserved: yes; step evidence excludes message bodies, recipient addresses, provider credentials, authorization tokens, notification-provider payloads, and source-owned contact or preference truth.
+
+Completed chunk:
+
+- Goal 13.5 - Add audit evidence for step decisions.
+
+Next unfinished step:
+
+- Coordinator reconciliation of existing Goal 14/15/19/20 parallel worktree evidence before selecting the next implementation chunk.
+
+## 2026-06-13 - Goal 14 Track B Public Landing And Auth Entry Evidence
+
+Current focus: Goal 14 - Landing Page And Auth Entry Points, chunks 14.1-14.5 Track B evidence.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane and may present a public entry point only.
+- Auth-microservice owns registration, login, user JWT/session validation, registered-user identity, contact data, consent, and preferences.
+- Marketing public pages must not expose service tokens, campaign execution controls, recipient/contact data, admin data, provider credentials, or notification delivery behavior.
+- Admin access remains protected by the Goal 15 admin shell route and auth-backed session validation.
+- This session did not deploy and did not execute any real campaign or journey.
+
+Auth contract discovery evidence:
+
+- Reviewed auth-microservice docs/config for public entry points before wiring production-like links.
+- Confirmed auth hosted entry points: `https://auth.alfares.cz/login` and `https://auth.alfares.cz/register`.
+- Confirmed auth return contract: absolute HTTPS `return_url`, optional `client_id`, optional `state`, and token handoff via URL fragment on the return URL.
+- Because URL fragments are browser-only, Marketing uses a public `/auth/callback` handoff page before redirecting to `/admin` instead of returning directly to the protected server-rendered admin route.
+
+Implementation evidence:
+
+- Added static public asset build copying through `scripts/copy-public.mjs` and `npm run build`, and copied `public`/`scripts` in the Docker builder stage.
+- Added public static serving for `/assets`, `/`, and `/landing` from built `dist/public` when available, falling back to source `public` during development.
+- Added the public landing page with Marketing capability positioning and links to `/auth/register`, `/auth/login`, `/admin`, and `/health`.
+- Added `/auth/login` and `/auth/register` routes that set a short-lived `marketing_auth_state` cookie and redirect to auth-microservice with `return_url=https://marketing.alfares.cz/auth/callback`, `client_id=marketing-microservice`, and a generated state value.
+- Added `/auth/callback` browser handoff page that validates returned state when present, stores only the Auth access token in the configured admin auth cookie path, does not store refresh tokens, clears the temporary state cookie, and redirects to `/admin`.
+- Added public tests asserting the landing page exposes auth-owned entry points while excluding service-token strings and campaign execution controls, and asserting auth redirect URL/state/callback behavior.
+- Added favicon metadata to avoid browser `/favicon.ico` 404 noise during rendered validation.
+
+Validation:
+
+- Remote `npm run build` passed.
+- Remote `npm test` passed: 56 tests, 56 passing.
+- Rendered validation used Playwright fallback because the in-app Browser control tool was not available in this thread.
+- Temporary built server validation target: `http://127.0.0.1:4614` forwarded to remote built `node dist/main.js` with in-memory store and auth public URL configuration.
+- Desktop rendered validation passed at 1440x1000: title `Statex Marketing`, hero visible, `/auth/register`, `/auth/login`, and `/admin` links present, background PNG loaded with HTTP 200, no console errors/warnings, no detected horizontal overflow.
+- Mobile rendered validation passed at 390x844 with the same checks and no console errors/warnings or detected overflow.
+- Auth link interaction passed: clicking `Log in` navigated to `https://auth.alfares.cz/login?return_url=https%3A%2F%2Fmarketing.alfares.cz%2Fauth%2Fcallback&client_id=marketing-microservice&state=<uuid>` with auth origin mocked only for the browser screenshot.
+- Callback page static validation passed: `/auth/callback` renders `Marketing Auth Handoff` and fails closed when no access token fragment is present.
+- Screenshot evidence captured outside the repo: `/private/tmp/marketing-landing-desktop-auth.png`, `/private/tmp/marketing-landing-mobile-auth.png`, `/private/tmp/marketing-login-redirect-auth.png`, `/private/tmp/marketing-auth-callback-static.png`.
+
+Intent Compliance Report:
+
+- Service-token boundary preserved: yes, no public page or browser route exposes `MARKETING_API_TOKEN`, service bearer tokens, `x-service-token`, provider credentials, or backend service-token handling.
+- Campaign execution boundary preserved: yes, public pages expose no execute, scheduler, run-due, approval mutation, delivery, or admin campaign operation controls.
+- Auth ownership preserved: yes, register/login are delegated to auth-microservice; Marketing only builds return URLs and consumes an Auth user access token for admin session handoff.
+- Contact/consent ownership preserved: yes, the public landing and callback do not expose contact data, recipient data, preferences, consent truth, or unsubscribe state.
+- Delivery ownership preserved: yes, no direct email, Telegram, WhatsApp, notification provider, or notification service behavior was added.
+- Admin boundary preserved: yes, `/admin` remains protected by auth-backed admin session validation from Goal 15; the public landing only links to it.
+
+Completed Track B chunks with evidence:
+
+- Goal 14.1 - frontend/static build pipeline and static serving.
+- Goal 14.2 - public Marketing landing page.
+- Goal 14.3 - register, login, admin, and status entry links.
+- Goal 14.4 - auth-microservice login/register redirect and callback handoff.
+- Goal 14.5 - static asset build/test/render validation evidence; production deployment was not run.
+
+Next unfinished step:
+
+- Coordinator should reconcile Goal 14 Track B evidence with Goal 15 admin shell evidence, then update the Goal 14 checklist and decide whether production deployment is approved.
+
+## 2026-06-13 - Goal 20 Documentation Closeout And Enforcement Blockers
+
+Current focus: Goal 20 - Production Governance And Readiness, documentation closeout only.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane for campaign risk classification, approval evidence, readiness checks, policy references, operational audit state, and production run governance.
+- Notifications remains the only outbound provider executor; this session did not add provider calls, provider credentials, or direct sending behavior.
+- Auth and leads remain the owners of identity, contact data, consent, preferences, and unsubscribe truth.
+- Tenant/app/business registry or another explicitly approved policy source remains the owner of tenant/app timezone, policy reference, and canonical policy truth.
+- This session did not deploy and did not execute any real campaign or journey against real recipients.
+
+Implementation evidence:
+
+- Reviewed the mandatory orchestrator files and Goal 20 governance/readiness docs in the remote repository.
+- Closed the documentation portion of Goal 20 by marking chunks 20.1-20.5 as completed policy/playbook drafts in `docs/orchestrator/GOALS.md`.
+- Added a follow-up runtime enforcement chunk, 20.6, to make clear that code enforcement is not complete and must wait for approved production policy facts plus admin/runtime dependencies.
+- Updated `STATE.json` metrics with Goal 20 documentation closeout and blocked enforcement status only; coordinator-wide stage and next-focus fields were left unchanged.
+
+Blocked enforcement facts:
+
+- [MISSING: production recipient-count thresholds for low, standard, high, and restricted classes]
+- [MISSING: high-risk business approver identity source]
+- [MISSING: governance/operations approver identity source]
+- [MISSING: policy owner for restricted campaign exceptions]
+- [MISSING: quiet-hour weekend/holiday defaults]
+- [MISSING: channel-specific quiet-hour defaults for email, telegram, and whatsapp]
+- [MISSING: emergency override approver and expiry rules]
+- [MISSING: confirmed rollback command/version policy]
+
+Validation:
+
+- Documentation review against `docs/orchestrator/GOALS.md`, `docs/orchestrator/PLAN.md`, `docs/agents/contracts/production-governance-readiness-contract.md`, `docs/operations/production-readiness-playbook.md`, `docs/agents/contracts/marketing-campaign-contract.md`, `docs/agents/contracts/preferences-consent-contract.md`, `docs/agents/contracts/channel-registry-contract.md`, and `docs/agents/contracts/integration-api-matrix.md`.
+- `npm run build` and `npm test` were not run because this session changed only orchestrator/governance documentation and `STATE.json` metadata.
+- No deployment was run; production deployment remains blocked without explicit owner approval.
+
+Intent Compliance Report:
+
+- Goal 20 documentation strengthens approval, audit, quiet-hour/risk controls, unsubscribe escalation, deployment readiness, rollback, and incident processes without bypassing campaign safety gates.
+- Existing campaign approval, consent, unsubscribe, frequency-cap, throttling, idempotency, max-send, max-30 chunking, registry validation, notification delegation, and audit requirements remain unchanged.
+- No notification provider implementation, auth/leads source-of-truth model, direct sending behavior, campaign execution weakening, or admin UI implementation was added.
+
+Next unfinished step:
+
+- Owner must confirm the missing production policy facts before enforcement code, admin governance controls, production deployment, or real campaign execution.
+
+## 2026-06-13 - Goal 19 CRM Account Runtime Readiness Recheck
+
+Current focus: Goal 19 - CRM/Account Service Integration, chunk 19.3 runtime readiness and smallest safe client eligibility.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- CRM/account data is read-only segmentation signal input only.
+- Marketing must not own CRM/account master data, account/contact relationships, opportunity state, account lifecycle state, contact data, consent, unsubscribe, or preferred-channel truth.
+- CRM/account lifecycle, opportunity, owner, health, onboarding, renewal, upsell, or winback state must never imply recipient consent.
+- Reachable recipients must still resolve through auth/leads before any real campaign execution, and all existing explicit approval, source-owned consent, unsubscribe, frequency-cap, throttling, idempotency, max-send, max-30 chunking, registry validation, and notification delegation gates must remain enforced.
+
+Readiness verification evidence:
+
+- Read the mandatory orchestrator files and required campaign, consent, channel, integration, and CRM/account contracts before changing status documentation.
+- `docs/agents/contracts/crm-account-signal-contract.md` still states that Goal 19.1-19.2 are contract drafts only and that no runtime CRM client or executable CRM segment source is approved until all runtime facts exist and are approved.
+- `docs/agents/contracts/integration-api-matrix.md` still identifies the CRM/account service as a future dependency and says runtime work is blocked until service URL, auth, endpoint, and sample responses are approved.
+- `docs/orchestrator/PLAN.md` still limits Goal 19 runtime work to after a real CRM/account service contract exists.
+- The dirty worktree at session start already contained uncommitted executable CRM/runtime surface: `src/api-contracts.ts` accepts `crm_accounts`, `src/types.ts` includes `crm_accounts`, `src/sources.ts` contains a `CRM_ACCOUNT_SERVICE_URL` client path, `.env.example` contains CRM account keys, and `test/executor.test.ts` contains CRM account runtime tests.
+- Those uncommitted runtime changes were not treated as approved Goal 19.3 completion because the source contract still forbids executable runtime work until the missing facts are approved.
+- Repository/config search found no production runtime CRM/account base URL, no configured Kubernetes CRM/account URL or endpoint, no approved auth method beyond the draft token placeholder, and no approved external error/rate-limit contract outside the draft document and tests.
+
+Blockers confirmed still unresolved:
+
+- `[MISSING: CRM/account service base URL]`
+- `[MISSING: CRM/account service auth method]`
+- `[MISSING: CRM/account read endpoint path]`
+- `[MISSING: CRM/account sample account signal response]`
+- `[MISSING: CRM/account sample opportunity signal response]`
+- `[MISSING: CRM/account pagination and rate-limit contract]`
+- `[MISSING: CRM/account error response contract]`
+
+Decision:
+
+- Goal 19.3 remains blocked.
+- No additional runtime CRM source client work was performed in this session.
+- The existing dirty runtime edits require coordinator reconciliation before merge: either obtain the approved CRM/account service contract facts and mark the runtime path in-scope, or keep executable CRM source support out of the integration branch until those facts exist.
+
+Validation:
+
+- `npm run build` passed on the current remote dirty tree.
+- `npm test` passed on the current remote dirty tree: 56 tests, 56 pass, 0 fail.
+- No deployment was run.
+- No real campaign execution was run.
+
+Intent Compliance Report:
+
+- This session did not take ownership of CRM/account master data, companies, opportunities, account owners, lifecycle state, health state, onboarding state, customer-success notes, account-contact relationships, auth/leads contact data, consent, unsubscribe truth, notification provider execution, provider credentials, channel registry behavior, tenant/app registry truth, or analytics truth.
+- This session did not infer consent from CRM/account state and did not add any new executable path that bypasses auth/leads recipient resolution.
+- Existing approval, consent, unsubscribe, frequency-cap, throttling, idempotency, max-send, max-30 chunking, registry validation, and notification delegation gates remain unchanged by this session.
+
+Next unfinished step:
+
+- Goal 19.3 can start only after an approved real CRM/account service contract supplies the base URL, auth method, read endpoint path, account sample response, opportunity sample response, pagination/rate-limit contract, and error response contract.
+
+## 2026-06-13 - Goal 17 Dependency Gate Review
+
+Current focus: Goal 17 - Runs, Consent, Channels, And Audit Admin Views, dependency gate review only.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane and may display only Marketing-owned run, outcome, delivery-decision, consent-enforcement, frequency-cap, throttling, and audit state after admin protection is complete.
+- Auth remains the source of truth for registered-user identity, contact data, preferred channels, consent, preferences, JWT/session validation, and RBAC role claims.
+- Leads remains the source of truth for lead identity, contact data, preferred channels, consent, preferences, and unsubscribe truth.
+- Notifications remains the source of truth for channel registry behavior, outbound provider execution, provider credentials, and provider delivery internals.
+- Goal 17 views must not expose provider credentials, message bodies, service tokens, authorization headers, notification-provider payloads, recipient addresses, or source-owned contact/preference truth.
+
+Dependency verification evidence:
+
+- Read the mandatory orchestrator and contract files for this session: `BUSINESS.md`, `SYSTEM.md`, `README.md`, `TASKS.md`, `STATE.json`, `docs/orchestrator/MASTER_PROMPT.md`, `docs/orchestrator/INTENT.md`, `docs/orchestrator/GOALS.md`, `docs/orchestrator/PLAN.md`, `docs/orchestrator/STATUS.md`, `docs/orchestrator/PROMPTS.md`, `docs/agents/contracts/integration-api-matrix.md`, `docs/agents/contracts/marketing-campaign-contract.md`, `docs/agents/contracts/preferences-consent-contract.md`, and `docs/agents/contracts/channel-registry-contract.md`.
+- `docs/orchestrator/GOALS.md` still records Goal 15 - Admin Auth And RBAC Shell as `pending` and Goal 17 as `pending`.
+- `TASKS.md` still records TG-3.8 Goal 15 and TG-3.10 Goal 17 as pending.
+- `STATE.json` still sets the next focus to coordinator reconciliation of parallel Goal 14/15/19/20 worktree evidence and does not mark Goal 15 complete.
+- `docs/orchestrator/PLAN.md` states that Goal 16 and Goal 17 should wait for Goal 15 admin auth/RBAC shell reconciliation because they expose protected operational data and controls.
+- Existing `STATUS.md` evidence shows Goal 15 added an isolated admin auth/RBAC shell foundation with anonymous rejection, Auth-backed session validation, `/admin/api/session`, and targeted tests, but its next unfinished step remains: confirm/provision production Auth role grants for `marketing_viewer`, `marketing_operator`, `marketing_admin`, and `marketing_owner`, then integrate login/return-url handoff before Goals 16, 17, and 18 admin UI tracks.
+- Existing `STATUS.md` evidence shows Goal 14 later added login/register redirect and callback handoff, but the next unfinished step remains coordinator reconciliation of Goal 14 Track B evidence with Goal 15 admin shell evidence.
+
+Blocker decision:
+
+- Goal 17 is blocked and was not implemented in this session because the upstream Goal 15 dependency is not conclusively complete in the orchestrator sources of truth.
+- The specific blocker is `[MISSING: coordinator reconciliation marking Goal 15 complete and confirming production Auth role-grant readiness for protected admin operational views]`.
+- No run, consent, channel, audit, correlation-search, route handler, redaction helper, test, campaign execution, notification provider, auth/leads source-owner, journey scheduler, CRM runtime, or shared admin layout files were changed.
+
+Validation:
+
+- No build or test command was run because no application code was changed and Goal 17 implementation was intentionally blocked at the dependency gate.
+- Remote working tree already contained unrelated in-progress changes from other agents; this session appended only this blocker evidence to `docs/orchestrator/STATUS.md`.
+
+Intent Compliance Report:
+
+- Marketing did not expose protected operational data before the admin authorization dependency was conclusively complete.
+- Marketing did not duplicate auth/leads consent, contact, identity, preference, or unsubscribe ownership.
+- Marketing did not expose notification channel provider credentials or provider execution internals.
+- Marketing did not add direct email, Telegram, WhatsApp, notification provider calls, campaign execution changes, scheduler changes, CRM runtime code, or real campaign execution.
+
+Next unfinished step:
+
+- Coordinator/integration owner must reconcile Goal 14 and Goal 15 evidence, update the canonical goal/task/state sources if Goal 15 is complete, and explicitly release Goal 17 before admin operational views are implemented.
+
+## 2026-06-13 - Goal 19.3 CRM Account Signal Source Client
+
+Current focus: Goal 19 - CRM/Account Service Integration, chunk 19.3.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- CRM/account master data remains owned outside Marketing by a future or external CRM/account service.
+- Because no CRM/account repository or deployed service contract was discoverable under `/home/ssf/Documents/Github`, Marketing generated the consumer-side read contract and shipped the runtime client disabled by default.
+- Production CRM/account source use requires `CRM_ACCOUNT_SERVICE_URL`; there is no source-code default base URL and no Kubernetes CRM URL was added.
+- CRM account lifecycle, opportunity, owner, health, onboarding, renewal, upsell, or winback state does not imply recipient consent.
+- CRM `contactRefs` are relationship references only; reachable recipients still resolve through auth/leads and all existing explicit approval, source-owned consent, unsubscribe, frequency-cap, throttling, idempotency, max-send, max-30 chunking, registry validation, and notification delegation gates remain enforced.
+- This session did not add CRM master-data migrations, journey runtime changes, admin UI, notification provider implementation, auth/leads source-of-truth models, deployment, or real campaign execution.
+
+Implementation evidence:
+
+- Added `crm_accounts` as a supported read-only segment source in `src/types.ts` and `src/api-contracts.ts`.
+- Added CRM/account source env keys to `.env.example`: `CRM_ACCOUNT_SERVICE_URL`, `CRM_ACCOUNT_SERVICE_TOKEN`, `CRM_ACCOUNT_SIGNAL_PATH`, `CRM_ACCOUNT_SIGNAL_LIMIT`, `CRM_ACCOUNT_SIGNAL_MAX_PAGES`, and `CRM_ACCOUNT_SIGNAL_TIMEOUT_MS`.
+- Added a read-only CRM/account signal client in `src/sources.ts` using `GET {CRM_ACCOUNT_SERVICE_URL}{CRM_ACCOUNT_SIGNAL_PATH:-/marketing/account-signals}`.
+- The client sends tenant/app/brand scope plus account, company, owner, opportunity, lifecycle, health, onboarding, renewal, and source-updated predicates derived from segment rules.
+- The client validates `marketing.crm_account_signal.v1` and `marketing.crm_opportunity_signal.v1` envelopes, tenant/app scope, required source IDs, and ISO `sourceUpdatedAt` before using a signal.
+- The client supports bounded cursor pagination using `CRM_ACCOUNT_SIGNAL_LIMIT` and `CRM_ACCOUNT_SIGNAL_MAX_PAGES`, defaulting to one page.
+- The client reads only relationship `contactRefs` and converts `auth:user:*` and `leads:lead:*` references into candidate recipient refs; it ignores raw addresses and does not create contact records.
+- CRM account signals filter recipients already resolved through auth/leads; notification delivery still goes through the existing campaign executor path.
+- Missing CRM configuration, source errors, malformed envelopes, no source signals, no matching accounts, or no resolvable contact refs fail/skip safely before notification delegation with `crm_account_*` evidence.
+- Updated `docs/agents/contracts/crm-account-signal-contract.md` with the generated runtime contract facts, auth method, endpoint path, pagination/rate-limit behavior, timeout, and error response shape.
+- Updated `docs/agents/contracts/marketing-campaign-contract.md` and `docs/agents/contracts/integration-api-matrix.md` to document `crm_accounts` source behavior and production configuration requirements.
+- Marked Goal 19.3 complete in `docs/orchestrator/GOALS.md`; Goal 19.4 and Goal 19.5 remain open for B2B account segment rules/blueprints and broader audit evidence.
+
+Validation:
+
+- Remote `npm run build` passed.
+- Remote `npm test` passed: 59 tests, 59 passing.
+- New targeted tests passed:
+  - `filters recipients through read-only crm account signals`
+  - `fails crm account signal source safely without notification delivery`
+  - `segment contract accepts crm account signal source`
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of CRM/account master data, companies, opportunities, account owners, lifecycle state, health state, onboarding state, customer-success notes, account-contact relationships, contact data, consent, unsubscribe truth, notification provider execution, provider credentials, channel registry behavior, tenant/app registry truth, or analytics truth.
+- CRM/account state is used only as a read-only segmentation input and recipient filter.
+- Marketing does not infer consent from CRM/account state and does not use CRM raw contact data for delivery.
+- Existing approval, consent, unsubscribe, frequency-cap, throttling, idempotency, max-send, max-30 chunking, registry validation, and notification delegation gates remain unchanged and covered by the existing executor path.
+
+Next unfinished step:
+
+- Goal 19.4 - Add B2B account segment rules and campaign blueprints, using only the generated read-only `crm_accounts` source contract and without adding CRM master-data ownership to Marketing.
+
+## 2026-06-13 - Final Integration Reconciliation For Goals 14/15/16/17/18/19/20
+
+Current focus: final integration owner for the parallel Goal 14/15/16/17/18/19/20 workstreams.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane for campaign definitions, segment definitions, execution decisions, consent/frequency enforcement, approvals, throttling, and audit state.
+- Notifications remains the only outbound provider executor and channel registry owner.
+- Auth remains the identity, JWT/session, registered-user contact, preference, and consent owner.
+- Leads remains the lead identity, contact, preference, and consent owner.
+- Domain/app/CRM/analytics services remain source owners for their facts; Marketing stores references, campaign decisions, and audit evidence only.
+- This integration did not deploy and did not execute a real campaign or journey against real recipients.
+
+Worker evidence reconciled:
+
+- Goal 14 Track B completed chunks 14.1-14.5: static build/serving, anonymous landing page, auth-owned register/login/admin/status entry points, auth redirect/callback handoff, and rendered validation evidence.
+- Goal 15 Track C completed chunks 15.1-15.5: Auth session validation through auth-microservice, server-side viewer/operator/admin/owner RBAC mapping, protected /admin and /admin/api/session, admin shell navigation, and unauthorized/role contract tests.
+- Goal 16 produced no implementation handoff in this integration window and remains ready only after the current integration worktree is reviewed/committed.
+- Goal 17 produced no implementation handoff in this integration window and remains ready only after the current integration worktree is reviewed/committed.
+- Goal 18 produced no implementation handoff in this integration window; Goal 18.1/18.2 contract/event work can start after commit if isolated, while dashboard UI remains dependency-gated by admin navigation and analytics contract ownership.
+- Goal 19 completed contract chunks 19.1-19.2 and remains blocked for runtime work by missing CRM/account service URL, auth method, read endpoints, sample responses, pagination/rate-limit contract, and error contract.
+- Goal 20 completed policy/playbook drafts for 20.1-20.5 and remains blocked for enforcement by missing production risk thresholds, high-risk approver identities, quiet-hour defaults, owner-approved deployment/rollback procedure, and production Auth role grant evidence.
+
+Reconciliation changes:
+
+- Marked Goal 14 done with chunks 14.1-14.5 complete in docs/orchestrator/GOALS.md.
+- Marked Goal 15 done with chunks 15.1-15.5 complete in docs/orchestrator/GOALS.md, while keeping production Auth role grants as an operations blocker before broad rollout.
+- Marked Goal 19 blocked after 19.1-19.2 contract drafts.
+- Marked Goal 20 blocked after 20.1-20.5 governance/readiness drafts pending owner-approved policy facts.
+- Updated TASKS.md, STATE.json, and docs/orchestrator/PLAN.md with the next parallel launch order and remaining blockers.
+
+Validation:
+
+- Remote npm run build passed on the integrated tree: tsc -p tsconfig.json && node scripts/copy-public.mjs.
+- Remote npm test passed on the integrated tree: 56 tests, 56 passing.
+- Test coverage includes public auth entry points, protected API service auth, admin anonymous rejection, Auth-backed session validation and RBAC mapping, campaign catalog, public preferences/unsubscribe, registry validation, journey scheduler/audit, executor safety gates, source failure behavior, and persistence coverage.
+- Existing test output includes expected audit_log_forward_failed messages for unavailable logging-microservice in the test environment; tests still pass and no delivery-provider execution was added.
+
+Remaining blockers:
+
+- [MISSING: production Auth role grant evidence for marketing_viewer, marketing_operator, marketing_admin, and marketing_owner].
+- [MISSING: CRM/account service base URL].
+- [MISSING: CRM/account service auth method].
+- [MISSING: CRM/account read endpoint path].
+- [MISSING: CRM/account sample account and opportunity responses].
+- [MISSING: CRM/account pagination/rate-limit and error contracts].
+- [MISSING: approved analytics/conversion owner contract] for attribution beyond Marketing-owned campaign facts.
+- [MISSING: production risk thresholds].
+- [MISSING: high-risk approver identities].
+- [MISSING: quiet-hour policy defaults].
+- [MISSING: owner-approved deployment/rollback procedure].
+
+Integration order for next wave:
+
+1. Review and commit the current remote integration worktree.
+2. Launch Goal 18.1/18.2 analytics contract/event work if isolated from admin UI files.
+3. Launch Goal 16 and Goal 17 admin UI tracks with explicit shared navigation ownership and merge order.
+4. Run final integration validation after Goal 16/17/18 merge: remote npm run build, npm test, rendered admin checks, unauthorized access checks, browser token non-exposure checks, and redaction checks.
+5. Keep Goal 19 runtime and Goal 20 enforcement blocked until the missing source/policy facts are supplied and approved.
+
+Intent Compliance Report:
+
+- Delivery delegation preserved: yes; no direct email, Telegram, WhatsApp, provider, or notification credential behavior was added.
+- Auth ownership preserved: yes; Marketing delegates login/register to auth-microservice and validates Auth-owned browser tokens server-side.
+- Browser service-token boundary preserved: yes; admin session responses and public pages do not expose MARKETING_API_TOKEN, SERVICE_API_TOKEN, x-service-token, provider credentials, or authorization headers.
+- Contact/consent ownership preserved: yes; Marketing did not create source-of-truth contact, preference, consent, unsubscribe, CRM, tenant, app, analytics, or channel registry records.
+- Real execution safety preserved: yes; no real campaign or journey execution was triggered, and existing approval, consent, unsubscribe, frequency-cap, throttling, idempotency, max-send, max-30 chunking, registry validation, notification delegation, and audit gates remain covered by tests.
+
+## 2026-06-13 - Goal 19.3 Post-Reconciliation Status Correction
+
+Current focus: reconcile the latest Goal 19.3 implementation after the earlier integration note that still listed CRM runtime work as blocked.
+
+Evidence:
+
+- Goal 19.3 is no longer blocked for a Marketing-side runtime client.
+- Marketing now has a generated-contract, disabled-by-default `crm_accounts` source client in `src/sources.ts`.
+- Production use still requires real deployment configuration through `CRM_ACCOUNT_SERVICE_URL` and optional CRM account env keys; no source-code base URL or Kubernetes CRM URL was added.
+- Goal 19.4 and Goal 19.5 remain open.
+
+Validation:
+
+- Remote `npm run build` passed.
+- Remote `npm test` passed: 59 tests, 59 passing.
+
+Intent Compliance Report:
+
+- Marketing still does not own CRM/account master data, contact truth, consent truth, unsubscribe truth, notification provider execution, provider credentials, tenant/app registry truth, or analytics truth.
+- CRM/account signals are read-only recipient filters; reachable recipients still resolve through auth/leads and all existing execution safety gates remain enforced.
+
+## 2026-06-13 - Final Integration Correction For Goal 18 Analytics Evidence
+
+Current focus: correction to final integration reconciliation after Goal 18 analytics files were found without a matching STATUS handoff entry.
+
+Integrated evidence:
+
+- Added src/analytics.ts with normalized Marketing-owned run and recipient outcome event builders.
+- Added externally supplied attribution fact joining for delivered, converted, and attributed value summaries by campaign/run/correlation reference.
+- Added analytics summary buckets by campaign, channel, segment, lifecycle stage, and decision reason from existing Marketing-owned campaign/run/outcome state.
+- Added test/analytics.test.ts covering summary aggregation, externally supplied attribution facts, and redaction of raw recipient addresses, message content, and channelKey/provider-like values.
+
+Reconciliation decision:
+
+- Marked Goal 18 active with chunks 18.1 and 18.2 complete.
+- Left Goal 18.3, 18.4, and 18.5 open because campaign attribution metadata, persisted/API read-model or analytics-service integration, dashboard charts, and exportable summaries are not complete.
+- Updated TASKS.md, STATE.json, and docs/orchestrator/PLAN.md so the next wave launches Goal 18 follow-up work only after this integrated remote worktree is reviewed/committed.
+
+Intent Compliance Report:
+
+- Marketing emits and aggregates Marketing-owned campaign facts only; conversion and attributed value remain externally supplied facts.
+- Analytics output does not include raw recipient addresses, message bodies, provider credentials, service tokens, or notification provider payloads.
+- Marketing did not become the owner of analytics/customer-insights read models, app behavior truth, revenue truth, auth/leads contact data, consent truth, or notification delivery.
+
+## 2026-06-13 - Final Integration Validation Closeout
+
+Current focus: final validation closeout after reconciling late Goal 18 and Goal 19.3 evidence.
+
+Final reconciled state:
+
+- Goal 14 is complete through 14.1-14.5.
+- Goal 15 is complete through 15.1-15.5; production Auth role grants still need operations evidence before broad rollout.
+- Goal 18 is active with 18.1 and 18.2 complete; 18.3-18.5 remain open.
+- Goal 19 is active with 19.1, 19.2, and 19.3 complete; 19.4-19.5 remain open and production CRM/account use remains gated by source-service configuration/readiness.
+- Goal 20 is blocked for runtime enforcement pending owner-approved production policy facts.
+- Goal 16 and Goal 17 produced no implementation handoff and should launch only after the current integrated remote worktree is reviewed/committed.
+
+Final validation:
+
+- Remote npm run build passed: tsc -p tsconfig.json && node scripts/copy-public.mjs.
+- Remote npm test passed: 62 tests, 62 passing.
+- The final suite includes analytics event/redaction tests, public landing/auth handoff tests, admin auth/RBAC tests, protected API authorization tests, campaign catalog tests, preference/unsubscribe tests, registry validation tests, journey scheduler/audit tests, executor safety tests, CRM account signal source tests, and persistence tests.
+- Test logs include expected audit_log_forward_failed messages for unavailable logging-microservice in the test environment; those are non-failing safe-failure logs.
+
+Intent Compliance Report:
+
+- Marketing remains the campaign and segmentation control plane.
+- Marketing did not add direct notification provider execution or provider credentials.
+- Marketing did not become auth/leads/CRM/analytics source of truth.
+- Browser-facing routes do not expose service tokens.
+- No deployment and no real campaign or journey execution were performed.
+
+
+## 2026-06-13 - Goal 14/15 Reconciliation And Admin Shell Completion Review
+
+Current focus: Goal 14 public landing/auth entry and Goal 15 admin auth/RBAC shell reconciliation.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane for campaign, segment, journey, run, safety-decision, and audit state.
+- Auth remains the owner of browser identity, registration, login, JWT/session validation, and RBAC role claims.
+- Notifications remains the owner of outbound provider execution and channel registry behavior.
+- Auth/leads remain owners of contact data, preferences, consent, and unsubscribe truth.
+- This reconciliation did not change journey scheduler/runtime files, campaign execution logic, notification provider implementation, auth/leads source-of-truth models, analytics dashboards, deployment, or real campaign execution.
+
+Reconciliation evidence:
+
+- Reviewed the mandatory orchestrator files and required integration, campaign, consent, and channel contracts before changing code.
+- Confirmed existing Goal 14 evidence covers public static serving, landing page, auth-owned login/register redirects, `/auth/callback` handoff, `/admin` entry link, token non-exposure checks, rendered desktop/mobile validation, remote `npm run build`, and remote `npm test`.
+- Confirmed existing Goal 15 evidence covers auth-microservice session verification, server-side viewer/operator/admin/owner RBAC mapping, `/admin/api/session`, admin shell, service-token rejection as browser identity, and role-specific tests.
+- Completed the smallest safe remaining Goal 15 shell gap by protecting the existing admin navigation namespaces `/admin/campaigns`, `/admin/segments`, `/admin/journeys`, `/admin/runs`, `/admin/audit`, and `/admin/settings` as inert authenticated shell placeholders.
+- The new placeholders render no campaign/segment/run/audit feature UI and expose no operational controls; they only reserve protected admin route shape for later Goal 16, Goal 17, and Goal 18 work.
+- Updated `docs/orchestrator/GOALS.md` to mark Goal 14 chunks 14.1-14.5 and Goal 15 chunks 15.1-15.5 complete.
+- Updated `STATE.json` to record Goal 14 and Goal 15 completion and make coordinator selection of dependent UI tracks the next focus.
+
+Validation:
+
+- Remote `npm run build` passed on 2026-06-13.
+- Remote `npm test` passed on 2026-06-13: 63 tests, 63 passing.
+- New targeted test passed: `admin shell protects navigation placeholders without exposing operational controls`.
+
+Intent Compliance Report:
+
+- Public landing boundary preserved: yes, public routes expose no `MARKETING_API_TOKEN`, `SERVICE_API_TOKEN`, `x-service-token`, campaign execution controls, scheduler controls, provider credentials, admin data, recipient data, contact data, consent truth, or unsubscribe truth.
+- Auth ownership preserved: yes, register/login remain delegated to auth-microservice and admin sessions are verified through auth-owned tokens/roles server-side.
+- Service-token boundary preserved: yes, browser admin identity still does not accept Marketing service tokens and `/admin/api/session` returns sanitized session metadata only.
+- RBAC boundary preserved: yes, viewer/operator/admin/owner access is mapped server-side from auth-owned role claims.
+- Delivery boundary preserved: yes, no email, Telegram, WhatsApp, notification provider, or notifications channel registry behavior was added.
+- Campaign safety preserved: yes, no approval, dry-run, execution, scheduler, consent, unsubscribe, frequency-cap, throttling, idempotency, max-send, or max-30 chunking behavior was weakened.
+
+Completed chunks:
+
+- Goal 14.1 - frontend/static build pipeline and static serving.
+- Goal 14.2 - public Marketing landing page.
+- Goal 14.3 - register, login, admin, and status entry links.
+- Goal 14.4 - auth-microservice login/register redirects and callback handoff.
+- Goal 14.5 - static asset build/test/render validation evidence; production deployment was not run.
+- Goal 15.1 - auth session verification with auth-microservice.
+- Goal 15.2 - viewer/operator/admin/owner role mapping.
+- Goal 15.3 - `/admin/api/session` and protected admin route namespace.
+- Goal 15.4 - admin layout shell and navigation.
+- Goal 15.5 - unauthorized, role-specific, service-token rejection, and placeholder route tests.
+
+Next unfinished step:
+
+- Coordinator can assign Goal 16, Goal 17, and Goal 18 UI work on top of the protected admin shell with disjoint file ownership and explicit integration order. Production deployment and production Auth role provisioning still require owner/operator approval.
+
+## 2026-06-13 - Goal 16 Campaign And Segment Admin Console Chunk
+
+Current focus: Goal 16 - Campaign And Segment Admin Console, smallest safe chunk after Goal 15 verification.
+
+Goal 15 dependency verification:
+- Verified `docs/orchestrator/STATUS.md` contains Goal 15 Track C evidence for `src/admin-auth.ts`, `src/admin-shell.ts`, protected `GET /admin`, protected `GET /admin/api/session`, Auth-backed session verification, viewer/operator/admin/owner RBAC mapping, anonymous rejection, and no browser service-token exposure.
+- Verified code evidence exists in `src/admin-auth.ts`, `src/admin-shell.ts`, and `src/main.ts`.
+- Verified tests cover anonymous admin rejection, Auth validate calls, role mapping, configurable auth cookie support, and rejection of service tokens as browser identity.
+- Remaining Goal 15 operational note still applies: [MISSING: production assignment/seeding evidence for marketing_viewer and marketing_operator role grants]. This did not block the smallest Goal 16 implementation because server-side RBAC contracts and tests are present.
+
+Implemented Goal 16 chunk:
+- Added `src/admin-campaign-segment-console.ts` with protected campaign and segment admin pages at `/admin/campaigns` and `/admin/segments`.
+- Added protected admin APIs in `src/main.ts`:
+  - `GET /admin/api/campaigns` for authenticated viewer+ campaign definition listing.
+  - `GET /admin/api/segments` for authenticated viewer+ segment definition listing.
+  - `POST /admin/api/campaigns/:id/dry-run` for operator+ dry-run summaries through the existing campaign executor with `dryRun: true`.
+  - `POST /admin/api/campaigns/:id/approve` for admin+ explicit approval evidence using the authenticated admin actor.
+- Dry-run admin responses return aggregate summaries only and do not expose recipient addresses.
+- Real campaign execution was intentionally not added to the admin console.
+- Did not edit `src/admin-shell.ts`; existing shared admin shell routes were left intact, and `src/main.ts` excludes `/admin/campaigns` and `/admin/segments` from the generic placeholder handler so the Goal 16 pages are not shadowed.
+- Updated `test/api-contracts.test.ts` to cover RBAC, protected campaign/segment admin APIs, rendered campaign/segment page smoke, no service-token exposure, no direct execution/scheduler controls, sanitized dry-run summaries, and admin approval evidence.
+
+Validation evidence:
+- `npm run build` passed on remote repository `/home/ssf/Documents/Github/marketing-microservice`.
+- `npm test` passed on remote repository `/home/ssf/Documents/Github/marketing-microservice`: 64 tests passed, 0 failed.
+- Rendered/admin access smoke is covered by the passing `admin campaign and segment console APIs are protected by RBAC and return sanitized dry-run summaries` test, including `/admin/campaigns` and `/admin/segments` HTML checks.
+
+Parallel execution / integration notes:
+- Write scope was limited to Goal 16 campaign/segment admin files, admin route handlers, tests, and this append-only status entry.
+- Shared admin layout file `src/admin-shell.ts` was not edited because Goal 17/18 may depend on it.
+- The remote worktree already contained unrelated uncommitted changes from other agents; this session did not revert or overwrite them.
+- Goal 17 and Goal 18 should avoid changing `src/main.ts` admin route ordering without checking the Goal 16 `/admin/campaigns` and `/admin/segments` handlers.
+
+Intent Compliance Report:
+- Marketing remains the campaign and segmentation control plane: the UI lists Marketing-owned campaign and segment definitions, records approval evidence, and invokes dry-run orchestration only.
+- Marketing did not become the identity/session/RBAC source of truth; admin access still validates Auth-owned sessions server-side through Goal 15 admin auth.
+- Marketing did not send messages directly and did not add notification provider execution.
+- The admin UI does not expose `MARKETING_API_TOKEN`, `SERVICE_API_TOKEN`, authorization headers, provider credentials, recipient addresses, source-owned contact/preference truth, direct execution controls, or scheduler controls.
+- Dry-run uses the existing campaign executor with `dryRun: true`; it does not call notifications or record sent history.
+- Real delivery remains behind existing backend approval, consent, unsubscribe, frequency-cap, throttling, max-send, max-30 chunking, idempotency, registry validation, and notification delegation gates.
+- No journey scheduler/runtime files, notification provider implementation, auth/leads source-of-truth models, CRM runtime client files, analytics dashboard files, or direct execution bypasses were changed by this Goal 16 session.
+
+
+## 2026-06-14 - Marketing Gating Optimization Review
+
+Current focus: reduce blocked/idle Marketing worker threads by making Goal 15 the explicit prerequisite gate before Goal 16/17/18 protected UI work.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane for campaign, segment, journey, run, decision, consent-enforcement, throttling, and audit state.
+- Auth remains the owner of browser identity, registration, login, token/session validation, and role claims; Marketing validates Auth-owned session evidence server-side only.
+- Notifications remains the owner of outbound provider execution and channel registry behavior.
+- Auth/leads remain owners of contact data, preferences, consent, and unsubscribe truth.
+- No UI feature implementation, deployment, real campaign execution, notification provider behavior, scheduler behavior, auth/leads ownership, CRM ownership, or analytics truth ownership was changed in this review.
+
+Gate finding:
+
+- Goal 15 is complete in the current orchestrator sources of truth: `docs/orchestrator/GOALS.md` marks Goal 15 `done` with chunks 15.1-15.5 checked, `STATE.json` records `goal_15_status` as `complete`, and existing `STATUS.md` evidence records Auth-backed session validation, server-side viewer/operator/admin/owner RBAC, protected `/admin` and `/admin/api/session`, service-token rejection for browser identity, protected placeholder namespaces, and passing build/test evidence.
+- The remaining Goal 15-related fact is operational rollout evidence, not the implementation gate: [MISSING: production Auth role grant evidence for marketing_viewer, marketing_operator, marketing_admin, and marketing_owner]. This must remain visible before broad production admin rollout.
+- Goal 16, Goal 17, and Goal 18 protected UI work should remain gated only by the current integration review/commit and their own ownership blockers, not by ambiguous Goal 15 status.
+
+Docs updated:
+
+- `TASKS.md` now states that TG-3.9, TG-3.10, and TG-3.11 have the Goal 15 admin gate satisfied but remain queued until the current integration commit.
+- `STATE.json` now states that Goal 15 is the explicit prerequisite for Goal 16/17/18 protected UI work and that the current remote worktree review/commit is the remaining coordinator gate.
+- `docs/orchestrator/PLAN.md` now states that Goal 15 is the explicit gate for Goal 16/17/18 UI workers, and that workers must remain blocked if Goal 15 is not `done` in `GOALS.md` and complete in `STATE.json`/`STATUS.md`.
+- `docs/orchestrator/STATUS.md` received this append-only status entry.
+
+Parallel execution and merge/start order:
+
+- Final integration owner should review/commit the current remote worktree first.
+- After that commit, Goal 16 campaign/segment admin UI and Goal 17 runs/consent/channel/audit UI may start in parallel with disjoint files and coordinated shared admin navigation/route ordering.
+- Goal 18.3-18.5 may start after the same integration commit, but protected dashboard UI must coordinate with Goal 16/17 shared navigation and attribution beyond Marketing-owned campaign facts remains gated by [MISSING: approved analytics/conversion owner contract].
+- Goal 19.4/19.5 can start after the integration commit if isolated from admin UI files.
+- Goal 20 runtime enforcement remains blocked by missing owner-approved production policy facts and production Auth role grant evidence.
+
+Validation:
+
+- Documentation-only update; no application build/test was run.
+- Remote file checks should confirm Goal 15 is explicit in `TASKS.md`, `STATE.json`, `docs/orchestrator/PLAN.md`, and this `STATUS.md` entry.

@@ -66,6 +66,13 @@ Before implementation, branch orchestration, deployment, or launching workers, r
 14. `docs/agents/contracts/preferences-consent-contract.md`
 15. `docs/agents/contracts/channel-registry-contract.md`
 
+
+## Parallel Planning Default
+
+Codex planning for this repository must maximize safe parallel agent execution. Before assigning work, identify independently startable goals/chunks, explicit blockers, allowed and forbidden files per agent, expected outputs, validation commands, and merge/integration order.
+
+Keep work serial only when chunks touch the same files, migrations, public contracts, route namespaces, DTO/schema definitions, generated artifacts, or when one chunk depends on another chunk's runtime behavior or security foundation. If a dependency is unclear, mark the exact blocker instead of inventing a contract.
+
 ## Core Intent
 
 ```text
@@ -85,14 +92,16 @@ Unsubscribe and frequency-cap decisions must be enforced before delivery.
 
 1. Read the mandatory files in order before changing code or docs.
 2. Identify the active goal, next ready goal, or blocked checkpoint.
-3. Restate the preserved marketing intent and affected ownership boundaries.
-4. Implement only the next valid goal chunk unless the owner explicitly selects another.
-5. Keep write ownership disjoint when using workers or subagents.
-6. Update `docs/orchestrator/STATUS.md` after every implementation session.
-7. Require an Intent Compliance Report before marking a goal complete.
-8. Run or document validation before moving to the next goal.
-9. Never broaden marketing into direct delivery, identity ownership, contact ownership, or order/catalog ownership.
-10. Never execute a campaign against real recipients without explicit owner approval.
+3. Create or refresh a parallel execution assessment before implementation or worker assignment.
+4. Prefer parallel agents for independent goals/chunks, with disjoint write ownership and explicit integration order.
+5. Restate the preserved marketing intent and affected ownership boundaries.
+6. Implement only the assigned valid goal chunk unless the owner explicitly selects another.
+7. Keep write ownership disjoint when using workers or subagents.
+8. Update `docs/orchestrator/STATUS.md` after every implementation session.
+9. Require an Intent Compliance Report before marking a goal complete.
+10. Run or document validation before moving to the next goal.
+11. Never broaden marketing into direct delivery, identity ownership, contact ownership, or order/catalog ownership.
+12. Never execute a campaign against real recipients without explicit owner approval.
 
 ## User Checkpoints
 
@@ -112,3 +121,11 @@ Ask the user only when a decision cannot be safely inferred from the docs and cu
 
 <!-- Coordinator-maintained -->
 None.
+
+## Company Cross-Agent Standard
+
+This repository also follows `AGENT_OPERATIONS.md`, which points all AI agents to the company cross-agent automation model: readiness scanner, bounded worker agent, worker monitor, and integration validator. Use the validation-debt ledger for known out-of-scope validation failures and preserve the Intent Preservation chain.
+
+## Central Instruction Source
+
+Shared agent rules now live in `/home/ssf/.codex/AGENTS.md` and `/home/ssf/.ai-agent-standards/CROSS_AGENT_AUTOMATION_STANDARD.md`. Keep this file for repository-specific constraints only; do not duplicate shared operating rules here.

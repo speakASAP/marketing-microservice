@@ -221,6 +221,36 @@ The client validates the common envelope fields before using a signal. It extrac
 
 The app-signal client filters recipients already resolved from auth/leads. It does not create contacts, store raw event truth, write event-ingestion state, infer consent, or send notifications.
 
+## Segment Rule Matching
+
+Goal 11.4 makes app signal rules executable for segment resolution. Marketing may request filtered signals from the source service, but it must also evaluate returned envelopes locally so a broad or partially filtered source response cannot widen the segment.
+
+Supported segment rule keys:
+
+| Rule key | Envelope field |
+| --- | --- |
+| `signalEventType` or `eventType` | `eventType` |
+| `signalEventGroup` or `eventGroup` | `eventGroup` |
+| `signalLifecycleStage` or `lifecycleStage` | `lifecycleStage` |
+| `signalSourceService` or `sourceService` | `sourceService` |
+| `signalSourceObjectType` or `sourceObjectType` | `sourceObject.type` |
+| `signalSourceObjectId` or `sourceObjectId` | `sourceObject.id` or `sourceObject.ref` |
+| `signalSubjectRef` or `subjectRef` | `subject.ref` |
+| `signalOccurredSince`, `occurredSince`, or `occurredAfter` | lower inclusive `occurredAt` bound |
+| `signalOccurredUntil`, `occurredUntil`, or `occurredBefore` | upper inclusive `occurredAt` bound |
+
+Comma-separated values are accepted for exact string rules. Time windows use source-owned `occurredAt`, not ingestion time. Signals that match lifecycle/event predicates but resolve only to anonymous, tenant, CRM, or unsupported subject references do not produce delivery recipients in this chunk.
+
+## Dry-Run Preview And Failure Evidence
+
+Dry-runs must produce explicit source evidence for app-signal segments before any notification delegation. If the signal source is reachable but cannot produce eligible signal-backed recipients, Marketing records a source result with `recipientRef: app_signals:source` and one of:
+
+- `app_signals_no_source_signals` when the source returns no valid envelopes.
+- `app_signals_no_matching_signals` when envelopes exist but none match the segment event, lifecycle, source-object, subject, or time-window rules.
+- `app_signals_no_resolvable_subject_refs` when matching envelopes only reference anonymous, tenant-only, CRM/account, or unsupported subjects that cannot resolve to auth/leads recipients in this goal.
+
+These preview outcomes are skipped evidence, not delivery failures. Missing source URL, source outage, malformed envelopes, unsupported schema version, mismatched app ID, missing subject/sourceObject, or invalid `occurredAt` remain failed source evidence with `app_signals_source_unavailable:*`. Neither skipped preview evidence nor failed source evidence may trigger notification calls.
+
 Runtime configuration keys:
 
 - `APPLICATION_SIGNAL_SOURCE_URL`

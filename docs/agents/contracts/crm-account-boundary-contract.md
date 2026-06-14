@@ -62,3 +62,8 @@ The console composition must not change source-of-truth ownership. Write actions
 - Marketing must not infer consent from CRM account state.
 - B2B onboarding, renewal, upsell, and winback campaigns still require source-owned recipient consent and explicit campaign approval.
 - CRM/account source outages must skip or fail safely without direct delivery.
+
+
+## Read-Only Signal Contract
+
+Goal 19.1 and Goal 19.2 are defined in `docs/agents/contracts/crm-account-signal-contract.md`. That contract drafts the future read-only account and opportunity signal shapes, lifecycle/owner/health/onboarding/renewal fields, non-ownership rules, safe failure evidence, and the explicit runtime blockers that must be resolved before Marketing adds a CRM source client.

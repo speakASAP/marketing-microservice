@@ -36,6 +36,25 @@ Marketing campaign metadata should use a shared lifecycle vocabulary before app-
 - `abandoned_intent`
 - `operational_notice`
 
+## Shared Campaign Family Vocabulary
+
+Campaign catalog metadata should use the same initial shared campaign family vocabulary as lifecycle metadata until app-specific blueprint families are explicitly contracted:
+
+- `acquisition`
+- `activation`
+- `onboarding`
+- `education`
+- `feature_adoption`
+- `retention`
+- `reactivation`
+- `winback`
+- `renewal`
+- `upsell`
+- `cross_sell`
+- `post_purchase`
+- `abandoned_intent`
+- `operational_notice`
+
 ## Shared Audience Types
 
 - `registered_user`
@@ -61,6 +80,21 @@ Marketing campaign metadata should use a shared lifecycle vocabulary before app-
 - Signals must include `occurredAt`, source service, event type, and stable source object ID.
 - Signals must not transfer contact, consent, or provider credential ownership to Marketing.
 
+## Default Campaign Blueprints
+
+Initial Goal 12.3 default campaign blueprints are application-specific suggestions only:
+
+| Application | Blueprint ID | Family | Lifecycle stage | Audience |
+| --- | --- | --- | --- | --- |
+| Flipflop | `flipflop.abandoned-intent.default` | `abandoned_intent` | `abandoned_intent` | Shoppers with abandoned product or checkout intent. |
+| SpeakASap | `speakasap.activation.default` | `activation` | `activation` | Trial learners and language-interest leads. |
+| Marathon | `marathon.onboarding.default` | `onboarding` | `onboarding` | Newly registered participants. |
+| Bazos | `bazos.reactivation.default` | `reactivation` | `reactivation` | Sellers with expired or inactive listings. |
+| Rent-A-Box | `rent-a-box.renewal.default` | `renewal` | `renewal` | Storage customers approaching renewal. |
+| RunLayer | `runlayer.feature-adoption.default` | `feature_adoption` | `feature_adoption` | B2B tenants needing workflow adoption. |
+| Shop Assistant | `shop-assistant.post-purchase.default` | `post_purchase` | `post_purchase` | Post-purchase shoppers and recommendation users. |
+| Statics | `statics.retention.default` | `retention` | `retention` | Inactive analytics workspaces. |
+
 ## Campaign Blueprint Rule
 
-Future campaign blueprints may propose default segment rules, channel strategy, lifecycle stage, and template references per application. A blueprint is not an approved campaign. Real delivery still requires campaign creation, explicit owner approval, consent checks, unsubscribe checks, frequency caps, throttling, idempotency, and notification delegation.
+Campaign blueprints may propose default segment rules, channel strategy, lifecycle stage, campaign family, and template references per application. A blueprint is not an approved campaign, does not contain message bodies or execution commands, and does not own provider template delivery. Real delivery still requires campaign creation, explicit owner approval, consent checks, unsubscribe checks, frequency caps, throttling, idempotency, and notification delegation.

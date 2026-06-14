@@ -4,7 +4,26 @@ Use these prompts when the owner asks to "implement the next marketing goal."
 
 ## Universal Session Prompt
 
-Read `docs/orchestrator/MASTER_PROMPT.md`, `INTENT.md`, `GOALS.md`, `PLAN.md`, and `STATUS.md`. Identify the earliest active or pending chunk. Restate the preserved marketing intent and the ownership boundaries affected by the chunk. Implement only that chunk, verify it, append status evidence, and leave the next chunk clearly named.
+Read `BUSINESS.md`, `SYSTEM.md`, `README.md`, `TASKS.md`, `STATE.json`, `docs/orchestrator/MASTER_PROMPT.md`, `INTENT.md`, `GOALS.md`, `PLAN.md`, `STATUS.md`, `PROMPTS.md`, and the required contract docs. Identify the active chunk, next ready chunks, blocked chunks, and independently startable parallel workstreams. Restate the preserved marketing intent and affected ownership boundaries. Implement only the assigned chunk, verify it, append status evidence, and leave the next chunks and blockers clearly named.
+
+
+## Parallel Agent Handoff Prompt
+
+Use this when assigning work to multiple sessions:
+
+```text
+Goal/chunk:
+Start status: start now | wait for <dependency> | blocked by <blocker>
+Preserved intent:
+Allowed files:
+Forbidden files:
+Expected output:
+Validation:
+Integration order:
+Status update requirement: append evidence to docs/orchestrator/STATUS.md without overwriting other agents' entries.
+```
+
+Do not assign two agents to the same file, migration chain, public contract, route namespace, DTO/schema, generated artifact, or security boundary unless one agent is explicitly the integration owner.
 
 ## Goal 1 Prompt
 

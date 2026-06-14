@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Marketing Auth Handoff</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/assets/landing.css" />
+  </head>
+  <body>
+    <main class="page-shell callback-shell" aria-live="polite">
+      <section class="callback-panel">
+        <p class="eyebrow">Statex Marketing</p>
+        <h1>Finishing sign in.</h1>
+        <p id="handoff-status" class="lead">Checking Auth handoff state.</p>
+      </section>
+    </main>
+    <script>
+      (function () {
+        var cookieName = "__AUTH_COOKIE_NAME__";
+        var stateCookieName = "marketing_auth_state";
+        var status = document.getElementById("handoff-status");
+
+        function readCookie(name) {
+          return document.cookie.split(";").map(function (part) { return part.trim(); }).reduce(function (found, part) {
+            if (found) return found;
+            var prefix = name + "=";
+            return part.indexOf(prefix) === 0 ? decodeURIComponent(part.slice(prefix.length)) : "";
+          }, "");
+        }
+
+        function cookieSecureSuffix() {
+          return window.location.protocol === "https:" ? "; Secure" : "";
+        }
+
+        function fail(message) {
+          status.textContent = message;
+        }
+
+        var fragment = new URLSearchParams(window.location.hash ? window.location.hash.slice(1) : "");
+        var accessToken = fragment.get("access_token") || "";
+        var returnedState = fragment.get("state") || "";
+        var expectedState = readCookie(stateCookieName);
+
+        if (!accessToken) {
+          fail("Auth did not return an access token. Start again from Marketing.");
+          return;
+        }
+        if (expectedState && returnedState !== expectedState) {
+          fail("Auth state did not match. Start again from Marketing.");
+          return;
+        }
+
+        var maxAge = 3600;
+        var expiresAt = fragment.get("expires_at") || "";
+        if (expiresAt) {
+          var seconds = Math.floor((Date.parse(expiresAt) - Date.now()) / 1000);
+          if (Number.isFinite(seconds) && seconds > 0) maxAge = Math.min(seconds, 3600);
+        }
+
+        document.cookie = stateCookieName + "=; Path=/auth/callback; Max-Age=0; SameSite=Lax" + cookieSecureSuffix();
+        document.cookie = cookieName + "=" + encodeURIComponent(accessToken) + "; Path=/admin; Max-Age=" + maxAge + "; SameSite=Lax" + cookieSecureSuffix();
+        window.location.replace("/admin");
+      })();
+    </script>
+  </body>
+</html>

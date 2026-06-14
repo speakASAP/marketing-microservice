@@ -6,9 +6,9 @@ import { logDecision, setAuditSinkForTest } from "../src/logger";
 import { runDueScheduledCampaigns } from "../src/scheduler";
 import { setRegistryFixtureProviderForTest } from "../src/registry";
 import { setTestRecipientFixtureProviderForTest } from "../src/sources";
-import { campaigns, resetInMemoryState, segments } from "../src/store";
+import { campaigns, journeys, resetInMemoryState, segments } from "../src/store";
 import { testRecipientFixtures as contacts } from "./fixtures";
-import { Campaign, Segment } from "../src/types";
+import { Campaign, Journey, Segment } from "../src/types";
 
 process.env.NODE_ENV = "test";
 process.env.MARKETING_USE_TEST_RECIPIENT_FIXTURES = "true";
@@ -72,6 +72,51 @@ function makeCampaign(overrides: Partial<Campaign> = {}): Campaign {
     approvalNote: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    ...overrides
+  };
+}
+
+function makeJourney(overrides: Partial<Journey> = {}): Journey {
+  const now = new Date().toISOString();
+  return {
+    journeyId: "journey-1",
+    tenantId: "statex",
+    appId: "flipflop",
+    brandId: "statex-main",
+    businessId: null,
+    environment: "test",
+    defaultLocale: "en",
+    timezone: "Europe/Prague",
+    productLine: null,
+    lifecycleScope: null,
+    legalSenderIdentity: null,
+    policyRef: null,
+    name: "activation journey",
+    description: null,
+    trigger: { type: "manual" },
+    steps: [
+      {
+        stepId: "welcome",
+        name: "Welcome",
+        campaignId: "camp-1",
+        delayMinutes: 0,
+        conditions: { lifecycle: "activation" },
+        maxExecutionsPerRecipient: 1
+      }
+    ],
+    exitRules: [{ ruleId: "manual-exit", type: "manual" }],
+    suppressionRules: [
+      { ruleId: "unsubscribed", type: "unsubscribed" },
+      { ruleId: "recent", type: "recently_sent", campaignId: "camp-1", windowMinutes: 1440 }
+    ],
+    status: "active",
+    approvalStatus: "approved",
+    approvedBy: "journey-owner@example.com",
+    approvedAt: now,
+    approvalNote: null,
+    activatedAt: "2026-06-13T08:00:00.000Z",
+    createdAt: now,
+    updatedAt: now,
     ...overrides
   };
 }
@@ -329,6 +374,82 @@ test("scheduler claim prevents duplicate due scheduled execution", async () => {
   } finally {
     (axios.post as unknown as typeof originalPost) = originalPost;
     contacts.splice(0, contacts.length, ...originalContacts);
+    resetInMemoryState();
+  }
+});
+
+test("journey scheduler emits sanitized step decision audit evidence", async () => {
+  resetInMemoryState();
+  const originalContacts = contacts.slice();
+  const captured: Array<Record<string, unknown>> = [];
+  setAuditSinkForTest((payload) => {
+    captured.push(payload);
+  });
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+  const originalPost = axios.post;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    contacts.splice(
+      0,
+      contacts.length,
+      {
+        id: "auth-journey-allowed",
+        owner: "auth",
+        email: "allowed@example.com",
+        preferredChannel: "email",
+        fallbackChannels: [],
+        consent: { marketing: true, unsubscribed: false }
+      },
+      {
+        id: "auth-journey-unsubscribed",
+        owner: "auth",
+        email: "unsubscribed@example.com",
+        preferredChannel: "email",
+        fallbackChannels: [],
+        consent: { marketing: true, unsubscribed: true }
+      }
+    );
+    segments.set("seg-1", makeSegment());
+    campaigns.set("camp-1", makeCampaign());
+    journeys.set("journey-1", makeJourney());
+
+    const result = await runDueScheduledCampaigns({
+      schedulerOwner: "journey-audit-test",
+      now: new Date("2026-06-13T08:01:00.000Z"),
+      batchSize: 5
+    });
+
+    assert.equal(result.journeySteps.claimed, 1);
+    assert.equal(result.journeySteps.executed, 1);
+    assert.equal(result.journeySteps.decisions.length, 1);
+    assert.equal(result.journeySteps.decisions[0].status, "completed");
+    assert.equal(result.journeySteps.decisions[0].reasonCounts.sent_via_notifications, 1);
+    assert.equal(result.journeySteps.decisions[0].reasonCounts.unsubscribed, 1);
+
+    const audit = captured.find((payload) => payload.event === "journey_step_decision_audited");
+    assert.ok(audit);
+    assert.equal(audit.journeyId, "journey-1");
+    assert.equal(audit.stepId, "welcome");
+    assert.equal(audit.campaignId, "camp-1");
+    assert.equal(audit.schedulerOwner, "journey-audit-test");
+    assert.equal(audit.totalRecipients, 2);
+    assert.equal(audit.totalSent, 1);
+    assert.equal(audit.totalSkipped, 1);
+    assert.deepEqual(audit.statusCounts, { skipped: 1, sent: 1 });
+    assert.deepEqual(audit.reasonCounts, { unsubscribed: 1, sent_via_notifications: 1 });
+    assert.deepEqual(audit.exitRuleTypes, ["manual"]);
+    assert.deepEqual(audit.suppressionRuleTypes, ["unsubscribed", "recently_sent"]);
+    assert.deepEqual(audit.stepConditionKeys, ["lifecycle"]);
+    assert.equal(audit.maxExecutionsPerRecipient, 1);
+    assert.equal(Object.prototype.hasOwnProperty.call(audit, "message"), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(audit, "recipientAddress"), false);
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    contacts.splice(0, contacts.length, ...originalContacts);
+    setAuditSinkForTest(null);
     resetInMemoryState();
   }
 });
@@ -1468,6 +1589,259 @@ test("filters auth recipients through configured application signals", async () 
   }
 });
 
+test("filters application signals by event and lifecycle segment rules", async () => {
+  resetInMemoryState();
+  const originalAuthUrl = process.env.AUTH_SERVICE_URL;
+  const originalSignalUrl = process.env.APPLICATION_SIGNAL_SOURCE_URL;
+  const originalGet = axios.get;
+  const originalPost = axios.post;
+  process.env.AUTH_SERVICE_URL = "http://auth-microservice:3370";
+  process.env.APPLICATION_SIGNAL_SOURCE_URL = "http://app-signal-service:4700";
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+
+  const sentRecipients: string[] = [];
+  (axios.get as unknown as typeof originalGet) = (async (url: string) => {
+    if (url.startsWith("http://app-signal-service:4700/marketing/application-signals?")) {
+      return {
+        status: 200,
+        data: {
+          signals: [
+            {
+              schemaVersion: "marketing.application_signal.v1",
+              signalId: "flipflop:inactive:auth-winback",
+              sourceService: "flipflop",
+              appId: "flipflop",
+              tenantId: "statex",
+              brandId: "statex-main",
+              subject: { type: "registered_user", ref: "auth:user:auth-winback", sourceOwner: "auth", sourceId: "auth-winback" },
+              eventType: "user.inactive",
+              eventGroup: "reactivation",
+              lifecycleStage: "reactivation",
+              sourceObject: { type: "activity_window", id: "winback-30d" },
+              occurredAt: "2026-06-12T00:00:00.000Z"
+            },
+            {
+              schemaVersion: "marketing.application_signal.v1",
+              signalId: "flipflop:purchase:auth-buyer",
+              sourceService: "flipflop",
+              appId: "flipflop",
+              tenantId: "statex",
+              brandId: "statex-main",
+              subject: { type: "registered_user", ref: "auth:user:auth-buyer", sourceOwner: "auth", sourceId: "auth-buyer" },
+              eventType: "purchase.completed",
+              eventGroup: "post_purchase",
+              lifecycleStage: "post_purchase",
+              sourceObject: { type: "order", id: "order-1" },
+              occurredAt: "2026-06-12T00:00:00.000Z"
+            },
+            {
+              schemaVersion: "marketing.application_signal.v1",
+              signalId: "flipflop:old-inactive:auth-old",
+              sourceService: "flipflop",
+              appId: "flipflop",
+              tenantId: "statex",
+              brandId: "statex-main",
+              subject: { type: "registered_user", ref: "auth:user:auth-old", sourceOwner: "auth", sourceId: "auth-old" },
+              eventType: "user.inactive",
+              eventGroup: "reactivation",
+              lifecycleStage: "reactivation",
+              sourceObject: { type: "activity_window", id: "winback-60d" },
+              occurredAt: "2026-05-01T00:00:00.000Z"
+            }
+          ]
+        }
+      } as never;
+    }
+
+    if (url.startsWith("http://auth-microservice:3370/auth/marketing/recipients?")) {
+      return {
+        status: 200,
+        data: {
+          users: [
+            {
+              id: "auth-winback",
+              email: "winback@example.com",
+              preferredChannel: "email",
+              fallbackChannels: [],
+              marketingConsents: { marketing: true }
+            },
+            {
+              id: "auth-buyer",
+              email: "buyer@example.com",
+              preferredChannel: "email",
+              fallbackChannels: [],
+              marketingConsents: { marketing: true }
+            },
+            {
+              id: "auth-old",
+              email: "old@example.com",
+              preferredChannel: "email",
+              fallbackChannels: [],
+              marketingConsents: { marketing: true }
+            }
+          ]
+        }
+      } as never;
+    }
+
+    throw new Error(`unexpected get ${url}`);
+  }) as typeof originalGet;
+  (axios.post as unknown as typeof originalPost) = (async (_url: string, payload: unknown) => {
+    sentRecipients.push((payload as { recipient: string }).recipient);
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set(
+      "seg-1",
+      makeSegment({
+        sourceTypes: ["app_signals", "auth_users"],
+        rules: {
+          signalEventType: "user.inactive",
+          signalEventGroup: "reactivation",
+          signalLifecycleStage: "reactivation",
+          signalSourceObjectType: "activity_window",
+          signalOccurredSince: "2026-06-01T00:00:00.000Z"
+        }
+      })
+    );
+    campaigns.set("camp-1", makeCampaign({ appId: "flipflop" }));
+
+    const run = await executeCampaign("camp-1", "idem-app-signal-lifecycle-rules");
+    assert.deepEqual(sentRecipients, ["winback@example.com"]);
+    assert.equal(run.totalRecipients, 1);
+    assert.equal(run.totalSent, 1);
+    assert.ok(!run.results.some((r) => r.recipientAddress === "buyer@example.com"));
+    assert.ok(!run.results.some((r) => r.recipientAddress === "old@example.com"));
+  } finally {
+    (axios.get as unknown as typeof originalGet) = originalGet;
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    if (originalAuthUrl === undefined) delete process.env.AUTH_SERVICE_URL;
+    else process.env.AUTH_SERVICE_URL = originalAuthUrl;
+    if (originalSignalUrl === undefined) delete process.env.APPLICATION_SIGNAL_SOURCE_URL;
+    else process.env.APPLICATION_SIGNAL_SOURCE_URL = originalSignalUrl;
+    resetInMemoryState();
+  }
+});
+
+test("dry run records application signal preview evidence when rules match no signals", async () => {
+  resetInMemoryState();
+  const originalAuthUrl = process.env.AUTH_SERVICE_URL;
+  const originalSignalUrl = process.env.APPLICATION_SIGNAL_SOURCE_URL;
+  const originalGet = axios.get;
+  const originalPost = axios.post;
+  delete process.env.AUTH_SERVICE_URL;
+  process.env.APPLICATION_SIGNAL_SOURCE_URL = "http://app-signal-service:4700";
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+
+  const getCalls: string[] = [];
+  let postCalls = 0;
+  (axios.get as unknown as typeof originalGet) = (async (url: string) => {
+    getCalls.push(url);
+    if (url.startsWith("http://app-signal-service:4700/marketing/application-signals?")) {
+      return {
+        status: 200,
+        data: {
+          signals: [
+            {
+              schemaVersion: "marketing.application_signal.v1",
+              signalId: "flipflop:purchase:auth-buyer",
+              sourceService: "flipflop",
+              appId: "flipflop",
+              tenantId: "statex",
+              brandId: "statex-main",
+              subject: { type: "registered_user", ref: "auth:user:auth-buyer", sourceOwner: "auth", sourceId: "auth-buyer" },
+              eventType: "purchase.completed",
+              eventGroup: "post_purchase",
+              lifecycleStage: "post_purchase",
+              sourceObject: { type: "order", id: "order-1" },
+              occurredAt: "2026-06-12T00:00:00.000Z"
+            }
+          ]
+        }
+      } as never;
+    }
+    throw new Error(`unexpected get ${url}`);
+  }) as typeof originalGet;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set(
+      "seg-1",
+      makeSegment({
+        sourceTypes: ["app_signals", "auth_users"],
+        rules: {
+          signalEventType: "user.inactive",
+          signalLifecycleStage: "reactivation"
+        }
+      })
+    );
+    campaigns.set("camp-1", makeCampaign({ appId: "flipflop", approvalStatus: "pending", approvedBy: null, approvedAt: null }));
+
+    const run = await executeCampaign("camp-1", "idem-app-signal-preview-empty", { dryRun: true });
+    assert.equal(run.status, "dry_run_completed");
+    assert.equal(run.totalRecipients, 0);
+    assert.equal(run.totalSent, 0);
+    assert.equal(postCalls, 0);
+    assert.equal(run.results.length, 1);
+    assert.equal(run.results[0].status, "skipped");
+    assert.equal(run.results[0].recipientRef, "app_signals:source");
+    assert.equal(run.results[0].decisionReason, "app_signals_no_matching_signals");
+    assert.ok(!getCalls.some((url) => url.startsWith("http://auth-microservice:3370/")));
+  } finally {
+    (axios.get as unknown as typeof originalGet) = originalGet;
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    if (originalAuthUrl === undefined) delete process.env.AUTH_SERVICE_URL;
+    else process.env.AUTH_SERVICE_URL = originalAuthUrl;
+    if (originalSignalUrl === undefined) delete process.env.APPLICATION_SIGNAL_SOURCE_URL;
+    else process.env.APPLICATION_SIGNAL_SOURCE_URL = originalSignalUrl;
+    resetInMemoryState();
+  }
+});
+
+test("dry run records application signal source failure evidence without notification delivery", async () => {
+  resetInMemoryState();
+  const originalSignalUrl = process.env.APPLICATION_SIGNAL_SOURCE_URL;
+  const originalPost = axios.post;
+  delete process.env.APPLICATION_SIGNAL_SOURCE_URL;
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+
+  let postCalls = 0;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set(
+      "seg-1",
+      makeSegment({
+        sourceTypes: ["app_signals", "auth_users"],
+        rules: { signalEventType: "product.viewed" }
+      })
+    );
+    campaigns.set("camp-1", makeCampaign({ appId: "flipflop", approvalStatus: "pending", approvedBy: null, approvedAt: null }));
+
+    const run = await executeCampaign("camp-1", "idem-app-signal-preview-failure", { dryRun: true });
+    assert.equal(run.status, "dry_run_completed");
+    assert.equal(run.totalRecipients, 0);
+    assert.equal(run.totalSent, 0);
+    assert.equal(postCalls, 0);
+    assert.equal(run.results.length, 1);
+    assert.equal(run.results[0].status, "failed");
+    assert.equal(run.results[0].recipientRef, "app_signals:source");
+    assert.match(run.results[0].decisionReason, /^app_signals_source_unavailable:/);
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    if (originalSignalUrl === undefined) delete process.env.APPLICATION_SIGNAL_SOURCE_URL;
+    else process.env.APPLICATION_SIGNAL_SOURCE_URL = originalSignalUrl;
+    resetInMemoryState();
+  }
+});
+
 test("fails application signal source safely without notification delivery", async () => {
   resetInMemoryState();
   const originalSignalUrl = process.env.APPLICATION_SIGNAL_SOURCE_URL;
@@ -1567,6 +1941,139 @@ test("fails catalog signal safely without notification delivery", async () => {
     } else {
       process.env.CATALOG_SERVICE_URL = originalCatalogUrl;
     }
+    resetInMemoryState();
+  }
+});
+
+
+test("filters recipients through read-only crm account signals", async () => {
+  resetInMemoryState();
+  const originalCrmUrl = process.env.CRM_ACCOUNT_SERVICE_URL;
+  const originalCrmToken = process.env.CRM_ACCOUNT_SERVICE_TOKEN;
+  const originalCrmLimit = process.env.CRM_ACCOUNT_SIGNAL_LIMIT;
+  const originalGet = axios.get;
+  const originalPost = axios.post;
+  process.env.CRM_ACCOUNT_SERVICE_URL = "http://crm-account-service:4800";
+  process.env.CRM_ACCOUNT_SERVICE_TOKEN = "crm-token";
+  process.env.CRM_ACCOUNT_SIGNAL_LIMIT = "50";
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+
+  const getCalls: Array<{ url: string; authorization?: string }> = [];
+  let postCalls = 0;
+  (axios.get as unknown as typeof originalGet) = (async (url: string, config?: unknown) => {
+    getCalls.push({
+      url,
+      authorization: (config as { headers?: Record<string, string> } | undefined)?.headers?.Authorization
+    });
+    return {
+      status: 200,
+      data: {
+        schemaVersion: "marketing.crm_account_signals.v1",
+        items: [
+          {
+            schemaVersion: "marketing.crm_account_signal.v1",
+            accountId: "acct-1",
+            companyId: "company-1",
+            tenantId: "statex",
+            appIds: ["flipflop"],
+            lifecycleStage: "renewal",
+            healthStatus: "watch",
+            healthScore: 72,
+            renewalDate: "2026-09-30",
+            sourceUpdatedAt: "2026-06-13T08:00:00.000Z",
+            contactRefs: [{ owner: "auth", ref: "auth:user:auth-1", role: "admin" }]
+          },
+          {
+            schemaVersion: "marketing.crm_account_signal.v1",
+            accountId: "acct-2",
+            companyId: "company-2",
+            tenantId: "statex",
+            appIds: ["flipflop"],
+            lifecycleStage: "active",
+            healthStatus: "healthy",
+            healthScore: 95,
+            sourceUpdatedAt: "2026-06-13T08:00:00.000Z",
+            contactRefs: [{ owner: "auth", ref: "auth:user:auth-2", role: "admin" }]
+          }
+        ],
+        nextCursor: null
+      }
+    } as never;
+  }) as typeof originalGet;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set(
+      "seg-1",
+      makeSegment({
+        sourceTypes: ["crm_accounts", "auth_users"],
+        rules: { lifecycleStage: "renewal", healthScoreMin: 50, healthScoreMax: 90 }
+      })
+    );
+    campaigns.set("camp-1", makeCampaign());
+
+    const run = await executeCampaign("camp-1", "idem-crm-filter");
+    assert.equal(run.totalRecipients, 1);
+    assert.equal(run.totalSent, 1);
+    assert.equal(postCalls, 1);
+    assert.equal(getCalls.length, 1);
+    assert.match(getCalls[0].url, /^http:\/\/crm-account-service:4800\/marketing\/account-signals\?/);
+    assert.match(getCalls[0].url, /tenantId=statex/);
+    assert.match(getCalls[0].url, /appId=flipflop/);
+    assert.match(getCalls[0].url, /lifecycleStage=renewal/);
+    assert.equal(getCalls[0].authorization, "Bearer crm-token");
+    assert.equal(run.results[0].recipientRef, "auth:auth-1");
+  } finally {
+    (axios.get as unknown as typeof originalGet) = originalGet;
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    if (originalCrmUrl === undefined) delete process.env.CRM_ACCOUNT_SERVICE_URL;
+    else process.env.CRM_ACCOUNT_SERVICE_URL = originalCrmUrl;
+    if (originalCrmToken === undefined) delete process.env.CRM_ACCOUNT_SERVICE_TOKEN;
+    else process.env.CRM_ACCOUNT_SERVICE_TOKEN = originalCrmToken;
+    if (originalCrmLimit === undefined) delete process.env.CRM_ACCOUNT_SIGNAL_LIMIT;
+    else process.env.CRM_ACCOUNT_SIGNAL_LIMIT = originalCrmLimit;
+    resetInMemoryState();
+  }
+});
+
+test("fails crm account signal source safely without notification delivery", async () => {
+  resetInMemoryState();
+  const originalCrmUrl = process.env.CRM_ACCOUNT_SERVICE_URL;
+  const originalPost = axios.post;
+  delete process.env.CRM_ACCOUNT_SERVICE_URL;
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+
+  let postCalls = 0;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set(
+      "seg-1",
+      makeSegment({
+        sourceTypes: ["crm_accounts", "auth_users"],
+        rules: { lifecycleStage: "renewal" }
+      })
+    );
+    campaigns.set("camp-1", makeCampaign());
+
+    const run = await executeCampaign("camp-1", "idem-crm-missing");
+    assert.equal(run.totalRecipients, 0);
+    assert.equal(run.totalSent, 0);
+    assert.equal(postCalls, 0);
+    assert.equal(run.results.length, 1);
+    assert.equal(run.results[0].status, "failed");
+    assert.equal(run.results[0].recipientRef, "crm_accounts:source");
+    assert.match(run.results[0].decisionReason, /^crm_account_source_unavailable:crm_account_service_url_missing/);
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    if (originalCrmUrl === undefined) delete process.env.CRM_ACCOUNT_SERVICE_URL;
+    else process.env.CRM_ACCOUNT_SERVICE_URL = originalCrmUrl;
     resetInMemoryState();
   }
 });
