@@ -2762,3 +2762,44 @@ Validation:
 
 - Documentation-only update; no application build/test was run.
 - Remote file checks should confirm Goal 15 is explicit in `TASKS.md`, `STATE.json`, `docs/orchestrator/PLAN.md`, and this `STATUS.md` entry.
+
+## 2026-06-14 - Coordinator Next-Goal Processing
+
+Current focus: next-goal orchestration after Goal 15 integration checkpoint.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the Statex campaign and segmentation control plane.
+- Notifications remains the sole outbound provider execution owner.
+- Auth and leads remain identity, contact, preference, and consent owners.
+- CRM/account and analytics sources remain external truth owners; Marketing stores references, campaign facts, and decision evidence only.
+- No real campaign execution was triggered.
+
+Evidence gathered:
+
+- Mandatory orchestrator files and required contract docs were reviewed before assignment.
+- Remaining plan state: Goal 16 pending; Goal 17 pending; Goal 18 active with 18.3, 18.4, and 18.5 open; Goal 19 active with 19.4 and 19.5 open; Goal 20 blocked by missing owner-approved production policy facts.
+- The previous integration worktree was dirty and gated all next UI/analytics/CRM work.
+- Remote `npm run build` passed on 2026-06-14.
+- Remote `npm test` passed on 2026-06-14: 64 tests, 64 passing.
+- Secret scan found only environment variable references and test redaction fixtures, not committed private key material or literal production secret values.
+- Integration checkpoint committed on remote `main`: `b233e2f Integrate marketing admin and roadmap goals`.
+
+Parallel execution launched:
+
+- Goal 16 worker thread `019ec7b4-5f19-79e1-b471-5e26564726ec`; remote worktree `/home/ssf/Documents/Github/marketing-worktrees/goal-16-admin-console`; branch `codex/marketing-goal-16`.
+- Goal 17 worker thread `019ec7b4-927c-7c42-8691-e96116defc67`; remote worktree `/home/ssf/Documents/Github/marketing-worktrees/goal-17-ops-views`; branch `codex/marketing-goal-17`.
+- Goal 18 worker thread `019ec7b4-ccff-7bf0-a858-95f5315ccb98`; remote worktree `/home/ssf/Documents/Github/marketing-worktrees/goal-18-analytics`; branch `codex/marketing-goal-18`.
+- Goal 19 worker thread `019ec7b4-feb1-7f50-b0f4-00ae717cbc79`; remote worktree `/home/ssf/Documents/Github/marketing-worktrees/goal-19-crm`; branch `codex/marketing-goal-19`.
+
+Parallel execution assessment:
+
+- Goal 16 owns campaign/segment admin UI and must avoid runs/audit/channel/analytics/CRM files.
+- Goal 17 owns runs, consent, channel registry read view, audit evidence, and correlation search, and must avoid campaign/segment create/edit and analytics files.
+- Goal 18 owns analytics attribution metadata/read models/dashboard/export summaries only within Marketing-owned and externally supplied facts; broader attribution truth remains blocked by `[MISSING: approved analytics/conversion owner contract]`.
+- Goal 19 owns read-only CRM/account segmentation rules, B2B blueprints, and safe-failure/audit evidence; production CRM use remains disabled until source service configuration exists.
+- Goal 20 remains blocked by `[MISSING: production recipient-count thresholds]`, `[MISSING: high-risk approver identities]`, `[MISSING: quiet-hour policy defaults]`, and `[MISSING: owner-approved rollback/deployment policy]`.
+
+Next unfinished step:
+
+- Monitor the four worker branches, then integrate in this order: Goal 19 if isolated, Goal 18 if no shared admin navigation edits, Goal 16, Goal 17, then final coordinator navigation/status validation.
