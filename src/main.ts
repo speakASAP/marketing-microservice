@@ -131,8 +131,240 @@ app.get("/admin/api/segments", requireAdminAuth("viewer"), async (req, res) => {
   res.json(await getStore().listSegments(req.query as Record<string, string>));
 });
 
+app.get("/admin/api/segments/:id", requireAdminAuth("viewer"), async (req, res) => {
+  const segment = await getStore().getSegment(String(req.params.id));
+  if (!segment) return res.status(404).json({ error: "segment_not_found" });
+  return res.json(segment);
+});
+
+app.post("/admin/api/segments", requireAdminAuth("admin"), async (req, res) => {
+  const validation = validateSegmentBody(req.body);
+  if (!validation.ok) {
+    return sendContractError(res, 400, validation.error);
+  }
+
+  const body = validation.value;
+  const registryValidation = await validateRegistryScope(registryScopeFrom(body as Segment));
+  if (!registryValidation.ok) {
+    return res.status(400).json({ error: registryValidation.reason, details: registryValidation.details });
+  }
+
+  const segment: Segment = {
+    segmentId: crypto.randomUUID(),
+    tenantId: body.tenantId!,
+    appId: body.appId!,
+    brandId: body.brandId!,
+    businessId: body.businessId ?? null,
+    environment: body.environment ?? null,
+    defaultLocale: body.defaultLocale ?? null,
+    timezone: body.timezone ?? null,
+    productLine: body.productLine ?? null,
+    lifecycleScope: body.lifecycleScope ?? null,
+    legalSenderIdentity: body.legalSenderIdentity ?? null,
+    policyRef: body.policyRef ?? null,
+    name: body.name!,
+    sourceTypes: body.sourceTypes!,
+    rules: body.rules!,
+    isDynamic: body.isDynamic!,
+    estimatedCount: body.estimatedCount ?? null
+  };
+
+  const saved = await getStore().saveSegment(segment);
+  logDecision("admin_segment_created", {
+    segmentId: saved.segmentId,
+    sourceTypes: saved.sourceTypes,
+    isDynamic: saved.isDynamic,
+    actor: adminActor(res.locals.adminSession as AdminUserSession),
+    duration_ms: 0
+  });
+  return res.status(201).json(saved);
+});
+
+app.put("/admin/api/segments/:id", requireAdminAuth("admin"), async (req, res) => {
+  const validation = validateSegmentBody(req.body, true);
+  if (!validation.ok) {
+    return sendContractError(res, 400, validation.error);
+  }
+
+  const existing = await getStore().getSegment(String(req.params.id));
+  if (!existing) {
+    return res.status(404).json({ error: "segment_not_found" });
+  }
+
+  const updated: Segment = {
+    ...existing,
+    ...validation.value,
+    segmentId: existing.segmentId
+  };
+  const registryValidation = await validateRegistryScope(registryScopeFrom(updated));
+  if (!registryValidation.ok) {
+    return res.status(400).json({ error: registryValidation.reason, details: registryValidation.details });
+  }
+  const saved = await getStore().saveSegment(updated);
+  logDecision("admin_segment_updated", {
+    segmentId: saved.segmentId,
+    sourceTypes: saved.sourceTypes,
+    isDynamic: saved.isDynamic,
+    actor: adminActor(res.locals.adminSession as AdminUserSession),
+    duration_ms: 0
+  });
+  return res.json(saved);
+});
+
 app.get("/admin/api/campaigns", requireAdminAuth("viewer"), async (req, res) => {
   res.json(await getStore().listCampaigns(req.query as Record<string, string>));
+});
+
+app.get("/admin/api/campaigns/:id", requireAdminAuth("viewer"), async (req, res) => {
+  const campaign = await getStore().getCampaign(String(req.params.id));
+  if (!campaign) return res.status(404).json({ error: "campaign_not_found" });
+  return res.json(campaign);
+});
+
+app.post("/admin/api/campaigns", requireAdminAuth("admin"), async (req, res) => {
+  const validation = validateCampaignBody(req.body);
+  if (!validation.ok) {
+    return sendContractError(res, 400, validation.error);
+  }
+
+  const now = new Date().toISOString();
+  const body = validation.value;
+  if (!(await getStore().getSegment(body.segmentId!))) {
+    return res.status(400).json({ error: "segment_not_found" });
+  }
+  const registryValidation = await validateRegistryScope(registryScopeFrom(body as Campaign));
+  if (!registryValidation.ok) {
+    return res.status(400).json({ error: registryValidation.reason, details: registryValidation.details });
+  }
+
+  const campaign: Campaign = {
+    campaignId: crypto.randomUUID(),
+    tenant: body.tenant!,
+    tenantId: body.tenantId!,
+    appId: body.appId!,
+    brandId: body.brandId!,
+    businessId: body.businessId ?? null,
+    environment: body.environment ?? null,
+    defaultLocale: body.defaultLocale ?? null,
+    timezone: body.timezone ?? null,
+    productLine: body.productLine ?? null,
+    lifecycleScope: body.lifecycleScope ?? null,
+    legalSenderIdentity: body.legalSenderIdentity ?? null,
+    policyRef: body.policyRef ?? null,
+    name: body.name!,
+    segmentId: body.segmentId!,
+    description: body.description ?? null,
+    purpose: body.purpose ?? "marketing",
+    primaryChannel: body.primaryChannel ?? "email",
+    fallbackChannels: body.fallbackChannels ?? [],
+    channelKey: body.channelKey,
+    templateRef: body.templateRef!,
+    scheduleAt: body.scheduleAt,
+    throttlePerMinute: body.throttlePerMinute ?? null,
+    frequencyCapPerDay: body.frequencyCapPerDay ?? 1,
+    catalogMetadata: body.catalogMetadata ?? null,
+    message: body.message!,
+    status: body.status ?? "draft",
+    approvalStatus: "pending",
+    approvedBy: null,
+    approvedAt: null,
+    approvalNote: null,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  const saved = await getStore().saveCampaign(campaign);
+  logDecision("admin_campaign_created", {
+    campaignId: saved.campaignId,
+    tenant: saved.tenant,
+    segmentId: saved.segmentId,
+    purpose: saved.purpose,
+    primaryChannel: saved.primaryChannel,
+    status: saved.status,
+    approvalStatus: saved.approvalStatus,
+    actor: adminActor(res.locals.adminSession as AdminUserSession),
+    duration_ms: 0
+  });
+  return res.status(201).json(saved);
+});
+
+app.put("/admin/api/campaigns/:id", requireAdminAuth("admin"), async (req, res) => {
+  const validation = validateCampaignBody(req.body, true);
+  if (!validation.ok) {
+    return sendContractError(res, 400, validation.error);
+  }
+
+  const existing = await getStore().getCampaign(String(req.params.id));
+  if (!existing) {
+    return res.status(404).json({ error: "campaign_not_found" });
+  }
+
+  if (validation.value.segmentId && !(await getStore().getSegment(validation.value.segmentId))) {
+    return res.status(400).json({ error: "segment_not_found" });
+  }
+
+  const updated: Campaign = {
+    ...existing,
+    ...validation.value,
+    campaignId: existing.campaignId,
+    approvalStatus: existing.approvalStatus,
+    approvedBy: existing.approvedBy ?? null,
+    approvedAt: existing.approvedAt ?? null,
+    approvalNote: existing.approvalNote ?? null,
+    createdAt: existing.createdAt,
+    updatedAt: new Date().toISOString()
+  };
+  const registryValidation = await validateRegistryScope(registryScopeFrom(updated));
+  if (!registryValidation.ok) {
+    return res.status(400).json({ error: registryValidation.reason, details: registryValidation.details });
+  }
+  const saved = await getStore().saveCampaign(updated);
+  logDecision("admin_campaign_updated", {
+    campaignId: saved.campaignId,
+    tenant: saved.tenant,
+    segmentId: saved.segmentId,
+    purpose: saved.purpose,
+    primaryChannel: saved.primaryChannel,
+    status: saved.status,
+    approvalStatus: saved.approvalStatus,
+    scheduleAt: saved.scheduleAt ?? null,
+    actor: adminActor(res.locals.adminSession as AdminUserSession),
+    duration_ms: 0
+  });
+  return res.json(saved);
+});
+
+app.post("/admin/api/campaigns/:id/status", requireAdminAuth("admin"), async (req, res) => {
+  const requestedStatus = req.body?.status;
+  if (!["draft", "scheduled", "paused", "archived"].includes(requestedStatus)) {
+    return res.status(400).json({ error: "invalid_campaign_status_request", fields: { status: "must_be_draft_scheduled_paused_or_archived" } });
+  }
+  const validation = validateCampaignBody({ status: requestedStatus, scheduleAt: req.body?.scheduleAt }, true);
+  if (!validation.ok) {
+    return sendContractError(res, 400, validation.error);
+  }
+  const existing = await getStore().getCampaign(String(req.params.id));
+  if (!existing) {
+    return res.status(404).json({ error: "campaign_not_found" });
+  }
+  if (requestedStatus === "scheduled" && !validation.value.scheduleAt && !existing.scheduleAt) {
+    return res.status(400).json({ error: "invalid_campaign_status_request", fields: { scheduleAt: "required_to_schedule_campaign" } });
+  }
+  const saved = await getStore().saveCampaign({
+    ...existing,
+    ...validation.value,
+    status: requestedStatus,
+    updatedAt: new Date().toISOString()
+  });
+  logDecision("admin_campaign_status_updated", {
+    campaignId: saved.campaignId,
+    status: saved.status,
+    scheduleAt: saved.scheduleAt ?? null,
+    approvalStatus: saved.approvalStatus,
+    actor: adminActor(res.locals.adminSession as AdminUserSession),
+    duration_ms: 0
+  });
+  return res.json(saved);
 });
 
 app.post("/admin/api/campaigns/:id/approve", requireAdminAuth("admin"), async (req, res) => {
