@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildMarketingAnalyticsEvents, buildMarketingAnalyticsSummary } from "../src/analytics";
+import { buildCampaignAttributionMetadata, buildMarketingAnalyticsCsv, buildMarketingAnalyticsEvents, buildMarketingAnalyticsReadModel, buildMarketingAnalyticsSummary } from "../src/analytics";
 import { Campaign, ExecutionRun } from "../src/types";
 
 process.env.NODE_ENV = "test";
@@ -181,6 +181,43 @@ test("analytics summary can join externally supplied attribution facts by campai
   assert.equal(summary.externalAttribution.attributedValue, 2500);
   assert.equal(summary.externalAttribution.currency, "CZK");
   assert.deepEqual(summary.externalAttribution.sourceServices, ["analytics-service", "notifications-microservice"]);
+});
+
+
+test("campaign attribution metadata uses stable refs and source ownership labels", () => {
+  const metadata = buildCampaignAttributionMetadata(makeCampaign(), [makeRun()]);
+  const serialized = JSON.stringify(metadata);
+
+  assert.equal(metadata.attributionKey, "marketing:statex:flipflop:campaign-analytics");
+  assert.deepEqual(metadata.runIds, ["run-analytics"]);
+  assert.deepEqual(metadata.correlationIds, ["marketing:run-analytics:auth:user-1", "marketing:run-analytics:auth:user-2"]);
+  assert.equal(metadata.sourceOwnership.campaignFacts, "marketing-microservice");
+  assert.equal(metadata.sourceOwnership.conversionFacts, "external_analytics_required");
+  assert.equal(metadata.redaction.rawRecipientAddresses, "omitted");
+  assert.doesNotMatch(serialized, /user1@example\.com|lead1@example\.com|user2@example\.com|Hello|Welcome|statex-email/);
+});
+
+test("analytics read model and csv distinguish external attribution without leaking sensitive fields", () => {
+  const readModel = buildMarketingAnalyticsReadModel([makeCampaign()], [makeRun()], {
+    generatedAt: "2026-06-13T10:00:00.000Z",
+    externalAttributionFacts: [
+      { factType: "delivered", sourceService: "notifications-microservice", campaignId: "campaign-analytics", runId: "run-analytics", correlationId: "marketing:run-analytics:auth:user-1", count: 1, occurredAt: "2026-06-13T09:01:00.000Z" },
+      { factType: "converted", sourceService: "analytics-service", campaignId: "campaign-analytics", runId: "run-analytics", count: 1, occurredAt: "2026-06-13T09:30:00.000Z" },
+      { factType: "attributed_value", sourceService: "analytics-service", campaignId: "campaign-analytics", runId: "run-analytics", value: 2500, currency: "CZK", occurredAt: "2026-06-13T09:30:00.000Z" }
+    ]
+  });
+  const csv = buildMarketingAnalyticsCsv(readModel);
+  const serialized = JSON.stringify(readModel) + csv;
+
+  assert.equal(readModel.rows[0].sent, 1);
+  assert.equal(readModel.rows[0].skipped, 1);
+  assert.equal(readModel.rows[0].failed, 1);
+  assert.equal(readModel.rows[0].delivered, 1);
+  assert.equal(readModel.rows[0].converted, 1);
+  assert.equal(readModel.rows[0].attributedValue, 2500);
+  assert.equal(readModel.rows[0].deliverySource, "external_facts_applied");
+  assert.match(csv, /campaignId,name,tenantId,appId/);
+  assert.doesNotMatch(serialized, /user1@example\.com|lead1@example\.com|user2@example\.com|Hello|Welcome|statex-email|contract-test-token|SERVICE_API_TOKEN/);
 });
 
 test("analytics events redact raw recipient addresses and message content", () => {

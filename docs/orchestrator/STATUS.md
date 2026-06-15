@@ -2918,3 +2918,41 @@ Intent Compliance Report:
 - Auth/leads remain the source write owners for unsubscribe intake.
 - No provider credentials, service tokens, authorization headers, message bodies, notification-provider payload bodies, or recipient addresses are exposed by the new Goal 17 admin APIs or HTML tests.
 - No real campaign execution, scheduler operation, direct delivery behavior, or campaign/segment create/edit behavior was added.
+## 2026-06-14 - Goal 18 Analytics And Attribution Dashboard Follow-Up
+
+Current focus: Goal 18 - Analytics And Attribution Dashboard, chunks 18.3, 18.4, and 18.5 in dedicated worktree `/home/ssf/Documents/Github/marketing-worktrees/goal-18-analytics` on branch `codex/marketing-goal-18`.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane for campaign definitions, run facts, delivery decisions, campaign attribution references, and sanitized summaries.
+- Notifications remains the owner of provider delivery truth. Analytics/app/domain services remain the owners of conversion, revenue/value, customer, funnel, and app behavior truth.
+- Auth and leads remain owners of contact data, preferences, consent, and unsubscribe truth.
+- This session treats `[MISSING: approved analytics/conversion owner contract]` as a blocker for any broader attribution truth beyond Marketing-owned campaign facts and externally supplied facts.
+
+Implementation evidence:
+
+- Extended `src/analytics.ts` with campaign attribution metadata built from stable campaign, tenant, app, brand, segment, run, correlation, channel, lifecycle, and campaign-family references.
+- Added read-only analytics dashboard/read-model helpers that distinguish Marketing-owned sent/skipped/failed counts from externally supplied delivered/converted/attributed-value facts.
+- Added CSV export generation from sanitized dashboard rows only; raw recipient addresses, message subjects/bodies, provider credentials, service tokens, authorization headers, and notification-provider payloads are omitted.
+- Added protected browser dashboard renderer `src/admin-analytics-dashboard.ts` at `/admin/analytics` without real execution controls, scheduler controls, service-token exposure, or provider data.
+- Added protected admin analytics APIs in `src/main.ts`: `GET /admin/api/analytics/summary`, `POST /admin/api/analytics/summary` for externally supplied attribution facts, and `GET /admin/api/analytics/export.csv`.
+- Did not edit `src/admin-shell.ts`; the dashboard has its own route and leaves shared admin navigation integration for the coordinator.
+- Added analytics/read-model/redaction tests and protected admin dashboard/export tests.
+
+Validation:
+
+- Remote `npm run build` passed in `/home/ssf/Documents/Github/marketing-worktrees/goal-18-analytics`.
+- Remote `npm test` passed in `/home/ssf/Documents/Github/marketing-worktrees/goal-18-analytics`: 67 tests, 67 passing.
+- Rendered dashboard validation is covered by protected HTML smoke tests for `/admin/analytics`; no browser screenshot capture was performed in this worker session.
+
+Intent Compliance Report:
+
+- Marketing summarizes Marketing-owned campaign/run/outcome facts and attribution references only.
+- Delivered, converted, and attributed value figures are unavailable unless supplied as external facts; Marketing does not infer delivery truth, conversion truth, revenue/value truth, customer truth, funnel truth, or app behavior truth.
+- The dashboard and export do not expose raw recipient addresses, message bodies, provider credentials, service tokens, source-owned contact/preference truth, notification provider payloads, or direct campaign execution controls.
+- No real campaign, scheduler, journey, notification provider, auth/leads source-truth, CRM master-data, or deployment behavior was changed.
+
+Coordinator handoff:
+
+- Shared admin navigation still needs coordinator integration with Goal 16/17 routes if `/admin/analytics` should appear in the common `ADMIN_SHELL_ROUTES` list.
+- `[MISSING: approved analytics/conversion owner contract]` remains the blocker for any broader attribution ownership or persisted analytics/customer-insights truth.
