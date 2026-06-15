@@ -2865,3 +2865,56 @@ Parallel execution notes:
 Next unfinished step:
 
 - Coordinator review/integration of branch `codex/marketing-goal-16`, then continue with disjoint Goal 17 or Goal 18/19 workstreams per `docs/orchestrator/PLAN.md`.
+
+## 2026-06-14 - Goal 17 Runs Consent Channels And Audit Admin Views
+
+Current focus: Goal 17 - Runs, Consent, Channels, And Audit Admin Views, chunks 17.1-17.5, implemented in remote worktree `/home/ssf/Documents/Github/marketing-worktrees/goal-17-ops-views` on branch `codex/marketing-goal-17` from checkpoint `b233e2f`.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane and exposes explainability for Marketing-owned execution runs, delivery outcomes, decisions, and audit evidence.
+- Auth remains the owner of registered-user identity, contact data, preferences, consent, and unsubscribe truth.
+- Leads remains the owner of lead identity, contact data, preferences, consent, and unsubscribe truth.
+- Notifications remains the owner of outbound provider execution, provider credentials, final sends, and channel registry behavior.
+- This work did not execute real campaigns, add direct delivery, edit campaign/segment create/edit views, edit notification provider implementation, or create auth/leads source-of-truth models.
+
+Implementation evidence:
+
+- Added `src/admin-ops-views.ts` for protected `/admin/runs` and `/admin/audit` HTML views, run/outcome search helpers, correlation filtering, redacted run detail, and redacted audit evidence generation.
+- Added `src/notification-channel-registry.ts` for read-only notifications-owned channel registry metadata retrieval through `NOTIFICATION_SERVICE_URL` and optional `NOTIFICATION_CHANNEL_REGISTRY_PATH`, with recursive redaction before returning metadata to the admin UI.
+- Updated `src/main.ts` to route `/admin/runs` and `/admin/audit` to Goal 17 views instead of generic placeholders while leaving shared navigation labels in `src/admin-shell.ts` unchanged.
+- Added protected admin APIs:
+  - `GET /admin/api/runs`
+  - `GET /admin/api/runs/:id`
+  - `GET /admin/api/outcomes`
+  - `GET /admin/api/preferences/:owner/:recipientId`
+  - `POST /admin/api/preferences/unsubscribe`
+  - `GET /admin/api/channels`
+  - `GET /admin/api/audit`
+- Run detail, outcome search, audit evidence, and channel registry responses redact recipient addresses, message bodies, provider credentials, authorization tokens, token-like fields, and sensitive contact-address fields.
+- Admin preference lookup returns source ownership metadata only and does not copy or expose source-owned consent truth.
+- Admin unsubscribe intake validates through the existing public/source-owned unsubscribe contract, requires operator RBAC, forwards when source write configuration exists, and returns pending-source evidence otherwise.
+- Channel registry view is read-only and treats Notifications as the registry owner; Marketing does not persist registry truth or provider credentials.
+
+Validation evidence:
+
+- `npm install` was run in the remote worktree because `node_modules` was absent and the initial build failed with `tsc: not found`.
+- `npm run build` passed in `/home/ssf/Documents/Github/marketing-worktrees/goal-17-ops-views`.
+- `npm test` passed in `/home/ssf/Documents/Github/marketing-worktrees/goal-17-ops-views`: 65 tests passed, 0 failed.
+- Added targeted test coverage in `test/api-contracts.test.ts` for Goal 17 RBAC, protected run/outcome APIs, consent ownership lookup, operator-only unsubscribe intake, read-only channel registry metadata, redaction of recipient addresses/message bodies/provider credentials/tokens, audit correlation search, and `/admin/runs`/`/admin/audit` HTML smoke checks.
+- Frontend render validation was limited to server-side HTML/API smoke coverage in tests; no browser screenshot capture was performed in this worker session.
+
+Parallel execution and integration notes:
+
+- Write ownership was limited to Goal 17 files, `src/main.ts` route wiring, admin UI tests, and this append-only status entry.
+- `src/admin-shell.ts` shared navigation labels were not edited. The existing `Runs` and `Audit` labels now route to implemented Goal 17 views.
+- Goal 16 campaign/segment create/edit ownership remains disjoint; this work did not edit `src/admin-campaign-segment-console.ts`.
+- Goal 18 analytics dashboard work should coordinate with final shared admin route ordering but does not need to modify these Goal 17 read APIs unless the integration owner explicitly adds dashboard links.
+
+Intent Compliance Report:
+
+- Marketing explains campaign decisions and safety state without owning notifications provider execution or auth/leads contact, consent, preference, or unsubscribe truth.
+- Notifications remains the source of truth for channel registry behavior and provider credentials; Marketing only reads sanitized registry metadata.
+- Auth/leads remain the source write owners for unsubscribe intake.
+- No provider credentials, service tokens, authorization headers, message bodies, notification-provider payload bodies, or recipient addresses are exposed by the new Goal 17 admin APIs or HTML tests.
+- No real campaign execution, scheduler operation, direct delivery behavior, or campaign/segment create/edit behavior was added.

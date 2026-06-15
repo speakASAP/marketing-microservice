@@ -5,9 +5,19 @@ import express from "express";
 import { getDefaultCampaignBlueprint, listDefaultCampaignBlueprints, CampaignBlueprintFilter } from "./campaign-blueprints";
 import { AdminUserSession, adminSessionResponse, requireAdminAuth } from "./admin-auth";
 import { renderAdminCampaignsConsole, renderAdminSegmentsConsole } from "./admin-campaign-segment-console";
+import {
+  adminAuditEvidence,
+  adminOutcomeSearch,
+  adminRunDetail,
+  adminRunSummary as goal17AdminRunSummary,
+  filterAdminRuns,
+  renderAdminAuditConsole,
+  renderAdminRunsConsole
+} from "./admin-ops-views";
 import { ADMIN_SHELL_ROUTES, renderAdminShell } from "./admin-shell";
 import { executeCampaign } from "./executor";
 import { logDecision } from "./logger";
+import { readNotificationChannelRegistry } from "./notification-channel-registry";
 import { runDueScheduledCampaigns } from "./scheduler";
 import { getStore, initializeConfiguredStore } from "./store";
 import { Campaign, ExecutionRun, Journey, JourneyStep, Segment } from "./types";
@@ -91,7 +101,7 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", service: process.env.SERVICE_NAME ?? "marketing-microservice" });
 });
 
-app.get(ADMIN_SHELL_ROUTES.map((route) => route.path).filter((route) => !["/admin/campaigns", "/admin/segments"].includes(route)), requireAdminAuth("viewer"), (req, res) => {
+app.get(ADMIN_SHELL_ROUTES.map((route) => route.path).filter((route) => !["/admin/campaigns", "/admin/segments", "/admin/runs", "/admin/audit"].includes(route)), requireAdminAuth("viewer"), (req, res) => {
   res.type("html").send(renderAdminShell(res.locals.adminSession, req.path));
 });
 
@@ -125,6 +135,14 @@ app.get("/admin/campaigns", requireAdminAuth("viewer"), (_req, res) => {
 
 app.get("/admin/segments", requireAdminAuth("viewer"), (_req, res) => {
   res.type("html").send(renderAdminSegmentsConsole(res.locals.adminSession));
+});
+
+app.get("/admin/runs", requireAdminAuth("viewer"), (_req, res) => {
+  res.type("html").send(renderAdminRunsConsole(res.locals.adminSession));
+});
+
+app.get("/admin/audit", requireAdminAuth("viewer"), (_req, res) => {
+  res.type("html").send(renderAdminAuditConsole(res.locals.adminSession));
 });
 
 app.get("/admin/api/segments", requireAdminAuth("viewer"), async (req, res) => {
@@ -365,6 +383,82 @@ app.post("/admin/api/campaigns/:id/status", requireAdminAuth("admin"), async (re
     duration_ms: 0
   });
   return res.json(saved);
+});
+
+app.get("/admin/api/runs", requireAdminAuth("viewer"), async (req, res) => {
+  const runs = filterAdminRuns(await getStore().listRuns(), req.query as Record<string, unknown>);
+  res.json(runs.map(goal17AdminRunSummary));
+});
+
+app.get("/admin/api/runs/:id", requireAdminAuth("viewer"), async (req, res) => {
+  const run = (await getStore().listRuns()).find((item) => item.id === String(req.params.id));
+  if (!run) return res.status(404).json({ error: "run_not_found" });
+  return res.json(adminRunDetail(run));
+});
+
+app.get("/admin/api/outcomes", requireAdminAuth("viewer"), async (req, res) => {
+  res.json(adminOutcomeSearch(await getStore().listRuns(), req.query as Record<string, unknown>));
+});
+
+app.get("/admin/api/preferences/:owner/:recipientId", requireAdminAuth("viewer"), async (req, res) => {
+  if (!validatePreferenceOwner(req.params.owner) || !req.params.recipientId) {
+    return res.status(400).json({ error: "invalid_preference_request", fields: { owner: "must_be_auth_or_leads", recipientId: "required_non_empty_string" } });
+  }
+  const owner = req.params.owner;
+  return res.json({
+    status: "external_source_owned",
+    owner,
+    recipientId: req.params.recipientId,
+    readOwner: sourceOwnerService(owner),
+    writeOwner: sourceOwnerService(owner),
+    message: "Marketing admin shows source ownership metadata only; contact, preference, consent, and unsubscribe truth remain with the source owner."
+  });
+});
+
+app.post("/admin/api/preferences/unsubscribe", requireAdminAuth("operator"), async (req, res) => {
+  const validation = validatePreferenceRequest(req.body);
+  if (!validation.ok) {
+    return sendContractError(res, 400, validation.error);
+  }
+  const request = validation.value;
+  const writeResult = await forwardUnsubscribeWrite(request);
+  logDecision("admin_unsubscribe_intake_requested", {
+    owner: request.owner,
+    recipientId: request.recipientId,
+    channel: request.channel ?? null,
+    purpose: request.purpose ?? "marketing",
+    tenantId: request.tenantId ?? null,
+    appId: request.appId ?? null,
+    brandId: request.brandId ?? null,
+    writeOwner: writeResult.writeOwner,
+    sourceWriteStatus: writeResult.status,
+    sourceStatus: writeResult.sourceStatus ?? null,
+    sourceWriteReason: writeResult.reason ?? null,
+    duration_ms: 0
+  });
+  return res.status(202).json({
+    status: "accepted",
+    owner: request.owner,
+    recipientId: request.recipientId,
+    channel: request.channel ?? null,
+    purpose: request.purpose ?? "marketing",
+    tenantId: request.tenantId ?? null,
+    appId: request.appId ?? null,
+    brandId: request.brandId ?? null,
+    writeOwner: writeResult.writeOwner,
+    sourceWriteStatus: writeResult.status,
+    sourceStatus: writeResult.sourceStatus ?? null,
+    sourceWriteReason: writeResult.reason ?? null,
+    message: "Unsubscribe write ownership remains with the source owner; Marketing will honor visible unsubscribe state during execution."
+  });
+});
+
+app.get("/admin/api/channels", requireAdminAuth("viewer"), async (_req, res) => {
+  res.json(await readNotificationChannelRegistry());
+});
+
+app.get("/admin/api/audit", requireAdminAuth("viewer"), async (req, res) => {
+  res.json(adminAuditEvidence(await getStore().listRuns(), req.query as Record<string, unknown>));
 });
 
 app.post("/admin/api/campaigns/:id/approve", requireAdminAuth("admin"), async (req, res) => {
