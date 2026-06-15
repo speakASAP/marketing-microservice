@@ -23,6 +23,7 @@ export const ADMIN_SHELL_ROUTES: AdminShellRoute[] = [
   { path: "/admin/journeys", label: "Journeys", title: "Journeys", description: "Protected placeholder for journey administration." },
   { path: "/admin/runs", label: "Runs", title: "Runs", description: "Protected placeholder for run inspection." },
   { path: "/admin/audit", label: "Audit", title: "Audit", description: "Protected placeholder for audit evidence review." },
+  { path: "/admin/analytics", label: "Analytics", title: "Analytics", description: "Protected campaign analytics and attribution dashboard." },
   { path: "/admin/settings", label: "Settings", title: "Settings", description: "Protected placeholder for administrative settings." }
 ];
 
