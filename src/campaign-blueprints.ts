@@ -194,6 +194,134 @@ const DEFAULT_CAMPAIGN_BLUEPRINTS: CampaignBlueprint[] = [
     }
   },
   {
+    blueprintId: "runlayer.crm-onboarding.default",
+    appId: "runlayer",
+    productLine: "b2b-workflows",
+    name: "RunLayer account onboarding recovery",
+    description: "Reach source-owned account contacts when CRM onboarding signals show blocked setup.",
+    campaignFamily: "onboarding",
+    lifecycleStage: "onboarding",
+    audienceKey: "runlayer-crm-onboarding-blocked",
+    audienceLabel: "RunLayer accounts blocked during onboarding",
+    catalogCategory: "b2b_account_lifecycle",
+    catalogTags: ["runlayer", "b2b", "crm_accounts", "onboarding"],
+    purpose: "retention",
+    primaryChannel: "email",
+    fallbackChannels: ["telegram"],
+    templateRef: "runlayer.crm-onboarding.default",
+    segment: {
+      name: "RunLayer CRM onboarding recovery audience",
+      sourceTypes: ["crm_accounts", "auth_users", "leads"],
+      rules: { lifecycleStage: "onboarding", onboardingStatus: "blocked", healthStatus: "at_risk" },
+      isDynamic: true
+    },
+    catalogMetadata: {
+      campaignFamily: "onboarding",
+      lifecycleStage: "onboarding",
+      audienceKey: "runlayer-crm-onboarding-blocked",
+      audienceLabel: "RunLayer accounts blocked during onboarding",
+      catalogCategory: "b2b_account_lifecycle",
+      catalogTags: ["runlayer", "b2b", "crm_accounts", "onboarding"],
+      sourceBlueprintId: "runlayer.crm-onboarding.default"
+    }
+  },
+  {
+    blueprintId: "runlayer.crm-renewal.default",
+    appId: "runlayer",
+    productLine: "b2b-workflows",
+    name: "RunLayer account renewal nurture",
+    description: "Prepare source-owned account contacts for open renewal opportunities.",
+    campaignFamily: "renewal",
+    lifecycleStage: "renewal",
+    audienceKey: "runlayer-crm-renewal-open",
+    audienceLabel: "RunLayer accounts with open renewals",
+    catalogCategory: "b2b_account_lifecycle",
+    catalogTags: ["runlayer", "b2b", "crm_accounts", "renewal"],
+    purpose: "retention",
+    primaryChannel: "email",
+    fallbackChannels: ["telegram"],
+    templateRef: "runlayer.crm-renewal.default",
+    segment: {
+      name: "RunLayer CRM renewal audience",
+      sourceTypes: ["crm_accounts", "auth_users", "leads"],
+      rules: { lifecycleStage: "renewal", opportunityType: "renewal", opportunityStatus: "open" },
+      isDynamic: true
+    },
+    catalogMetadata: {
+      campaignFamily: "renewal",
+      lifecycleStage: "renewal",
+      audienceKey: "runlayer-crm-renewal-open",
+      audienceLabel: "RunLayer accounts with open renewals",
+      catalogCategory: "b2b_account_lifecycle",
+      catalogTags: ["runlayer", "b2b", "crm_accounts", "renewal"],
+      sourceBlueprintId: "runlayer.crm-renewal.default"
+    }
+  },
+  {
+    blueprintId: "runlayer.crm-upsell.default",
+    appId: "runlayer",
+    productLine: "b2b-workflows",
+    name: "RunLayer account upsell assist",
+    description: "Support approved upsell campaigns for healthy expansion-stage accounts.",
+    campaignFamily: "upsell",
+    lifecycleStage: "upsell",
+    audienceKey: "runlayer-crm-upsell-open",
+    audienceLabel: "RunLayer accounts with open upsell opportunities",
+    catalogCategory: "b2b_account_lifecycle",
+    catalogTags: ["runlayer", "b2b", "crm_accounts", "upsell"],
+    purpose: "marketing",
+    primaryChannel: "email",
+    fallbackChannels: ["telegram"],
+    templateRef: "runlayer.crm-upsell.default",
+    segment: {
+      name: "RunLayer CRM upsell audience",
+      sourceTypes: ["crm_accounts", "auth_users", "leads"],
+      rules: { lifecycleStage: "expansion", opportunityType: "upsell", opportunityStatus: "open", healthScoreMin: 70 },
+      isDynamic: true
+    },
+    catalogMetadata: {
+      campaignFamily: "upsell",
+      lifecycleStage: "upsell",
+      audienceKey: "runlayer-crm-upsell-open",
+      audienceLabel: "RunLayer accounts with open upsell opportunities",
+      catalogCategory: "b2b_account_lifecycle",
+      catalogTags: ["runlayer", "b2b", "crm_accounts", "upsell"],
+      sourceBlueprintId: "runlayer.crm-upsell.default"
+    }
+  },
+  {
+    blueprintId: "runlayer.crm-winback.default",
+    appId: "runlayer",
+    productLine: "b2b-workflows",
+    name: "RunLayer account winback",
+    description: "Support approved winback campaigns for at-risk or returning B2B accounts.",
+    campaignFamily: "winback",
+    lifecycleStage: "winback",
+    audienceKey: "runlayer-crm-winback-open",
+    audienceLabel: "RunLayer accounts in winback lifecycle",
+    catalogCategory: "b2b_account_lifecycle",
+    catalogTags: ["runlayer", "b2b", "crm_accounts", "winback"],
+    purpose: "marketing",
+    primaryChannel: "email",
+    fallbackChannels: ["telegram"],
+    templateRef: "runlayer.crm-winback.default",
+    segment: {
+      name: "RunLayer CRM winback audience",
+      sourceTypes: ["crm_accounts", "auth_users", "leads"],
+      rules: { lifecycleStage: "winback", opportunityType: "winback", opportunityStatus: "open", healthStatus: "at_risk" },
+      isDynamic: true
+    },
+    catalogMetadata: {
+      campaignFamily: "winback",
+      lifecycleStage: "winback",
+      audienceKey: "runlayer-crm-winback-open",
+      audienceLabel: "RunLayer accounts in winback lifecycle",
+      catalogCategory: "b2b_account_lifecycle",
+      catalogTags: ["runlayer", "b2b", "crm_accounts", "winback"],
+      sourceBlueprintId: "runlayer.crm-winback.default"
+    }
+  },
+  {
     blueprintId: "shop-assistant.post-purchase.default",
     appId: "shop-assistant",
     productLine: "commerce-assistant",
