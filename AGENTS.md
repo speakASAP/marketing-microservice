@@ -1,3 +1,16 @@
+# Repository Agent Instructions
+
+Shared rules live here:
+
+- Codex profile: `/home/ssf/.codex/AGENTS.md`
+- Cross-agent standard: `/home/ssf/.ai-agent-standards/CROSS_AGENT_AUTOMATION_STANDARD.md`
+- Repository operations: `AGENT_OPERATIONS.md`
+
+Read those first, then follow the repository-specific notes below and the current planning/status files.
+
+
+## Repository-Specific Notes
+
 # Agents: marketing-microservice
 
 Marketing is a campaign orchestration service, but AI/Codex sessions must follow the marketing implementation orchestrator before planning or implementing work.
@@ -66,7 +79,6 @@ Before implementation, branch orchestration, deployment, or launching workers, r
 14. `docs/agents/contracts/preferences-consent-contract.md`
 15. `docs/agents/contracts/channel-registry-contract.md`
 
-
 ## Parallel Planning Default
 
 Codex planning for this repository must maximize safe parallel agent execution. Before assigning work, identify independently startable goals/chunks, explicit blockers, allowed and forbidden files per agent, expected outputs, validation commands, and merge/integration order.
@@ -121,11 +133,3 @@ Ask the user only when a decision cannot be safely inferred from the docs and cu
 
 <!-- Coordinator-maintained -->
 None.
-
-## Company Cross-Agent Standard
-
-This repository also follows `AGENT_OPERATIONS.md`, which points all AI agents to the company cross-agent automation model: readiness scanner, bounded worker agent, worker monitor, and integration validator. Use the validation-debt ledger for known out-of-scope validation failures and preserve the Intent Preservation chain.
-
-## Central Instruction Source
-
-Shared agent rules now live in `/home/ssf/.codex/AGENTS.md` and `/home/ssf/.ai-agent-standards/CROSS_AGENT_AUTOMATION_STANDARD.md`. Keep this file for repository-specific constraints only; do not duplicate shared operating rules here.
