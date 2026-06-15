@@ -311,17 +311,17 @@ Operational note:
 
 ## Goal 16 - Campaign And Segment Admin Console
 
-Status: pending
+Status: done
 
 Intent: Operators can manage Marketing-owned campaign and segment state safely from the browser.
 
 Chunks:
 
-- [ ] 16.1 Build campaigns list/detail/create/edit views.
-- [ ] 16.2 Build segment list/detail/create/edit views.
-- [ ] 16.3 Add dry-run preview UI.
-- [ ] 16.4 Add approval workflow UI.
-- [ ] 16.5 Add campaign scheduling and pause/archive controls.
+- [x] 16.1 Build campaigns list/detail/create/edit views.
+- [x] 16.2 Build segment list/detail/create/edit views.
+- [x] 16.3 Add dry-run preview UI.
+- [x] 16.4 Add approval workflow UI.
+- [x] 16.5 Add campaign scheduling and pause/archive controls.
 
 Acceptance criteria:
 
@@ -332,17 +332,17 @@ Acceptance criteria:
 
 ## Goal 17 - Runs, Consent, Channels, And Audit Admin Views
 
-Status: pending
+Status: done
 
 Intent: Operators can explain campaign decisions and inspect safety state without taking over other services ownership.
 
 Chunks:
 
-- [ ] 17.1 Build run list/detail and outcome search.
-- [ ] 17.2 Build consent/preference lookup and unsubscribe intake view.
-- [ ] 17.3 Build read-only notification channel registry view.
-- [ ] 17.4 Build audit evidence view with redaction.
-- [ ] 17.5 Add correlation ID search.
+- [x] 17.1 Build run list/detail and outcome search.
+- [x] 17.2 Build consent/preference lookup and unsubscribe intake view.
+- [x] 17.3 Build read-only notification channel registry view.
+- [x] 17.4 Build audit evidence view with redaction.
+- [x] 17.5 Add correlation ID search.
 
 Acceptance criteria:
 
@@ -353,7 +353,7 @@ Acceptance criteria:
 
 ## Goal 18 - Analytics And Attribution Dashboard
 
-Status: active
+Status: done
 
 Intent: Business users can evaluate campaign value by tenant, app, channel, segment, and lifecycle stage.
 
@@ -361,9 +361,9 @@ Chunks:
 
 - [x] 18.1 Emit normalized marketing events.
 - [x] 18.2 Define conversion/correlation contract with app services and analytics.
-- [ ] 18.3 Add campaign attribution metadata.
-- [ ] 18.4 Build analytics read models or analytics-service integration.
-- [ ] 18.5 Build dashboard charts and exportable summaries.
+- [x] 18.3 Add campaign attribution metadata.
+- [x] 18.4 Build analytics read models or analytics-service integration.
+- [x] 18.5 Build dashboard charts and exportable summaries.
 
 Acceptance criteria:
 
@@ -373,11 +373,11 @@ Acceptance criteria:
 
 Integration note:
 
-- Goal 18.1-18.2 evidence is limited to normalized Marketing-owned event builders and externally supplied attribution fact joining with redaction tests. Dashboard, persisted read-model/API integration, and broader campaign attribution metadata remain open.
+- Goal 18 is complete for Marketing-owned campaign analytics, externally supplied attribution facts, protected dashboard charts, and CSV summaries. Broader attribution, conversion, revenue/value, customer, funnel, and app behavior truth remains externally owned and gated by `[MISSING: approved analytics/conversion owner contract]`.
 
 ## Goal 19 - CRM/Account Service Integration
 
-Status: active
+Status: done
 
 Intent: Marketing can use B2B account lifecycle signals without owning CRM master data.
 

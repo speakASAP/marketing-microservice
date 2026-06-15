@@ -3019,3 +3019,42 @@ Completed chunks:
 Next unfinished step:
 
 - Integrate `codex/marketing-goal-19` after review; production CRM/account use still requires configured `CRM_ACCOUNT_SERVICE_URL` and source-service auth/readiness.
+
+## 2026-06-15 - Coordinator Integration Reconciliation For Goals 16-19
+
+Current focus: reconcile the already-merged Goal 16, Goal 17, Goal 18, and Goal 19 worker branches on `main`.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane for campaigns, segments, runs, delivery decisions, campaign analytics references, CRM/account segmentation predicates, and audit evidence.
+- Notifications remains the only outbound provider execution owner and channel registry owner.
+- Auth and leads remain the owners of contact data, preferences, consent, unsubscribe state, and reachable recipient truth.
+- CRM/account lifecycle and opportunity truth remains source-owned by the future CRM/account service; Marketing stores only read-only predicates, blueprint suggestions, source references, and decision evidence.
+- Analytics/app/domain services remain owners of conversion, revenue/value, customer, funnel, and app behavior truth.
+- No real campaign, scheduler operation, direct provider call, production deployment, or production role grant was executed in this reconciliation.
+
+Integration evidence:
+
+- Confirmed `main` already contains merge commits for `codex/marketing-goal-16`, `codex/marketing-goal-17`, `codex/marketing-goal-18`, and `codex/marketing-goal-19`.
+- Added `/admin/analytics` to `ADMIN_SHELL_ROUTES` so the shared protected admin navigation includes the integrated analytics dashboard.
+- Marked Goal 16 chunks 16.1-16.5 complete in `docs/orchestrator/GOALS.md`.
+- Marked Goal 17 chunks 17.1-17.5 complete in `docs/orchestrator/GOALS.md`.
+- Marked Goal 18 chunks 18.1-18.5 complete in `docs/orchestrator/GOALS.md` for Marketing-owned campaign analytics and externally supplied attribution facts.
+- Marked Goal 19 complete in `docs/orchestrator/GOALS.md`; production CRM/account use remains disabled until source service URL and auth/readiness are configured.
+- Updated `TASKS.md` so only TG-3.13 Goal 20 runtime governance enforcement remains in backlog.
+- Updated `STATE.json` to `phase-7-goals-16-19-integrated` with Goal 20 as the next blocked focus.
+
+Validation evidence:
+
+- Remote `npm run build` passed in `/home/ssf/Documents/Github/marketing-microservice`.
+- Remote `npm test` passed in `/home/ssf/Documents/Github/marketing-microservice`: 70 tests, 70 passing.
+
+Intent Compliance Report:
+
+- The reconciliation does not move notification provider execution, provider credentials, contact ownership, consent ownership, unsubscribe ownership, CRM master data, analytics truth, app/domain truth, or tenant/app registry truth into Marketing.
+- Goal 18 remains limited to Marketing-owned campaign/run/outcome facts plus externally supplied attribution facts; broader attribution ownership is still blocked by `[MISSING: approved analytics/conversion owner contract]`.
+- Goal 20 runtime enforcement remains blocked by missing owner-approved production recipient thresholds, approver identities, quiet-hour defaults, emergency override rules, and rollback/deployment policy.
+
+Next unfinished step:
+
+- Goal 20.6 runtime governance enforcement can start only after the missing owner-approved production policy facts are supplied.

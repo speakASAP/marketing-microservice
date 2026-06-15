@@ -4,15 +4,11 @@
 
 ## Backlog
 <!-- Human-managed -->
-- TG-3.9 Goal 16 campaign and segment admin console (Goal 15 admin gate satisfied; ready after current integration commit)
-- TG-3.10 Goal 17 runs, consent, channels, and audit admin views (Goal 15 admin gate satisfied; ready after current integration commit)
-- TG-3.11 Goal 18 analytics and attribution dashboard (Goal 15 admin gate satisfied for dashboard UI; 18.3/18.4/18.5 open after current integration commit and analytics ownership blockers)
-- TG-3.12 Goal 19 CRM/account service integration (19.4/19.5 ready after integration commit; production CRM use requires configured source service)
 - TG-3.13 Goal 20 production governance enforcement (blocked: missing owner-approved policy decisions)
 
 ## Active
 <!-- Coordinator-maintained -->
-None - Goal 16/17/18 workers remain gated until the current remote worktree is reviewed/committed; Goal 15 is the satisfied admin prerequisite, not the remaining blocker.
+None - Goal 20 runtime enforcement remains blocked by missing owner-approved production policy decisions.
 
 ## Completed
 <!-- Coordinator-append-only -->
@@ -32,3 +28,7 @@ None - Goal 16/17/18 workers remain gated until the current remote worktree is r
 - 2026-06-13 tg-3.3-goal-10-cross-service-recipient-consent-hardening
 - 2026-06-13 tg-3.4-goal-11-application-signal-segmentation-contracts
 - 2026-06-13 tg-3.5-goal-12-multi-application-campaign-catalog
+- 2026-06-14 tg-3.9-goal-16-campaign-segment-admin-console
+- 2026-06-14 tg-3.10-goal-17-runs-consent-channels-audit-views
+- 2026-06-14 tg-3.11-goal-18-analytics-attribution-dashboard
+- 2026-06-14 tg-3.12-goal-19-crm-account-service-integration

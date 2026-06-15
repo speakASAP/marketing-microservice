@@ -1,21 +1,17 @@
 {
   "v": 1,
   "project": "marketing-microservice",
-  "stage": "phase-6-goal-15-complete",
+  "stage": "phase-7-goals-16-19-integrated",
   "health": "ok",
   "cycle": 5,
-  "last_cycle_at": "2026-06-13T21:17:13Z",
+  "last_cycle_at": "2026-06-15T00:00:00Z",
   "tasks_active": 0,
   "tasks_failed_last_cycle": 0,
   "open_task_ids": [
-    "TG-3.9",
-    "TG-3.10",
-    "TG-3.11",
-    "TG-3.12",
     "TG-3.13"
   ],
-  "last_milestone": "tg-3.8-goal-15-admin-auth-rbac-shell",
-  "next_focus": "Coordinator selection of dependent Goal 16/17/18 UI work after the satisfied Goal 15 admin gate; current integration worktree must be reviewed/committed first",
+  "last_milestone": "tg-3.12-goal-19-crm-account-service-integration",
+  "next_focus": "Goal 20 production governance runtime enforcement remains blocked until owner-approved production policy facts are supplied",
   "blockers": [
     "[MISSING: production Auth role grant evidence for marketing_viewer, marketing_operator, marketing_admin, and marketing_owner]",
     "[MISSING: approved analytics/conversion owner contract]",
@@ -29,10 +25,10 @@
     "custom": {
       "phase_1_core_goals": "complete_through_goal_7",
       "phase_2_roadmap": "docs/orchestrator/ROADMAP.md",
-      "next_goal": "Coordinator selection: Goal 16 campaign/segment admin console, Goal 17 run/consent/audit views, or Goal 18 analytics follow-up after Goal 15 admin gate and integration commit",
+      "next_goal": "Goal 20 production governance enforcement after owner-approved policy decisions",
       "goal_8_contract_pack": "docs/agents/contracts/ecosystem-ownership-contract.md",
       "goal_10_completed_chunks": "10.1,10.2,10.3,10.4,10.5",
-      "next_goal_chunk": "Goal 19 is complete in the isolated codex/marketing-goal-19 worktree; Goal 16/17 protected UI work, Goal 18.3-18.5 analytics follow-up, and Goal 20 blocked governance enforcement remain separate coordinator tracks.",
+      "next_goal_chunk": "Goal 20.6 runtime enforcement is blocked by missing owner-approved thresholds, approver identities, quiet-hour defaults, emergency override rules, and rollback/deployment policy.",
       "goal_10_status": "complete",
       "goal_11_completed_chunks": "11.1,11.2,11.3,11.4,11.5",
       "goal_11_status": "complete",
@@ -41,7 +37,7 @@
       "goal_13_completed_chunks": "13.1,13.2,13.3,13.4,13.5",
       "goal_13_status": "complete",
       "parallel_planning_standard": "enabled",
-      "parallel_startable_tracks": "After the current integration commit, Goal 16 campaign/segment admin UI, Goal 17 run/consent/channel/audit UI, and Goal 18 analytics follow-up can be assigned with disjoint files because the Goal 15 admin gate is satisfied; Goal 19/20 runtime enforcement remains dependency-gated by their documented blockers.",
+      "parallel_startable_tracks": "No implementation track is ready without owner policy decisions. Future Goal 20 work can split policy enforcement, admin governance UI, and validation only after shared policy facts are approved.",
       "goal_20_documentation_status": "complete_for_policy_contract_and_playbook",
       "goal_20_completed_docs_chunks": "20.1,20.2,20.3,20.4,20.5",
       "goal_20_enforcement_status": "blocked_by_missing_policy_thresholds_approvers_quiet_hours_rollback_policy_and_admin_runtime_dependencies",
@@ -49,11 +45,15 @@
       "goal_14_status": "complete",
       "goal_15_completed_chunks": "15.1,15.2,15.3,15.4,15.5",
       "goal_15_status": "complete",
+      "goal_16_completed_chunks": "16.1,16.2,16.3,16.4,16.5",
+      "goal_16_status": "complete",
+      "goal_17_completed_chunks": "17.1,17.2,17.3,17.4,17.5",
+      "goal_17_status": "complete",
+      "goal_18_completed_chunks": "18.1,18.2,18.3,18.4,18.5",
+      "goal_18_status": "complete for Marketing-owned campaign analytics and externally supplied attribution facts; broader attribution ownership remains blocked by approved analytics/conversion owner contract",
       "goal_19_completed_chunks": "19.1,19.2,19.3,19.4,19.5",
       "goal_19_status": "complete; production CRM/account use remains disabled until source service URL and source-service auth are configured",
-      "goal_20_status": "blocked_after_20.1_20.5_policy_drafts_pending_owner_decisions",
-      "goal_18_completed_chunks": "18.1,18.2",
-      "goal_18_status": "active; 18.3,18.4,18.5 remain open"
+      "goal_20_status": "blocked_after_20.1_20.5_policy_drafts_pending_owner_decisions"
     }
   }
 }
