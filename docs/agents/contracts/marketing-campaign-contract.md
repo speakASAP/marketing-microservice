@@ -107,6 +107,8 @@ Catalog endpoints are read-only. They do not create campaigns, approve campaigns
 
 Creating or applying a blueprint in a future API must create a normal draft campaign with `approvalStatus: pending`. Real delivery remains impossible until explicit owner approval and all normal consent, unsubscribe, frequency-cap, throttling, max-send, max-30 chunking, idempotency, registry validation, and notification delegation gates pass.
 
+Goal 19.4 extends the default catalog with B2B CRM/account lifecycle blueprints for onboarding, renewal, upsell, and winback. These blueprints use `crm_accounts` only as a read-only segment source, carry CRM/account predicate suggestions only, and still require auth/leads recipient resolution plus explicit campaign approval before real delivery.
+
 Initial default blueprints:
 
 | Blueprint ID | App | Family | Lifecycle stage | Template ref |
@@ -119,6 +121,10 @@ Initial default blueprints:
 | `runlayer.feature-adoption.default` | `runlayer` | `feature_adoption` | `feature_adoption` | `runlayer.feature-adoption.default` |
 | `shop-assistant.post-purchase.default` | `shop-assistant` | `post_purchase` | `post_purchase` | `shop-assistant.post-purchase.default` |
 | `statics.retention.default` | `statics` | `retention` | `retention` | `statics.retention.default` |
+| `runlayer.crm-onboarding.default` | `runlayer` | `onboarding` | `onboarding` | `runlayer.crm-onboarding.default` |
+| `runlayer.crm-renewal.default` | `runlayer` | `renewal` | `renewal` | `runlayer.crm-renewal.default` |
+| `runlayer.crm-upsell.default` | `runlayer` | `upsell` | `upsell` | `runlayer.crm-upsell.default` |
+| `runlayer.crm-winback.default` | `runlayer` | `winback` | `winback` | `runlayer.crm-winback.default` |
 
 ## Segment Model
 

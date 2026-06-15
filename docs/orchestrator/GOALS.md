@@ -386,8 +386,8 @@ Chunks:
 - [x] 19.1 Define CRM/account read-only signal contract.
 - [x] 19.2 Define account, opportunity, lifecycle stage, owner, health, and onboarding status fields.
 - [x] 19.3 Add CRM signal source client using the generated read-only contract; production use remains disabled until CRM_ACCOUNT_SERVICE_URL is configured.
-- [ ] 19.4 Add B2B account segment rules and campaign blueprints.
-- [ ] 19.5 Add safe failure and audit evidence.
+- [x] 19.4 Add B2B account segment rules and campaign blueprints.
+- [x] 19.5 Add safe failure and audit evidence.
 
 Acceptance criteria:
 
