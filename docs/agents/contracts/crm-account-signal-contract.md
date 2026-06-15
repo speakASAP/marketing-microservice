@@ -269,7 +269,7 @@ Future CRM/account segment rules may match:
 - `sourceUpdatedSince`
 - `sourceUpdatedUntil`
 
-These predicates are contract placeholders only. Executable rules are blocked until the runtime facts listed above are approved.
+Goal 19.4 ships initial Marketing-owned blueprint suggestions for B2B account onboarding, renewal, upsell, and winback. Those blueprints may include these predicate keys in segment suggestions, but they do not approve campaigns, execute delivery, store CRM master data, or replace auth/leads consent checks.
 
 ## Safe Failure And Audit Requirements
 
