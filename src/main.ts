@@ -2,6 +2,8 @@ import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import express from "express";
+import { buildMarketingAnalyticsCsv, buildMarketingAnalyticsReadModel, AnalyticsBuildOptions, AnalyticsFactType, ExternalAttributionFact } from "./analytics";
+import { renderAdminAnalyticsDashboard } from "./admin-analytics-dashboard";
 import { getDefaultCampaignBlueprint, listDefaultCampaignBlueprints, CampaignBlueprintFilter } from "./campaign-blueprints";
 import { AdminUserSession, adminSessionResponse, requireAdminAuth } from "./admin-auth";
 import { renderAdminCampaignsConsole, renderAdminSegmentsConsole } from "./admin-campaign-segment-console";
@@ -20,7 +22,7 @@ import { logDecision } from "./logger";
 import { readNotificationChannelRegistry } from "./notification-channel-registry";
 import { runDueScheduledCampaigns } from "./scheduler";
 import { getStore, initializeConfiguredStore } from "./store";
-import { Campaign, ExecutionRun, Journey, JourneyStep, Segment } from "./types";
+import { Campaign, Channel, ExecutionRun, Journey, JourneyStep, Segment } from "./types";
 import { registryScopeFrom, validateRegistryScope } from "./registry";
 import { forwardUnsubscribeWrite } from "./preferences";
 import {
@@ -101,7 +103,7 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", service: process.env.SERVICE_NAME ?? "marketing-microservice" });
 });
 
-app.get(ADMIN_SHELL_ROUTES.map((route) => route.path).filter((route) => !["/admin/campaigns", "/admin/segments", "/admin/runs", "/admin/audit"].includes(route)), requireAdminAuth("viewer"), (req, res) => {
+app.get(ADMIN_SHELL_ROUTES.map((route) => route.path).filter((route) => !["/admin/campaigns", "/admin/segments", "/admin/runs", "/admin/audit", "/admin/analytics"].includes(route)), requireAdminAuth("viewer"), (req, res) => {
   res.type("html").send(renderAdminShell(res.locals.adminSession, req.path));
 });
 
@@ -143,6 +145,10 @@ app.get("/admin/runs", requireAdminAuth("viewer"), (_req, res) => {
 
 app.get("/admin/audit", requireAdminAuth("viewer"), (_req, res) => {
   res.type("html").send(renderAdminAuditConsole(res.locals.adminSession));
+});
+
+app.get("/admin/analytics", requireAdminAuth("viewer"), (_req, res) => {
+  res.type("html").send(renderAdminAnalyticsDashboard(res.locals.adminSession));
 });
 
 app.get("/admin/api/segments", requireAdminAuth("viewer"), async (req, res) => {
@@ -461,6 +467,34 @@ app.get("/admin/api/audit", requireAdminAuth("viewer"), async (req, res) => {
   res.json(adminAuditEvidence(await getStore().listRuns(), req.query as Record<string, unknown>));
 });
 
+app.get("/admin/api/analytics/summary", requireAdminAuth("viewer"), async (req, res) => {
+  const options = analyticsOptionsFromQuery(req.query as Record<string, unknown>);
+  if (!options.ok) return res.status(400).json({ error: "invalid_analytics_request", fields: options.fields });
+  const campaigns = await getStore().listCampaigns(campaignScopeFiltersFromQuery(req.query as Record<string, unknown>));
+  const runs = await getStore().listRuns();
+  return res.json(buildMarketingAnalyticsReadModel(campaigns, runs, options.value));
+});
+
+app.post("/admin/api/analytics/summary", requireAdminAuth("viewer"), async (req, res) => {
+  const facts = externalAttributionFactsFromBody(req.body ?? {});
+  if (!facts.ok) return res.status(400).json({ error: "invalid_analytics_request", fields: facts.fields });
+  const options = analyticsOptionsFromQuery(req.query as Record<string, unknown>, facts.value);
+  if (!options.ok) return res.status(400).json({ error: "invalid_analytics_request", fields: options.fields });
+  const campaigns = await getStore().listCampaigns(campaignScopeFiltersFromQuery(req.query as Record<string, unknown>));
+  const runs = await getStore().listRuns();
+  return res.json(buildMarketingAnalyticsReadModel(campaigns, runs, options.value));
+});
+
+app.get("/admin/api/analytics/export.csv", requireAdminAuth("viewer"), async (req, res) => {
+  const options = analyticsOptionsFromQuery(req.query as Record<string, unknown>);
+  if (!options.ok) return res.status(400).json({ error: "invalid_analytics_request", fields: options.fields });
+  const campaigns = await getStore().listCampaigns(campaignScopeFiltersFromQuery(req.query as Record<string, unknown>));
+  const runs = await getStore().listRuns();
+  const readModel = buildMarketingAnalyticsReadModel(campaigns, runs, options.value);
+  res.setHeader("content-type", "text/csv; charset=utf-8");
+  return res.send(buildMarketingAnalyticsCsv(readModel));
+});
+
 app.post("/admin/api/campaigns/:id/approve", requireAdminAuth("admin"), async (req, res) => {
   const existing = await getStore().getCampaign(String(req.params.id));
   if (!existing) return res.status(404).json({ error: "campaign_not_found" });
@@ -541,6 +575,74 @@ function campaignScopeFiltersFromQuery(query: Record<string, unknown>): Record<s
     if (value !== undefined) filters[key] = value;
   }
   return filters;
+}
+
+const ANALYTICS_FACT_TYPES = new Set<AnalyticsFactType>(["delivered", "converted", "attributed_value"]);
+const ANALYTICS_CHANNELS = new Set<Channel>(["email", "telegram", "whatsapp"]);
+
+type AnalyticsOptionsResult = { ok: true; value: AnalyticsBuildOptions } | { ok: false; fields: Record<string, string> };
+type ExternalFactsResult = { ok: true; value: ExternalAttributionFact[] } | { ok: false; fields: Record<string, string> };
+
+function analyticsOptionsFromQuery(query: Record<string, unknown>, facts?: ExternalAttributionFact[]): AnalyticsOptionsResult {
+  const fields: Record<string, string> = {};
+  const options: AnalyticsBuildOptions = { ...campaignScopeFiltersFromQuery(query) };
+  for (const key of ["segmentId", "campaignId", "from", "to"] as const) {
+    const value = queryValue(query[key]);
+    if (value !== undefined) (options as Record<string, string>)[key] = value;
+  }
+  const channel = queryValue(query.channel);
+  if (channel !== undefined) {
+    if (!ANALYTICS_CHANNELS.has(channel as Channel)) fields.channel = "unsupported_value";
+    else options.channel = channel as Channel;
+  }
+  for (const key of ["from", "to"] as const) {
+    const value = options[key];
+    if (value !== undefined && !isValidIsoDate(value)) fields[key] = "required_iso_utc";
+  }
+  if (facts !== undefined) options.externalAttributionFacts = facts;
+  return Object.keys(fields).length === 0 ? { ok: true, value: options } : { ok: false, fields };
+}
+
+function externalAttributionFactsFromBody(body: unknown): ExternalFactsResult {
+  const source = Array.isArray(body) ? body : isRecord(body) && Array.isArray(body.externalAttributionFacts) ? body.externalAttributionFacts : [];
+  const facts: ExternalAttributionFact[] = [];
+  const fields: Record<string, string> = {};
+  source.forEach((item, index) => {
+    if (!isRecord(item)) {
+      fields[`externalAttributionFacts.${index}`] = "required_object";
+      return;
+    }
+    const factType = item.factType;
+    const sourceService = item.sourceService;
+    const occurredAt = item.occurredAt;
+    const campaignId = item.campaignId;
+    if (typeof factType !== "string" || !ANALYTICS_FACT_TYPES.has(factType as AnalyticsFactType)) fields[`externalAttributionFacts.${index}.factType`] = "unsupported_value";
+    if (typeof sourceService !== "string" || sourceService.trim() === "") fields[`externalAttributionFacts.${index}.sourceService`] = "required_string";
+    if (typeof occurredAt !== "string" || !isValidIsoDate(occurredAt)) fields[`externalAttributionFacts.${index}.occurredAt`] = "required_iso_utc";
+    if (typeof campaignId !== "string" || campaignId.trim() === "") fields[`externalAttributionFacts.${index}.campaignId`] = "required_string";
+    if (item.runId !== undefined && item.runId !== null && typeof item.runId !== "string") fields[`externalAttributionFacts.${index}.runId`] = "must_be_string_or_null";
+    if (item.correlationId !== undefined && item.correlationId !== null && typeof item.correlationId !== "string") fields[`externalAttributionFacts.${index}.correlationId`] = "must_be_string_or_null";
+    if (item.count !== undefined && item.count !== null && typeof item.count !== "number") fields[`externalAttributionFacts.${index}.count`] = "must_be_number_or_null";
+    if (item.value !== undefined && item.value !== null && typeof item.value !== "number") fields[`externalAttributionFacts.${index}.value`] = "must_be_number_or_null";
+    if (item.currency !== undefined && item.currency !== null && typeof item.currency !== "string") fields[`externalAttributionFacts.${index}.currency`] = "must_be_string_or_null";
+    if (Object.keys(fields).some((key) => key.startsWith(`externalAttributionFacts.${index}.`))) return;
+    facts.push({
+      factType: factType as AnalyticsFactType,
+      sourceService: sourceService as string,
+      occurredAt: occurredAt as string,
+      campaignId: campaignId as string,
+      runId: item.runId === undefined ? null : item.runId as string | null,
+      correlationId: item.correlationId === undefined ? null : item.correlationId as string | null,
+      count: item.count === undefined ? null : item.count as number | null,
+      value: item.value === undefined ? null : item.value as number | null,
+      currency: item.currency === undefined ? null : item.currency as string | null
+    });
+  });
+  return Object.keys(fields).length === 0 ? { ok: true, value: facts } : { ok: false, fields };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isValidIsoDate(value: string): boolean {

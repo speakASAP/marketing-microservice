@@ -737,6 +737,101 @@ test("admin run consent channel and audit views are protected and redacted", asy
   });
 });
 
+
+test("admin analytics dashboard and exports are protected and redacted", async () => {
+  const rolesByToken: Record<string, string[]> = { viewer: ["marketing_viewer"] };
+
+  await withAuthValidateServer(rolesByToken, async (authUrl) => {
+    process.env.AUTH_SERVICE_URL = authUrl;
+    await withServer(async (baseUrl) => {
+      const serviceAuth = { Authorization: "Bearer contract-test-token" };
+      const segment = await request(baseUrl, "/segments", {
+        method: "POST",
+        headers: serviceAuth,
+        body: JSON.stringify({ tenantId: "statex", appId: "flipflop", brandId: "statex-main", environment: "test", name: "Analytics users", sourceTypes: ["auth_users"], rules: {}, isDynamic: true })
+      });
+      assert.equal(segment.status, 201);
+
+      const campaign = await request(baseUrl, "/campaigns", {
+        method: "POST",
+        headers: serviceAuth,
+        body: JSON.stringify({
+          tenant: "statex",
+          tenantId: "statex",
+          appId: "flipflop",
+          brandId: "statex-main",
+          environment: "test",
+          name: "Analytics launch",
+          segmentId: segment.body.segmentId,
+          templateRef: "analytics-template",
+          catalogMetadata: { campaignFamily: "activation", lifecycleStage: "activation", audienceKey: "analytics-users" },
+          message: { subject: "Hidden subject", body: "Hidden body" }
+        })
+      });
+      assert.equal(campaign.status, 201);
+      const campaignId = String(campaign.body.campaignId);
+
+      await getStore().saveRun({
+        id: "analytics-api-run",
+        campaignId,
+        idempotencyKey: "analytics-api-key",
+        startedAt: "2026-06-14T08:00:00.000Z",
+        completedAt: "2026-06-14T08:00:05.000Z",
+        status: "completed",
+        dryRun: false,
+        totalRecipients: 3,
+        totalSent: 1,
+        results: [
+          { deliveryId: "analytics-sent", campaignId, recipientRef: "auth:user-1", recipientSource: "auth", recipientAddress: "user1@example.com", requestedChannel: "email", effectiveChannel: "email", status: "sent", decisionReason: "sent_via_notifications", processedAt: "2026-06-14T08:00:01.000Z", duration_ms: 30, correlationId: "marketing:analytics-api-run:auth:user-1" },
+          { deliveryId: "analytics-skipped", campaignId, recipientRef: "lead:lead-1", recipientSource: "leads", recipientAddress: "lead1@example.com", requestedChannel: "email", effectiveChannel: "email", status: "skipped", decisionReason: "consent_missing", processedAt: "2026-06-14T08:00:02.000Z", duration_ms: 0 },
+          { deliveryId: "analytics-failed", campaignId, recipientRef: "auth:user-2", recipientSource: "auth", recipientAddress: "user2@example.com", requestedChannel: "email", effectiveChannel: "telegram", status: "failed", decisionReason: "notification_url_missing", processedAt: "2026-06-14T08:00:03.000Z", duration_ms: 20, correlationId: "marketing:analytics-api-run:auth:user-2" }
+        ]
+      });
+
+      const anonymous = await request(baseUrl, "/admin/api/analytics/summary", { method: "GET" });
+      assert.equal(anonymous.status, 401);
+      assert.equal(anonymous.body.error, "admin_auth_required");
+
+      const page = await requestText(baseUrl, "/admin/analytics", { headers: { Authorization: "Bearer viewer" } });
+      assert.equal(page.status, 200);
+      assert.match(page.body, /Campaign analytics/);
+      assert.match(page.body, /Attributed value/);
+      assert.doesNotMatch(page.body, /MARKETING_API_TOKEN|SERVICE_API_TOKEN|x-service-token|\/campaigns\/[^" ]+\/execute|\/scheduler\/run-due/);
+
+      const summary = await request(baseUrl, "/admin/api/analytics/summary", { method: "GET", headers: { Authorization: "Bearer viewer" } });
+      assert.equal(summary.status, 200);
+      assert.equal(((summary.body.summary as Json).totals as Json).sent, 1);
+      assert.equal(((summary.body.summary as Json).externalAttribution as Json).available, false);
+      assert.equal(JSON.stringify(summary.body).includes("user1@example.com"), false);
+      assert.equal(JSON.stringify(summary.body).includes("Hidden body"), false);
+
+      const supplied = await request(baseUrl, "/admin/api/analytics/summary", {
+        method: "POST",
+        headers: { Authorization: "Bearer viewer" },
+        body: JSON.stringify({ externalAttributionFacts: [
+          { factType: "delivered", sourceService: "notifications-microservice", campaignId, runId: "analytics-api-run", correlationId: "marketing:analytics-api-run:auth:user-1", count: 1, occurredAt: "2026-06-14T08:01:00.000Z" },
+          { factType: "converted", sourceService: "analytics-service", campaignId, runId: "analytics-api-run", count: 1, occurredAt: "2026-06-14T08:30:00.000Z" },
+          { factType: "attributed_value", sourceService: "analytics-service", campaignId, runId: "analytics-api-run", value: 1200, currency: "CZK", occurredAt: "2026-06-14T08:30:00.000Z" }
+        ] })
+      });
+      assert.equal(supplied.status, 200);
+      const rows = supplied.body.rows as Json[];
+      assert.equal(rows[0].sent, 1);
+      assert.equal(rows[0].skipped, 1);
+      assert.equal(rows[0].failed, 1);
+      assert.equal(rows[0].delivered, 1);
+      assert.equal(rows[0].converted, 1);
+      assert.equal(rows[0].attributedValue, 1200);
+
+      const csv = await requestText(baseUrl, "/admin/api/analytics/export.csv", { headers: { Authorization: "Bearer viewer" } });
+      assert.equal(csv.status, 200);
+      assert.match(csv.contentType, /text\/csv/);
+      assert.match(csv.body, /campaignId,name,tenantId,appId/);
+      assert.doesNotMatch(csv.body, /user1@example\.com|lead1@example\.com|user2@example\.com|Hidden body|Hidden subject|contract-test-token/);
+    });
+  });
+});
+
 test("invalid segment and campaign requests fail with stable contract errors", async () => {
   await withServer(async (baseUrl) => {
     const auth = { Authorization: "Bearer contract-test-token" };

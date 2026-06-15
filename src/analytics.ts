@@ -14,6 +14,35 @@ export interface ExternalAttributionFact {
   currency?: string | null;
 }
 
+export interface CampaignAttributionMetadata {
+  attributionKey: string;
+  campaignId: string;
+  tenantId: string;
+  appId: string;
+  brandId: string;
+  businessId: string | null;
+  segmentId: string;
+  campaignFamily: string | null;
+  lifecycleStage: string | null;
+  audienceKey: string | null;
+  sourceBlueprintId: string | null;
+  runIds: string[];
+  correlationIds: string[];
+  channels: Channel[];
+  sourceOwnership: {
+    campaignFacts: "marketing-microservice";
+    deliveryFacts: "external_notifications_required";
+    conversionFacts: "external_analytics_required";
+    valueFacts: "external_analytics_required";
+  };
+  redaction: {
+    rawRecipientAddresses: "omitted";
+    messageContent: "omitted";
+    providerCredentials: "omitted";
+    serviceTokens: "omitted";
+  };
+}
+
 export interface AnalyticsSummaryFilters {
   tenantId?: string;
   appId?: string;
@@ -48,17 +77,6 @@ interface AnalyticsBucket extends StatusTotals {
   runs: number;
 }
 
-export interface AnalyticsCampaignBucket extends AnalyticsBucket {
-  campaignId: string;
-  name: string;
-  segmentId: string;
-  tenantId: string;
-  appId: string;
-  brandId: string;
-  campaignFamily: string | null;
-  lifecycleStage: string | null;
-}
-
 export interface ExternalAttributionSummary {
   available: boolean;
   delivered: number | null;
@@ -69,9 +87,31 @@ export interface ExternalAttributionSummary {
   note: "external_analytics_required" | "external_facts_applied";
 }
 
+export interface AnalyticsCampaignBucket extends AnalyticsBucket {
+  campaignId: string;
+  name: string;
+  segmentId: string;
+  tenantId: string;
+  appId: string;
+  brandId: string;
+  campaignFamily: string | null;
+  lifecycleStage: string | null;
+  attribution: CampaignAttributionMetadata;
+  externalAttribution: ExternalAttributionSummary;
+}
+
+export const ANALYTICS_SOURCE_OWNERSHIP = {
+  sentSkippedFailed: "marketing-microservice",
+  campaignAttributionMetadata: "marketing-microservice",
+  delivered: "externally_supplied_delivery_fact",
+  converted: "externally_supplied_analytics_or_app_fact",
+  attributedValue: "externally_supplied_analytics_or_domain_fact"
+} as const;
+
 export interface MarketingAnalyticsSummary {
   generatedAt: string;
   scope: AnalyticsSummaryFilters;
+  sourceOwnership: typeof ANALYTICS_SOURCE_OWNERSHIP;
   totals: StatusTotals & { campaigns: number; runs: number };
   byChannel: AnalyticsBucket[];
   byCampaign: AnalyticsCampaignBucket[];
@@ -79,6 +119,40 @@ export interface MarketingAnalyticsSummary {
   byLifecycleStage: AnalyticsBucket[];
   byDecisionReason: AnalyticsBucket[];
   externalAttribution: ExternalAttributionSummary;
+}
+
+export interface MarketingAnalyticsDashboardRow {
+  campaignId: string;
+  name: string;
+  tenantId: string;
+  appId: string;
+  brandId: string;
+  segmentId: string;
+  campaignFamily: string | null;
+  lifecycleStage: string | null;
+  runs: number;
+  totalRecipients: number;
+  sent: number;
+  skipped: number;
+  failed: number;
+  delivered: number | null;
+  converted: number | null;
+  attributedValue: number | null;
+  currency: string | null;
+  attributionKey: string;
+  deliverySource: "external_notifications_required" | "external_facts_applied";
+  conversionSource: "external_analytics_required" | "external_facts_applied";
+  valueSource: "external_analytics_required" | "external_facts_applied";
+}
+
+export interface MarketingAnalyticsReadModel {
+  generatedAt: string;
+  scope: AnalyticsSummaryFilters;
+  sourceOwnership: typeof ANALYTICS_SOURCE_OWNERSHIP;
+  summary: MarketingAnalyticsSummary;
+  rows: MarketingAnalyticsDashboardRow[];
+  exportColumns: string[];
+  warnings: string[];
 }
 
 export interface MarketingAnalyticsEvent {
@@ -115,8 +189,44 @@ const EMPTY_TOTALS: StatusTotals = {
   queued: 0
 };
 
+const CSV_EXPORT_COLUMNS = [
+  "campaignId",
+  "name",
+  "tenantId",
+  "appId",
+  "brandId",
+  "segmentId",
+  "campaignFamily",
+  "lifecycleStage",
+  "runs",
+  "totalRecipients",
+  "sent",
+  "skipped",
+  "failed",
+  "delivered",
+  "converted",
+  "attributedValue",
+  "currency",
+  "attributionKey",
+  "deliverySource",
+  "conversionSource",
+  "valueSource"
+] as const;
+
 function newBucket(key: string): AnalyticsBucket {
   return { key, runs: 0, ...EMPTY_TOTALS };
+}
+
+function unavailableExternalAttribution(): ExternalAttributionSummary {
+  return {
+    available: false,
+    delivered: null,
+    converted: null,
+    attributedValue: null,
+    currency: null,
+    sourceServices: [],
+    note: "external_analytics_required"
+  };
 }
 
 function addOutcome(totals: StatusTotals, outcome: DeliveryResult): void {
@@ -172,25 +282,17 @@ function externalAttributionSummary(
   facts: ExternalAttributionFact[],
   campaignIds: Set<string>,
   runIds: Set<string>,
-  filters: AnalyticsSummaryFilters
+  filters: AnalyticsSummaryFilters,
+  correlationIds: Set<string> = new Set()
 ): ExternalAttributionSummary {
   const matching = facts.filter((fact) => {
     if (!campaignIds.has(fact.campaignId)) return false;
     if (fact.runId && !runIds.has(fact.runId)) return false;
+    if (fact.correlationId && correlationIds.size > 0 && !correlationIds.has(fact.correlationId)) return false;
     return inTimeRange(fact.occurredAt, filters.from, filters.to);
   });
 
-  if (matching.length === 0) {
-    return {
-      available: false,
-      delivered: null,
-      converted: null,
-      attributedValue: null,
-      currency: null,
-      sourceServices: [],
-      note: "external_analytics_required"
-    };
-  }
+  if (matching.length === 0) return unavailableExternalAttribution();
 
   const currencies = new Set<string>();
   let delivered = 0;
@@ -222,6 +324,50 @@ function analyticsScope(options: AnalyticsBuildOptions): AnalyticsSummaryFilters
   return scope;
 }
 
+function uniqueSorted(values: Iterable<string | undefined>): string[] {
+  return Array.from(new Set(Array.from(values).filter((value): value is string => Boolean(value)))).sort();
+}
+
+function metadataFromRefs(campaign: Campaign, runIds: Set<string>, correlationIds: Set<string>, channels: Set<Channel>): CampaignAttributionMetadata {
+  return {
+    attributionKey: `marketing:${campaign.tenantId}:${campaign.appId}:${campaign.campaignId}`,
+    campaignId: campaign.campaignId,
+    tenantId: campaign.tenantId,
+    appId: campaign.appId,
+    brandId: campaign.brandId,
+    businessId: campaign.businessId ?? null,
+    segmentId: campaign.segmentId,
+    campaignFamily: campaign.catalogMetadata?.campaignFamily ?? null,
+    lifecycleStage: campaign.catalogMetadata?.lifecycleStage ?? null,
+    audienceKey: campaign.catalogMetadata?.audienceKey ?? null,
+    sourceBlueprintId: campaign.catalogMetadata?.sourceBlueprintId ?? null,
+    runIds: uniqueSorted(runIds),
+    correlationIds: uniqueSorted(correlationIds),
+    channels: Array.from(channels).sort(),
+    sourceOwnership: {
+      campaignFacts: "marketing-microservice",
+      deliveryFacts: "external_notifications_required",
+      conversionFacts: "external_analytics_required",
+      valueFacts: "external_analytics_required"
+    },
+    redaction: {
+      rawRecipientAddresses: "omitted",
+      messageContent: "omitted",
+      providerCredentials: "omitted",
+      serviceTokens: "omitted"
+    }
+  };
+}
+
+export function buildCampaignAttributionMetadata(campaign: Campaign, runs: ExecutionRun[] = []): CampaignAttributionMetadata {
+  const relevantRuns = runs.filter((run) => run.campaignId === campaign.campaignId);
+  const runIds = new Set(relevantRuns.map((run) => run.id));
+  const correlationIds = new Set(relevantRuns.flatMap((run) => run.results.map((outcome) => outcome.correlationId)).filter((value): value is string => Boolean(value)));
+  const channels = new Set<Channel>(relevantRuns.flatMap((run) => run.results.flatMap((outcome) => [outcome.requestedChannel, outcome.effectiveChannel])));
+  if (channels.size === 0) channels.add(campaign.primaryChannel);
+  return metadataFromRefs(campaign, runIds, correlationIds, channels);
+}
+
 export function buildMarketingAnalyticsSummary(
   campaigns: Campaign[],
   runs: ExecutionRun[],
@@ -237,6 +383,9 @@ export function buildMarketingAnalyticsSummary(
   const byLifecycleStage = new Map<string, AnalyticsBucket>();
   const byDecisionReason = new Map<string, AnalyticsBucket>();
   const campaignBuckets = new Map<string, AnalyticsCampaignBucket>();
+  const campaignRunIds = new Map<string, Set<string>>();
+  const campaignCorrelationIds = new Map<string, Set<string>>();
+  const campaignChannels = new Map<string, Set<Channel>>();
   const channelRunMembership = new Set<string>();
   const segmentRunMembership = new Set<string>();
   const lifecycleRunMembership = new Set<string>();
@@ -253,6 +402,20 @@ export function buildMarketingAnalyticsSummary(
     includedRunIds.add(run.id);
     totals.runs += 1;
 
+    const runIdSet = campaignRunIds.get(campaign.campaignId) ?? new Set<string>();
+    runIdSet.add(run.id);
+    campaignRunIds.set(campaign.campaignId, runIdSet);
+
+    const correlationIdSet = campaignCorrelationIds.get(campaign.campaignId) ?? new Set<string>();
+    const channelSet = campaignChannels.get(campaign.campaignId) ?? new Set<Channel>();
+    for (const outcome of outcomes) {
+      if (outcome.correlationId) correlationIdSet.add(outcome.correlationId);
+      channelSet.add(outcome.requestedChannel);
+      channelSet.add(outcome.effectiveChannel);
+    }
+    campaignCorrelationIds.set(campaign.campaignId, correlationIdSet);
+    campaignChannels.set(campaign.campaignId, channelSet);
+
     let campaignBucket = campaignBuckets.get(campaign.campaignId);
     if (!campaignBucket) {
       campaignBucket = {
@@ -264,7 +427,9 @@ export function buildMarketingAnalyticsSummary(
         appId: campaign.appId,
         brandId: campaign.brandId,
         campaignFamily: campaign.catalogMetadata?.campaignFamily ?? null,
-        lifecycleStage: campaign.catalogMetadata?.lifecycleStage ?? null
+        lifecycleStage: campaign.catalogMetadata?.lifecycleStage ?? null,
+        attribution: buildCampaignAttributionMetadata(campaign),
+        externalAttribution: unavailableExternalAttribution()
       };
       campaignBuckets.set(campaign.campaignId, campaignBucket);
     }
@@ -281,18 +446,79 @@ export function buildMarketingAnalyticsSummary(
   }
 
   totals.campaigns = includedCampaignIds.size;
+  const externalFacts = options.externalAttributionFacts ?? [];
+  for (const bucket of campaignBuckets.values()) {
+    const campaign = campaignMap.get(bucket.campaignId);
+    if (!campaign) continue;
+    const runIds = campaignRunIds.get(bucket.campaignId) ?? new Set<string>();
+    const correlationIds = campaignCorrelationIds.get(bucket.campaignId) ?? new Set<string>();
+    const channels = campaignChannels.get(bucket.campaignId) ?? new Set<Channel>([campaign.primaryChannel]);
+    bucket.attribution = metadataFromRefs(campaign, runIds, correlationIds, channels);
+    bucket.externalAttribution = externalAttributionSummary(externalFacts, new Set([bucket.campaignId]), runIds, scope, correlationIds);
+  }
 
   return {
     generatedAt: options.generatedAt ?? new Date().toISOString(),
     scope,
+    sourceOwnership: ANALYTICS_SOURCE_OWNERSHIP,
     totals,
     byChannel: sortedBuckets(Array.from(byChannel.values())),
     byCampaign: sortedBuckets(Array.from(campaignBuckets.values())),
     bySegment: sortedBuckets(Array.from(bySegment.values())),
     byLifecycleStage: sortedBuckets(Array.from(byLifecycleStage.values())),
     byDecisionReason: sortedBuckets(Array.from(byDecisionReason.values())),
-    externalAttribution: externalAttributionSummary(options.externalAttributionFacts ?? [], includedCampaignIds, includedRunIds, scope)
+    externalAttribution: externalAttributionSummary(externalFacts, includedCampaignIds, includedRunIds, scope)
   };
+}
+
+export function buildMarketingAnalyticsReadModel(
+  campaigns: Campaign[],
+  runs: ExecutionRun[],
+  options: AnalyticsBuildOptions = {}
+): MarketingAnalyticsReadModel {
+  const summary = buildMarketingAnalyticsSummary(campaigns, runs, options);
+  const rows: MarketingAnalyticsDashboardRow[] = summary.byCampaign.map((bucket) => ({
+    campaignId: bucket.campaignId,
+    name: bucket.name,
+    tenantId: bucket.tenantId,
+    appId: bucket.appId,
+    brandId: bucket.brandId,
+    segmentId: bucket.segmentId,
+    campaignFamily: bucket.campaignFamily,
+    lifecycleStage: bucket.lifecycleStage,
+    runs: bucket.runs,
+    totalRecipients: bucket.totalRecipients,
+    sent: bucket.sent,
+    skipped: bucket.skipped,
+    failed: bucket.failed,
+    delivered: bucket.externalAttribution.delivered,
+    converted: bucket.externalAttribution.converted,
+    attributedValue: bucket.externalAttribution.attributedValue,
+    currency: bucket.externalAttribution.currency,
+    attributionKey: bucket.attribution.attributionKey,
+    deliverySource: bucket.externalAttribution.available && bucket.externalAttribution.delivered !== null ? "external_facts_applied" : "external_notifications_required",
+    conversionSource: bucket.externalAttribution.available && bucket.externalAttribution.converted !== null ? "external_facts_applied" : "external_analytics_required",
+    valueSource: bucket.externalAttribution.available && bucket.externalAttribution.attributedValue !== null ? "external_facts_applied" : "external_analytics_required"
+  }));
+  return {
+    generatedAt: summary.generatedAt,
+    scope: summary.scope,
+    sourceOwnership: ANALYTICS_SOURCE_OWNERSHIP,
+    summary,
+    rows,
+    exportColumns: [...CSV_EXPORT_COLUMNS],
+    warnings: summary.externalAttribution.available ? [] : ["external_analytics_required"]
+  };
+}
+
+function csvCell(value: string | number | boolean | null): string {
+  const text = value === null ? "" : String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+export function buildMarketingAnalyticsCsv(readModel: MarketingAnalyticsReadModel): string {
+  const rows = readModel.rows.map((row) => CSV_EXPORT_COLUMNS.map((column) => csvCell(row[column] ?? null)).join(","));
+  return [[...CSV_EXPORT_COLUMNS].join(","), ...rows].join("\n") + "\n";
 }
 
 export function buildMarketingAnalyticsEvents(campaigns: Campaign[], runs: ExecutionRun[]): MarketingAnalyticsEvent[] {
