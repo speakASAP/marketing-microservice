@@ -2762,3 +2762,66 @@ Validation:
 
 - Documentation-only update; no application build/test was run.
 - Remote file checks should confirm Goal 15 is explicit in `TASKS.md`, `STATE.json`, `docs/orchestrator/PLAN.md`, and this `STATUS.md` entry.
+
+## 2026-06-14 - Goal 16 Campaign And Segment Admin Console
+
+Current focus: Goal 16 - Campaign And Segment Admin Console, chunks 16.1-16.5.
+
+Remote worktree:
+
+- Path: `/home/ssf/Documents/Github/marketing-worktrees/goal-16-admin-console`
+- Branch: `codex/marketing-goal-16`
+- Base checkpoint: `b233e2f Integrate marketing admin and roadmap goals`
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane for campaign definitions, segment definitions, dry-run preview, approval evidence, schedule state, pause/archive state, and audit evidence.
+- Browser admin workflows use Auth session RBAC and server-side Marketing admin adapters; the browser never receives `MARKETING_API_TOKEN` or `SERVICE_API_TOKEN`.
+- Notifications remains the only delivery owner; this work did not add direct sending behavior or real campaign execution controls.
+- Auth and leads remain the source of truth for identity, contact data, preferences, consent, and unsubscribe state.
+- Backend dry-run, approval, idempotency, consent, unsubscribe, frequency-cap, throttling, max-send, max-30 chunking, registry validation, and notification-delegation contracts remain authoritative.
+
+Implementation evidence:
+
+- Expanded `/admin/campaigns` from a read-only table into protected list/detail/create/edit workflows for campaign definitions.
+- Added campaign form validation surface for contract fields: tenant/scope, segment, template, purpose, primary/fallback channels, channel key, frequency cap, throttle, schedule time, status, subject, and body.
+- Added read-only approval evidence display; direct approval metadata edits remain rejected by backend validation and approval still uses the explicit admin approval endpoint.
+- Added dry-run preview action through `/admin/api/campaigns/:id/dry-run`; preview returns sanitized aggregate run evidence and does not call notifications.
+- Added approval workflow action through `/admin/api/campaigns/:id/approve` with admin actor evidence from the Auth-verified session.
+- Added schedule, pause, and archive controls through `/admin/api/campaigns/:id/status`; scheduling requires a schedule timestamp and does not expose real execution or scheduler endpoints to the browser.
+- Expanded `/admin/segments` into protected list/detail/create/edit workflows for segment definitions, including source type, dynamic/static mode, estimated count, and rules JSON editing.
+- Added admin API adapters for campaign and segment detail/create/edit/status operations using existing backend validators, registry validation, and Marketing store contracts.
+- Added focused tests covering anonymous rejection, viewer/admin RBAC boundaries, admin create/edit/detail flows, direct approval-field rejection, dry-run redaction, schedule/pause/archive controls, and token non-exposure in rendered admin pages and JSON responses.
+
+Validation:
+
+- `npm install` in the remote worktree installed missing TypeScript/tsx tooling needed for validation; no dependency files were changed. npm reported 3 existing audit findings (1 moderate, 2 high), left unchanged as out of Goal 16 scope.
+- `npm run build` passed.
+- `npm test` passed: 64 tests, 64 passing.
+- Render validation limitation: no screenshot-capable browser/Playwright harness is attached to the remote worktree in this worker session, so desktop/mobile screenshots were not captured. Protected HTML render checks for `/admin/campaigns` and `/admin/segments`, anonymous rejection, and token non-exposure are covered by the remote test suite.
+
+Intent Compliance Report:
+
+- Marketing did not send messages directly and did not add browser-accessible real execution controls.
+- Dry-run remains delivery-free and sanitized.
+- Real execution remains backend approval-gated and idempotency-gated; scheduler endpoints remain hidden from the browser console.
+- Campaign approval evidence is written only through explicit approval workflow, not direct create/edit fields.
+- Segment and campaign scope validation still uses the registry contract before mutation.
+- No auth/leads source-truth models, notification provider code, analytics views, runs/audit/channel views, or shared admin navigation labels were changed.
+
+Completed chunks:
+
+- 16.1 Build campaigns list/detail/create/edit views.
+- 16.2 Build segment list/detail/create/edit views.
+- 16.3 Add dry-run preview UI.
+- 16.4 Add approval workflow UI.
+- 16.5 Add campaign scheduling and pause/archive controls.
+
+Parallel execution notes:
+
+- Goal 16 write ownership stayed disjoint from Goal 17 runs/consent/channels/audit views and Goal 18 analytics dashboards.
+- Shared admin navigation labels were not edited; coordinator integration can decide final navigation ordering with Goal 17/18 after merge.
+
+Next unfinished step:
+
+- Coordinator review/integration of branch `codex/marketing-goal-16`, then continue with disjoint Goal 17 or Goal 18/19 workstreams per `docs/orchestrator/PLAN.md`.

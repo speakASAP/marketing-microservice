@@ -357,7 +357,128 @@ test("admin campaign and segment console APIs are protected by RBAC and return s
       const segmentsPage = await requestText(baseUrl, "/admin/segments", { headers: { Authorization: "Bearer viewer" } });
       assert.equal(segmentsPage.status, 200);
       assert.match(segmentsPage.body, /Segment definitions/);
+      assert.match(segmentsPage.body, /Create or edit/);
+      assert.match(segmentsPage.body, /Rules JSON/);
       assert.doesNotMatch(segmentsPage.body, /MARKETING_API_TOKEN|SERVICE_API_TOKEN|x-service-token|\/campaigns\/[^" ]+\/execute|\/scheduler\/run-due/);
+
+      assert.match(campaignsPage.body, /Save campaign/);
+      assert.match(campaignsPage.body, /Schedule/);
+      assert.match(campaignsPage.body, /Pause/);
+      assert.match(campaignsPage.body, /Archive/);
+
+      const viewerCreateSegment = await request(baseUrl, "/admin/api/segments", {
+        method: "POST",
+        headers: { Authorization: "Bearer viewer" },
+        body: JSON.stringify({ tenantId: "statex", appId: "flipflop", brandId: "statex-main", environment: "test", name: "Viewer blocked", sourceTypes: ["leads"], rules: {}, isDynamic: true })
+      });
+      assert.equal(viewerCreateSegment.status, 403);
+      assert.equal(viewerCreateSegment.body.error, "admin_forbidden");
+
+      const adminSegment = await request(baseUrl, "/admin/api/segments", {
+        method: "POST",
+        headers: { Authorization: "Bearer admin" },
+        body: JSON.stringify({ tenantId: "statex", appId: "flipflop", brandId: "statex-main", environment: "test", name: "Admin-created leads", sourceTypes: ["leads"], rules: { consent: true }, isDynamic: true, estimatedCount: 12 })
+      });
+      assert.equal(adminSegment.status, 201);
+      assert.equal(adminSegment.body.name, "Admin-created leads");
+
+      const segmentDetail = await request(baseUrl, `/admin/api/segments/${adminSegment.body.segmentId}`, {
+        method: "GET",
+        headers: { Authorization: "Bearer viewer" }
+      });
+      assert.equal(segmentDetail.status, 200);
+      assert.equal(segmentDetail.body.segmentId, adminSegment.body.segmentId);
+
+      const editedSegment = await request(baseUrl, `/admin/api/segments/${adminSegment.body.segmentId}`, {
+        method: "PUT",
+        headers: { Authorization: "Bearer admin" },
+        body: JSON.stringify({ name: "Admin-edited leads", rules: { consent: true, source: "admin" } })
+      });
+      assert.equal(editedSegment.status, 200);
+      assert.equal(editedSegment.body.name, "Admin-edited leads");
+      assert.deepEqual(editedSegment.body.rules, { consent: true, source: "admin" });
+
+      const adminCampaign = await request(baseUrl, "/admin/api/campaigns", {
+        method: "POST",
+        headers: { Authorization: "Bearer admin" },
+        body: JSON.stringify({
+          tenant: "statex",
+          tenantId: "statex",
+          appId: "flipflop",
+          brandId: "statex-main",
+          environment: "test",
+          name: "Admin-created campaign",
+          segmentId: adminSegment.body.segmentId,
+          templateRef: "admin-created-template",
+          primaryChannel: "email",
+          fallbackChannels: ["telegram"],
+          frequencyCapPerDay: 2,
+          message: { subject: "Admin", body: "Admin-created body" }
+        })
+      });
+      assert.equal(adminCampaign.status, 201);
+      assert.equal(adminCampaign.body.approvalStatus, "pending");
+      assert.equal(adminCampaign.body.approvedBy, null);
+      assert.equal(JSON.stringify(adminCampaign.body).includes("contract-test-token"), false);
+
+      const campaignDetail = await request(baseUrl, `/admin/api/campaigns/${adminCampaign.body.campaignId}`, {
+        method: "GET",
+        headers: { Authorization: "Bearer viewer" }
+      });
+      assert.equal(campaignDetail.status, 200);
+      assert.equal(campaignDetail.body.campaignId, adminCampaign.body.campaignId);
+
+      const directApprovalEdit = await request(baseUrl, `/admin/api/campaigns/${adminCampaign.body.campaignId}`, {
+        method: "PUT",
+        headers: { Authorization: "Bearer admin" },
+        body: JSON.stringify({ approvalStatus: "approved" })
+      });
+      assert.equal(directApprovalEdit.status, 400);
+      assert.equal(directApprovalEdit.body.error, "invalid_campaign_request");
+      assert.deepEqual(directApprovalEdit.body.fields, { approvalStatus: "read_only_use_approve_endpoint" });
+
+      const editedCampaign = await request(baseUrl, `/admin/api/campaigns/${adminCampaign.body.campaignId}`, {
+        method: "PUT",
+        headers: { Authorization: "Bearer admin" },
+        body: JSON.stringify({ name: "Admin-edited campaign", message: { body: "Updated body" }, throttlePerMinute: 10 })
+      });
+      assert.equal(editedCampaign.status, 200);
+      assert.equal(editedCampaign.body.name, "Admin-edited campaign");
+      assert.equal(editedCampaign.body.approvalStatus, "pending");
+      assert.equal(editedCampaign.body.throttlePerMinute, 10);
+
+      const missingSchedule = await request(baseUrl, `/admin/api/campaigns/${adminCampaign.body.campaignId}/status`, {
+        method: "POST",
+        headers: { Authorization: "Bearer admin" },
+        body: JSON.stringify({ status: "scheduled" })
+      });
+      assert.equal(missingSchedule.status, 400);
+      assert.deepEqual(missingSchedule.body.fields, { scheduleAt: "required_to_schedule_campaign" });
+
+      const scheduled = await request(baseUrl, `/admin/api/campaigns/${adminCampaign.body.campaignId}/status`, {
+        method: "POST",
+        headers: { Authorization: "Bearer admin" },
+        body: JSON.stringify({ status: "scheduled", scheduleAt: "2030-01-01T00:00:00.000Z" })
+      });
+      assert.equal(scheduled.status, 200);
+      assert.equal(scheduled.body.status, "scheduled");
+      assert.equal(scheduled.body.scheduleAt, "2030-01-01T00:00:00.000Z");
+
+      const paused = await request(baseUrl, `/admin/api/campaigns/${adminCampaign.body.campaignId}/status`, {
+        method: "POST",
+        headers: { Authorization: "Bearer admin" },
+        body: JSON.stringify({ status: "paused" })
+      });
+      assert.equal(paused.status, 200);
+      assert.equal(paused.body.status, "paused");
+
+      const archived = await request(baseUrl, `/admin/api/campaigns/${adminCampaign.body.campaignId}/status`, {
+        method: "POST",
+        headers: { Authorization: "Bearer admin" },
+        body: JSON.stringify({ status: "archived" })
+      });
+      assert.equal(archived.status, 200);
+      assert.equal(archived.body.status, "archived");
 
       const viewerDryRun = await request(baseUrl, `/admin/api/campaigns/${campaign.body.campaignId}/dry-run`, {
         method: "POST",
