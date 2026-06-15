@@ -2956,3 +2956,66 @@ Coordinator handoff:
 
 - Shared admin navigation still needs coordinator integration with Goal 16/17 routes if `/admin/analytics` should appear in the common `ADMIN_SHELL_ROUTES` list.
 - `[MISSING: approved analytics/conversion owner contract]` remains the blocker for any broader attribution ownership or persisted analytics/customer-insights truth.
+## 2026-06-14 - Goal 19.4-19.5 CRM Account Rules, Blueprints, And Audit Evidence
+
+Current focus: Goal 19 - CRM/Account Service Integration, chunks 19.4 and 19.5.
+
+Remote worktree and branch:
+
+- Worktree: `/home/ssf/Documents/Github/marketing-worktrees/goal-19-crm`.
+- Branch: `codex/marketing-goal-19`.
+- Start checkpoint: `b233e2f Integrate marketing admin and roadmap goals`.
+
+Preserved intent and ownership boundary:
+
+- Marketing remains the campaign and segmentation control plane.
+- CRM/account lifecycle, opportunity, owner, health, onboarding, renewal, upsell, and winback state remains source-owned by the future CRM/account service.
+- Marketing stores only segment predicates, blueprint suggestions, source references, dry-run/execution decisions, and audit evidence.
+- Auth/leads remain the only reachable recipient, contact, preference, consent, and unsubscribe owners.
+- Notifications remains the only outbound delivery executor.
+- Production CRM/account use remains disabled until `CRM_ACCOUNT_SERVICE_URL` and source-service auth/readiness are configured.
+
+Parallel execution assessment:
+
+- Track D Goal 19 is isolated from Goal 16/17 admin UI and Goal 18 analytics dashboard files.
+- Chunks 19.4 and 19.5 were safe to complete serially in this worktree because they touch the same CRM/account blueprint/test/status surface.
+- No other worker should edit `src/campaign-blueprints.ts`, CRM/account executor tests, or this Goal 19 status evidence until this branch is integrated.
+- Goal 20 enforcement remains blocked by missing owner-approved policy decisions.
+
+Implementation evidence:
+
+- Added four B2B CRM/account lifecycle blueprint suggestions in `src/campaign-blueprints.ts`:
+  - `runlayer.crm-onboarding.default`
+  - `runlayer.crm-renewal.default`
+  - `runlayer.crm-upsell.default`
+  - `runlayer.crm-winback.default`
+- Each CRM/account blueprint uses `crm_accounts` plus auth/leads recipient resolution sources and contains only read-only segment predicate suggestions.
+- Added blueprint tests proving CRM/account blueprints are non-executable metadata, have deterministic catalog filtering, and do not contain approval state or message bodies.
+- Added dry-run CRM/account lifecycle rule tests for onboarding, renewal, upsell, and winback using the generated read-only signal contract.
+- The dry-run lifecycle tests use a pending/draft campaign and prove no notification call is made; source-owned lead consent is still enforced as `consent_missing`.
+- Strengthened CRM/account source failure coverage to assert `recipient_source_failed` audit evidence is emitted for `crm_accounts` before notification delegation and that notification chunk audit events are absent.
+- Updated `docs/agents/contracts/marketing-campaign-contract.md` with the Goal 19.4 CRM/account blueprint extension and initial blueprint rows.
+- Updated `docs/agents/contracts/crm-account-signal-contract.md` to record the Goal 19.4 blueprint use of read-only predicates.
+- Marked Goal 19.4 and 19.5 complete in `docs/orchestrator/GOALS.md` and updated `STATE.json` Goal 19 status.
+
+Validation:
+
+- Remote `npm run build` passed after installing worktree dependencies with `npm install`.
+- Remote `npm test` passed: 66 tests, 66 passing.
+
+Intent Compliance Report:
+
+- Marketing did not take ownership of CRM/account master data, companies, opportunities, account owners, lifecycle state, health state, onboarding state, customer-success notes, account-contact relationships, auth/leads contacts, consent, unsubscribe truth, notification provider execution, provider credentials, tenant/app registry truth, or analytics truth.
+- CRM/account signals remain read-only segmentation inputs.
+- B2B CRM/account blueprints remain suggestions only and do not approve, schedule, dry-run, execute, or delegate delivery by themselves.
+- Real campaign delivery remains blocked by explicit campaign approval, auth/leads consent and unsubscribe enforcement, frequency caps, throttling, idempotency, max-send, max-30 chunking, registry validation, and notifications delegation.
+- CRM/account source failure produces safe failed evidence before notification delegation.
+
+Completed chunks:
+
+- Goal 19.4 - Add B2B account segment rules and campaign blueprints.
+- Goal 19.5 - Add safe failure and audit evidence.
+
+Next unfinished step:
+
+- Integrate `codex/marketing-goal-19` after review; production CRM/account use still requires configured `CRM_ACCOUNT_SERVICE_URL` and source-service auth/readiness.

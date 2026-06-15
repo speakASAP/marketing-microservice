@@ -999,7 +999,7 @@ test("campaign catalog blueprint APIs expose read-only filtered defaults", async
 
     const tagged = await request(baseUrl, "/campaign-catalog/blueprints?catalogTag=renewal");
     assert.equal(tagged.status, 200);
-    assert.deepEqual(tagged.body.map((item) => item.blueprintId), ["rent-a-box.renewal.default"]);
+    assert.deepEqual(tagged.body.map((item) => item.blueprintId).sort(), ["rent-a-box.renewal.default", "runlayer.crm-renewal.default"]);
 
     const detail = await request(baseUrl, "/campaign-catalog/blueprints/flipflop.abandoned-intent.default");
     assert.equal(detail.status, 200);

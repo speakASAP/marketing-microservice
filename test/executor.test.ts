@@ -2039,12 +2039,151 @@ test("filters recipients through read-only crm account signals", async () => {
   }
 });
 
-test("fails crm account signal source safely without notification delivery", async () => {
+test("dry-runs b2b crm account lifecycle segment rules without approval or notification delivery", async () => {
+  const originalCrmUrl = process.env.CRM_ACCOUNT_SERVICE_URL;
+  const originalGet = axios.get;
+  const originalPost = axios.post;
+  process.env.CRM_ACCOUNT_SERVICE_URL = "http://crm-account-service:4800";
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+
+  const crmSignals = [
+    {
+      schemaVersion: "marketing.crm_account_signal.v1",
+      accountId: "acct-onboarding",
+      tenantId: "statex",
+      appIds: ["flipflop"],
+      lifecycleStage: "onboarding",
+      healthStatus: "at_risk",
+      onboardingStatus: "blocked",
+      sourceUpdatedAt: "2026-06-13T08:00:00.000Z",
+      contactRefs: [
+        { owner: "auth", ref: "auth:user:auth-1", role: "admin" },
+        { owner: "leads", ref: "leads:lead:lead-1", role: "buyer" }
+      ]
+    },
+    {
+      schemaVersion: "marketing.crm_opportunity_signal.v1",
+      opportunityId: "opp-renewal",
+      accountId: "acct-renewal",
+      tenantId: "statex",
+      appId: "flipflop",
+      lifecycleStage: "renewal",
+      opportunityType: "renewal",
+      opportunityStatus: "open",
+      sourceUpdatedAt: "2026-06-13T08:00:00.000Z",
+      contactRefs: [{ owner: "auth", ref: "auth:user:auth-1", role: "admin" }]
+    },
+    {
+      schemaVersion: "marketing.crm_opportunity_signal.v1",
+      opportunityId: "opp-upsell",
+      accountId: "acct-upsell",
+      tenantId: "statex",
+      appId: "flipflop",
+      lifecycleStage: "expansion",
+      opportunityType: "upsell",
+      opportunityStatus: "open",
+      healthScore: 82,
+      sourceUpdatedAt: "2026-06-13T08:00:00.000Z",
+      contactRefs: [{ owner: "auth", ref: "auth:user:auth-1", role: "admin" }]
+    },
+    {
+      schemaVersion: "marketing.crm_opportunity_signal.v1",
+      opportunityId: "opp-winback",
+      accountId: "acct-winback",
+      tenantId: "statex",
+      appId: "flipflop",
+      lifecycleStage: "winback",
+      opportunityType: "winback",
+      opportunityStatus: "open",
+      healthStatus: "at_risk",
+      sourceUpdatedAt: "2026-06-13T08:00:00.000Z",
+      contactRefs: [{ owner: "auth", ref: "auth:user:auth-1", role: "admin" }]
+    }
+  ];
+  const cases: Array<{ id: string; rules: Record<string, string | number | boolean>; expectedRecipients: number; expectedReasons: string[] }> = [
+    {
+      id: "onboarding",
+      rules: { lifecycleStage: "onboarding", onboardingStatus: "blocked", healthStatus: "at_risk" },
+      expectedRecipients: 2,
+      expectedReasons: ["consent_missing", "dry_run_would_send"]
+    },
+    {
+      id: "renewal",
+      rules: { lifecycleStage: "renewal", opportunityType: "renewal", opportunityStatus: "open" },
+      expectedRecipients: 1,
+      expectedReasons: ["dry_run_would_send"]
+    },
+    {
+      id: "upsell",
+      rules: { lifecycleStage: "expansion", opportunityType: "upsell", opportunityStatus: "open", healthScoreMin: 70 },
+      expectedRecipients: 1,
+      expectedReasons: ["dry_run_would_send"]
+    },
+    {
+      id: "winback",
+      rules: { lifecycleStage: "winback", opportunityType: "winback", opportunityStatus: "open", healthStatus: "at_risk" },
+      expectedRecipients: 1,
+      expectedReasons: ["dry_run_would_send"]
+    }
+  ];
+
+  let postCalls = 0;
+  (axios.get as unknown as typeof originalGet) = (async () => {
+    return { status: 200, data: { schemaVersion: "marketing.crm_account_signals.v1", items: crmSignals, nextCursor: null } } as never;
+  }) as typeof originalGet;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    for (const current of cases) {
+      resetInMemoryState();
+      segments.set(
+        "seg-1",
+        makeSegment({
+          sourceTypes: ["crm_accounts", "auth_users", "leads"],
+          rules: current.rules
+        })
+      );
+      campaigns.set(
+        "camp-1",
+        makeCampaign({
+          status: "draft",
+          approvalStatus: "pending",
+          approvedBy: null,
+          approvedAt: null
+        })
+      );
+
+      const run = await executeCampaign("camp-1", `idem-crm-${current.id}`, { dryRun: true });
+      assert.equal(run.status, "dry_run_completed");
+      assert.equal(run.approvalEvidence, null);
+      assert.equal(run.totalRecipients, current.expectedRecipients);
+      assert.equal(run.totalSent, 0);
+      assert.deepEqual(run.results.map((result) => result.decisionReason).sort(), [...current.expectedReasons].sort());
+    }
+    assert.equal(postCalls, 0);
+  } finally {
+    (axios.get as unknown as typeof originalGet) = originalGet;
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    if (originalCrmUrl === undefined) delete process.env.CRM_ACCOUNT_SERVICE_URL;
+    else process.env.CRM_ACCOUNT_SERVICE_URL = originalCrmUrl;
+    resetInMemoryState();
+  }
+});
+
+test("fails crm account signal source safely with audit evidence before notification delivery", async () => {
   resetInMemoryState();
   const originalCrmUrl = process.env.CRM_ACCOUNT_SERVICE_URL;
   const originalPost = axios.post;
   delete process.env.CRM_ACCOUNT_SERVICE_URL;
   process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+
+  const auditEvents: Array<Record<string, unknown>> = [];
+  setAuditSinkForTest((payload) => {
+    auditEvents.push(payload);
+  });
 
   let postCalls = 0;
   (axios.post as unknown as typeof originalPost) = (async () => {
@@ -2070,7 +2209,16 @@ test("fails crm account signal source safely without notification delivery", asy
     assert.equal(run.results[0].status, "failed");
     assert.equal(run.results[0].recipientRef, "crm_accounts:source");
     assert.match(run.results[0].decisionReason, /^crm_account_source_unavailable:crm_account_service_url_missing/);
+
+    const sourceFailure = auditEvents.find((event) => event.event === "recipient_source_failed" && event.source === "crm_accounts");
+    assert.ok(sourceFailure);
+    assert.equal(sourceFailure.reason, "crm_account_service_url_missing");
+    assert.equal(auditEvents.some((event) => event.event === "notification_chunk_send_started"), false);
+    assert.equal(auditEvents.some((event) => event.event === "notification_chunk_send_completed"), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(sourceFailure, "recipientAddress"), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(sourceFailure, "Authorization"), false);
   } finally {
+    setAuditSinkForTest(null);
     (axios.post as unknown as typeof originalPost) = originalPost;
     if (originalCrmUrl === undefined) delete process.env.CRM_ACCOUNT_SERVICE_URL;
     else process.env.CRM_ACCOUNT_SERVICE_URL = originalCrmUrl;
