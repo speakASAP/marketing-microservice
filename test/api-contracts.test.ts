@@ -4,8 +4,9 @@ import assert from "node:assert/strict";
 import { AddressInfo } from "node:net";
 import { app } from "../src/main";
 import { setRegistryFixtureProviderForTest } from "../src/registry";
-import { resetInMemoryState } from "../src/store";
+import { getStore, resetInMemoryState } from "../src/store";
 import { setTestRecipientFixtureProviderForTest } from "../src/sources";
+import { ExecutionRun } from "../src/types";
 import { testRecipientFixtures } from "./fixtures";
 
 process.env.NODE_ENV = "test";
@@ -40,6 +41,33 @@ async function withJsonSourceServer<T>(fn: (baseUrl: string, received: Json[]) =
         body: raw ? JSON.parse(raw) as Json : {}
       });
       res.writeHead(204).end();
+    });
+  });
+  server.listen(0);
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  try {
+    const address = server.address() as AddressInfo;
+    return await fn(`http://127.0.0.1:${address.port}`, received);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+}
+
+async function withJsonResponseServer<T>(handler: (request: http.IncomingMessage, body: Json) => { status: number; body: unknown }, fn: (baseUrl: string, received: Json[]) => Promise<T>): Promise<T> {
+  const received: Json[] = [];
+  const server = http.createServer((req, res) => {
+    let raw = "";
+    req.on("data", (chunk) => { raw += chunk; });
+    req.on("end", () => {
+      const body = raw ? JSON.parse(raw) as Json : {};
+      received.push({
+        method: req.method,
+        url: req.url,
+        authorization: req.headers.authorization ?? null,
+        body
+      });
+      const result = handler(req, body);
+      res.writeHead(result.status, { "content-type": "application/json" }).end(JSON.stringify(result.body));
     });
   });
   server.listen(0);
@@ -135,6 +163,8 @@ test.beforeEach(() => {
   delete process.env.PREFERENCE_WRITE_TIMEOUT_MS;
   delete process.env.NOTIFICATION_SERVICE_URL;
   delete process.env.NOTIFICATION_SERVICE_TOKEN;
+  delete process.env.NOTIFICATION_CHANNEL_REGISTRY_PATH;
+  delete process.env.NOTIFICATION_CHANNEL_REGISTRY_TIMEOUT_MS;
   delete process.env.MARKETING_USE_TEST_RECIPIENT_FIXTURES;
   setTestRecipientFixtureProviderForTest(undefined);
   setRegistryFixtureProviderForTest((scope) => scope.tenantId === "statex" && scope.appId === "flipflop" && scope.brandId === "statex-main" ? { ...scope, status: "active" } : undefined);
@@ -219,7 +249,7 @@ test("admin shell protects navigation placeholders without exposing operational 
   await withAuthValidateServer({ viewer: ["marketing_viewer"] }, async (authUrl) => {
     process.env.AUTH_SERVICE_URL = authUrl;
     await withServer(async (baseUrl) => {
-      for (const path of ["/admin/journeys", "/admin/runs", "/admin/audit", "/admin/settings"]) {
+      for (const path of ["/admin/journeys", "/admin/settings"]) {
         const anonymous = await request(baseUrl, path, { method: "GET" });
         assert.equal(anonymous.status, 401);
         assert.equal(anonymous.body.error, "admin_auth_required");
@@ -396,6 +426,192 @@ test("admin campaign and segment console APIs are protected by RBAC and return s
       assert.equal(approved.body.approvalStatus, "approved");
       assert.equal(approved.body.approvedBy, "admin@example.com");
       assert.equal(approved.body.status, "scheduled");
+    });
+  });
+});
+
+test("admin run consent channel and audit views are protected and redacted", async () => {
+  process.env.MARKETING_USE_TEST_RECIPIENT_FIXTURES = "true";
+  setTestRecipientFixtureProviderForTest(() => testRecipientFixtures);
+  const rolesByToken: Record<string, string[]> = {
+    viewer: ["marketing_viewer"],
+    operator: ["marketing_operator"]
+  };
+
+  await withJsonResponseServer((req) => {
+    assert.equal(req.method, "GET");
+    assert.equal(req.url, "/channels");
+    return {
+      status: 200,
+      body: {
+        channels: [
+          {
+            channelKey: "statex-email",
+            channel: "email",
+            provider: "smtp",
+            providerCredentials: { token: "provider-secret-token", password: "provider-password" },
+            fromAddress: "sender@example.com",
+            messageBody: "Provider body must not appear"
+          }
+        ],
+        authorizationToken: "registry-token"
+      }
+    };
+  }, async (notificationUrl, notificationReceived) => {
+    await withAuthValidateServer(rolesByToken, async (authUrl) => {
+      process.env.AUTH_SERVICE_URL = authUrl;
+      process.env.NOTIFICATION_SERVICE_URL = notificationUrl;
+      process.env.NOTIFICATION_SERVICE_TOKEN = "notification-secret";
+      await withServer(async (baseUrl) => {
+        const serviceAuth = { Authorization: "Bearer contract-test-token" };
+        const segment = await request(baseUrl, "/segments", {
+          method: "POST",
+          headers: serviceAuth,
+          body: JSON.stringify({ tenantId: "statex", appId: "flipflop", brandId: "statex-main", environment: "test", name: "Ops users", sourceTypes: ["auth_users"], rules: {}, isDynamic: true })
+        });
+        assert.equal(segment.status, 201);
+
+        const campaign = await request(baseUrl, "/campaigns", {
+          method: "POST",
+          headers: serviceAuth,
+          body: JSON.stringify({
+            tenant: "statex",
+            tenantId: "statex",
+            appId: "flipflop",
+            brandId: "statex-main",
+            environment: "test",
+            name: "Ops launch",
+            segmentId: segment.body.segmentId,
+            templateRef: "ops-template",
+            message: { subject: "Private subject", body: "Secret body for user1@example.com" }
+          })
+        });
+        assert.equal(campaign.status, 201);
+
+        const correlationId = "corr-goal17-seeded";
+        const seededRun: ExecutionRun = {
+          id: "run-goal17-seeded",
+          campaignId: String(campaign.body.campaignId),
+          idempotencyKey: "seeded-goal17",
+          startedAt: "2026-06-14T20:00:00.000Z",
+          completedAt: "2026-06-14T20:00:01.000Z",
+          status: "completed",
+          dryRun: false,
+          approvalEvidence: { approvalStatus: "approved", approvedBy: "owner@example.com", approvedAt: "2026-06-14T19:59:00.000Z" },
+          totalRecipients: 2,
+          totalSent: 1,
+          results: [
+            {
+              deliveryId: "delivery-goal17-1",
+              campaignId: String(campaign.body.campaignId),
+              recipientRef: "auth:auth-1",
+              recipientSource: "auth",
+              recipientAddress: "user1@example.com",
+              requestedChannel: "email",
+              effectiveChannel: "email",
+              status: "sent",
+              decisionReason: "sent_via_notifications",
+              processedAt: "2026-06-14T20:00:01.000Z",
+              duration_ms: 7,
+              correlationId
+            },
+            {
+              deliveryId: "delivery-goal17-2",
+              campaignId: String(campaign.body.campaignId),
+              recipientRef: "leads:lead-1",
+              recipientSource: "leads",
+              recipientAddress: "lead1@example.com",
+              requestedChannel: "email",
+              effectiveChannel: "email",
+              status: "skipped",
+              decisionReason: "consent_missing",
+              processedAt: "2026-06-14T20:00:01.000Z",
+              duration_ms: 0
+            }
+          ]
+        };
+        await getStore().saveRun(seededRun);
+
+        const anonymousRuns = await request(baseUrl, "/admin/api/runs", { method: "GET" });
+        assert.equal(anonymousRuns.status, 401);
+        assert.equal(anonymousRuns.body.error, "admin_auth_required");
+
+        const runs = await request(baseUrl, "/admin/api/runs", { method: "GET", headers: { Authorization: "Bearer viewer" } });
+        assert.equal(runs.status, 200);
+        assert.equal((runs.body as unknown[]).length, 1);
+        assert.equal(JSON.stringify(runs.body).includes("user1@example.com"), false);
+        assert.equal(JSON.stringify(runs.body).includes("Secret body"), false);
+
+        const runId = String(((runs.body as Json[])[0]).id);
+        const detail = await request(baseUrl, `/admin/api/runs/${runId}`, { method: "GET", headers: { Authorization: "Bearer viewer" } });
+        assert.equal(detail.status, 200);
+        assert.equal(JSON.stringify(detail.body).includes("user1@example.com"), false);
+        assert.equal(JSON.stringify(detail.body).includes("lead1@example.com"), false);
+        assert.equal(JSON.stringify(detail.body).includes("Secret body"), false);
+        assert.match(JSON.stringify(detail.body), /"recipientAddress":"\[redacted\]"/);
+
+        const outcomes = await request(baseUrl, `/admin/api/outcomes?correlationId=${encodeURIComponent(correlationId)}`, { method: "GET", headers: { Authorization: "Bearer viewer" } });
+        assert.equal(outcomes.status, 200);
+        assert.equal((outcomes.body as unknown[]).length, 1);
+        assert.equal(((outcomes.body as Json[])[0]).correlationId, correlationId);
+        assert.equal(JSON.stringify(outcomes.body).includes("user1@example.com"), false);
+
+        const preference = await request(baseUrl, "/admin/api/preferences/auth/auth-1", { method: "GET", headers: { Authorization: "Bearer viewer" } });
+        assert.equal(preference.status, 200);
+        assert.equal(preference.body.status, "external_source_owned");
+        assert.equal(preference.body.readOwner, "auth-microservice");
+
+        const viewerUnsubscribe = await request(baseUrl, "/admin/api/preferences/unsubscribe", {
+          method: "POST",
+          headers: { Authorization: "Bearer viewer" },
+          body: JSON.stringify({ owner: "auth", recipientId: "auth-1", channel: "email" })
+        });
+        assert.equal(viewerUnsubscribe.status, 403);
+        assert.equal(viewerUnsubscribe.body.error, "admin_forbidden");
+
+        const operatorUnsubscribe = await request(baseUrl, "/admin/api/preferences/unsubscribe", {
+          method: "POST",
+          headers: { Authorization: "Bearer operator" },
+          body: JSON.stringify({ owner: "auth", recipientId: "auth-1", channel: "email" })
+        });
+        assert.equal(operatorUnsubscribe.status, 202);
+        assert.equal(operatorUnsubscribe.body.sourceWriteStatus, "source_write_pending");
+        assert.equal(operatorUnsubscribe.body.writeOwner, "auth-microservice");
+
+        const channels = await request(baseUrl, "/admin/api/channels", { method: "GET", headers: { Authorization: "Bearer viewer" } });
+        assert.equal(channels.status, 200);
+        assert.equal(channels.body.owner, "notifications-microservice");
+        assert.equal((channels.body.channels as Json[])[0].channelKey, "statex-email");
+        const channelsJson = JSON.stringify(channels.body);
+        assert.equal(channelsJson.includes("provider-secret-token"), false);
+        assert.equal(channelsJson.includes("provider-password"), false);
+        assert.equal(channelsJson.includes("sender@example.com"), false);
+        assert.equal(channelsJson.includes("Provider body must not appear"), false);
+        assert.equal(channelsJson.includes("notification-secret"), false);
+        assert.equal(notificationReceived[0].authorization, "Bearer notification-secret");
+
+        const audit = await request(baseUrl, `/admin/api/audit?correlationId=${encodeURIComponent(correlationId)}`, { method: "GET", headers: { Authorization: "Bearer viewer" } });
+        assert.equal(audit.status, 200);
+        assert.equal((audit.body as unknown[]).length, 1);
+        const auditJson = JSON.stringify(audit.body);
+        assert.equal(auditJson.includes(correlationId), true);
+        assert.equal(auditJson.includes("user1@example.com"), false);
+        assert.equal(auditJson.includes("Secret body"), false);
+        assert.equal(auditJson.includes("notification-secret"), false);
+
+        const runsPage = await requestText(baseUrl, "/admin/runs", { headers: { Authorization: "Bearer viewer" } });
+        assert.equal(runsPage.status, 200);
+        assert.match(runsPage.body, /Run Operations/);
+        assert.match(runsPage.body, /Consent lookup/);
+        assert.match(runsPage.body, /Channel registry/);
+        assert.doesNotMatch(runsPage.body, /MARKETING_API_TOKEN|SERVICE_API_TOKEN|x-service-token|\/campaigns\/[^" ]+\/execute|\/scheduler\/run-due/);
+
+        const auditPage = await requestText(baseUrl, "/admin/audit", { headers: { Authorization: "Bearer viewer" } });
+        assert.equal(auditPage.status, 200);
+        assert.match(auditPage.body, /Audit Evidence/);
+        assert.match(auditPage.body, /Correlation search/);
+        assert.doesNotMatch(auditPage.body, /MARKETING_API_TOKEN|SERVICE_API_TOKEN|x-service-token|\/campaigns\/[^" ]+\/execute|\/scheduler\/run-due/);
+      });
     });
   });
 });
