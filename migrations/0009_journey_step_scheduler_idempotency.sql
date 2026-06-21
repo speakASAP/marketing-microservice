@@ -10,7 +10,6 @@ create table if not exists marketing_journey_step_claims (
   run_id text references marketing_campaign_runs(id) on delete set null,
   error text,
   decision_evidence jsonb not null default '{}'::jsonb,
-  decision_evidence jsonb not null default '{}'::jsonb,
   claimed_at timestamptz not null default now(),
   completed_at timestamptz,
   created_at timestamptz not null default now(),
