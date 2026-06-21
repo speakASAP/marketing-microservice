@@ -4,6 +4,7 @@ import { logDecision } from "./logger";
 import { Campaign, Contact, DeliveryResult, ExecutionRun } from "./types";
 import { resolveSegmentRecipients, SourceFailure } from "./sources";
 import { registryScopeFrom, validateRegistryScope } from "./registry";
+import { evaluateProductionGovernance } from "./production-governance";
 
 const PLATFORM_MAX_CHUNK_SIZE = 30;
 const DEFAULT_MAX_SEND_PER_RUN = 300;
@@ -416,6 +417,32 @@ export async function executeCampaign(
     results: recipientResolution.failures.map((failure) => sourceFailureResult(campaign, failure))
   };
   await store.saveRun(run);
+
+  const productionGovernance = evaluateProductionGovernance(campaign, recipients);
+  if (!dryRun && productionGovernance.evidence.enforced && recipientResolution.failures.length > 0) {
+    run.results.push(guardrailResult(campaign, "production_governance_source_failure"));
+    run.completedAt = nowIso();
+    run.status = "failed";
+    await store.saveRun(run);
+    logDecision("production_governance_blocked", {
+      campaignId,
+      runId: run.id,
+      reason: "production_governance_source_failure",
+      sourceFailures: recipientResolution.failures.map((failure) => failure.source),
+      duration_ms: 0
+    });
+    return run;
+  }
+
+  logDecision("production_governance_evaluated", { campaignId, runId: run.id, enforced: productionGovernance.evidence.enforced, riskClass: productionGovernance.evidence.riskClass, riskReasons: productionGovernance.evidence.riskReasons, policyRef: productionGovernance.evidence.policyRef, duration_ms: 0 });
+  if (!dryRun && !productionGovernance.ok) {
+    run.results.push(guardrailResult(campaign, productionGovernance.reason));
+    run.completedAt = nowIso();
+    run.status = "failed";
+    await store.saveRun(run);
+    logDecision("production_governance_blocked", { campaignId, runId: run.id, reason: productionGovernance.reason, riskClass: productionGovernance.evidence.riskClass, duration_ms: 0 });
+    return run;
+  }
 
   logDecision(dryRun ? "campaign_dry_run_started" : "campaign_execution_started", {
     campaignId,

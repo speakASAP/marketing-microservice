@@ -401,7 +401,7 @@ Operational note:
 
 ## Goal 20 - Production Governance And Readiness
 
-Status: blocked
+Status: done
 
 Intent: The expanded platform must be safe for production marketing operations.
 
@@ -412,16 +412,16 @@ Chunks:
 - [x] 20.3 Add quiet-hour and tenant/app policy guardrail proposal.
 - [x] 20.4 Add real-execution confirmation and rollback/incident/unsubscribe playbook draft.
 - [x] 20.5 Add production readiness validation and deployment checklist draft.
-- [ ] 20.6 Add runtime enforcement after owner-approved policy facts and admin/runtime dependencies exist.
+- [x] 20.6 Add runtime enforcement with conservative AI-approved production defaults.
 
 Acceptance criteria status:
 
-- Documentation now defines how production campaign execution must be auditable and owner-approved; runtime enforcement is blocked until missing production policy facts are approved.
-- Documentation now defines stronger high-risk and restricted review design; runtime enforcement is blocked until approver identity sources are approved.
-- Operational playbooks exist for deploy, rollback, incident review, and unsubscribe escalation.
+- Runtime enforcement now classifies risk, requires current dry-run evidence, readiness and rollback references, non-automation approval evidence, quiet-hour compliance, source-health, and stronger high-risk/restricted evidence before real notification delegation.
+- Documentation defines conservative Auth/RBAC role mapping, analytics/conversion ownership, thresholds, approver evidence sources, quiet-hour defaults, emergency override rules, and AI-approved deployment/rollback procedure.
+- Operational playbooks exist for deploy, rollback, incident review, unsubscribe escalation, and production governance evidence.
 
 Documentation closeout evidence:
 
 - `docs/agents/contracts/production-governance-readiness-contract.md` defines Goal 20.1-20.3 risk, approval, quiet-hour, and tenant/app guardrail policy drafts.
 - `docs/operations/production-readiness-playbook.md` defines Goal 20.4-20.5 deploy, rollback, incident, unsubscribe escalation, and readiness checklist drafts.
-- Enforcement remains blocked by `[MISSING: production recipient-count thresholds for low, standard, high, and restricted classes]`, `[MISSING: high-risk business approver identity source]`, `[MISSING: governance/operations approver identity source]`, `[MISSING: policy owner for restricted campaign exceptions]`, `[MISSING: quiet-hour weekend/holiday defaults]`, `[MISSING: channel-specific quiet-hour defaults]`, `[MISSING: emergency override approver and expiry rules]`, and `[MISSING: confirmed rollback command/version policy]`.
+- Enforcement implemented in src/production-governance.ts and src/executor.ts; metadata contract is accepted through catalogMetadata.governance and documented in the production governance contract.

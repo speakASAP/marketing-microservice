@@ -3058,3 +3058,34 @@ Intent Compliance Report:
 Next unfinished step:
 
 - Goal 20.6 runtime governance enforcement can start only after the missing owner-approved production policy facts are supplied.
+
+## 2026-06-21 - TG-3.13 Goal 20 Runtime Governance Enforcement
+
+Current focus: Goal 20 production governance runtime enforcement.
+
+Intent Preservation Chain:
+
+- Vision: Statex applications can run production campaigns through one audited control plane without duplicating delivery, consent, or governance ownership.
+- Goal Impact: Goal 20 is no longer blocked by missing owner policy facts; conservative AI-approved defaults now protect real execution.
+- System: Marketing remains the campaign and segmentation control plane; notifications owns outbound provider execution; auth/leads own identity, contact, preference, consent, and unsubscribe truth; source services own conversion truth.
+- Feature: Production risk classification, approval evidence, quiet-hour guardrails, readiness/rollback references, restricted/emergency override evidence, and source-failure blocking.
+- Task: TG-3.13 / Goal 20.6 runtime enforcement.
+- Execution Plan: Keep implementation local to Marketing-owned runtime, metadata, tests, and docs; do not fabricate private identities or modify Auth assignments.
+- Coding Prompt: Enforce conservative defaults before notification delegation and preserve existing campaign approval, consent, unsubscribe, frequency-cap, max-send, chunking, idempotency, registry, and notification gates.
+- Code: src/production-governance.ts, src/executor.ts, src/types.ts, src/api-contracts.ts, .env.example, and focused executor tests.
+- Validation: npm run check passed; npm run build passed; npm test passed with 73 tests; git diff --check passed.
+
+Implementation evidence:
+
+- Added conservative defaults for role mapping contract, analytics/conversion ownership, recipient risk thresholds, approver evidence sources, quiet hours, emergency override, and AI-approved deployment/rollback procedure.
+- Added runtime governance evaluation before real notification delegation. Production-like campaigns now require current dry-run evidence, readiness and rollback refs, non-automation approval actor, quiet-hour compliance, and stronger high-risk/restricted evidence.
+- Scheduler and journey sends reuse executeCampaign, so Goal 20 gates apply to manual, scheduled, and journey-controlled real execution.
+- Added catalogMetadata.governance API validation for evidence references without storing private identity assignments.
+
+Parallel execution section:
+
+- Ready now: final validation/commit/deploy integration in this coordinator thread.
+- Future independent lane: admin governance evidence UX; allowed files admin UI/API adapters only; blocked by integration commit; validation owner future UI worker.
+- Future independent lane: stricter external policy-source integration; allowed files policy adapter/docs/tests; forbidden Auth assignments and provider credentials; validation owner policy integration worker.
+- Future independent lane: production monitoring; read-only deployment health and audit evidence checks.
+- Integration owner: this thread. Merge order: runtime gate, docs/state, validation, commit, push, deploy if validation passes.

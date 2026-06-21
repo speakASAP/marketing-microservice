@@ -44,6 +44,7 @@ export type CampaignStatus =
   | "failed"
   | "archived";
 export type CampaignApprovalStatus = "pending" | "approved" | "revoked";
+export type ProductionRiskClass = "low" | "standard" | "high" | "restricted";
 export type JourneyStatus = "draft" | "active" | "paused" | "archived";
 export type JourneyTriggerType = "manual" | "segment_entry" | "app_signal";
 export type JourneyExitRuleType = "segment_match" | "app_signal" | "campaign_engagement" | "manual";
@@ -72,6 +73,26 @@ export interface Segment extends RegistryScope {
   estimatedCount?: number | null;
 }
 
+export interface ProductionGovernanceMetadata {
+  riskClass?: ProductionRiskClass | null;
+  riskReasons?: string[];
+  riskPolicyRef?: string | null;
+  dryRunRunId?: string | null;
+  dryRunEvidenceRef?: string | null;
+  dryRunReviewedAt?: string | null;
+  dryRunRecipientCount?: number | null;
+  readinessChecklistRef?: string | null;
+  rollbackPlanRef?: string | null;
+  businessApprover?: string | null;
+  governanceApprover?: string | null;
+  restrictedExceptionApprovedBy?: string | null;
+  restrictedExceptionReason?: string | null;
+  restrictedExceptionExpiresAt?: string | null;
+  emergencyOverrideApprovedBy?: string | null;
+  emergencyOverrideReason?: string | null;
+  emergencyOverrideExpiresAt?: string | null;
+}
+
 export interface CampaignCatalogMetadata {
   campaignFamily?: CampaignFamily | null;
   lifecycleStage?: CampaignLifecycleStage | null;
@@ -80,6 +101,7 @@ export interface CampaignCatalogMetadata {
   catalogCategory?: string | null;
   catalogTags?: string[];
   sourceBlueprintId?: string | null;
+  governance?: ProductionGovernanceMetadata | null;
 }
 
 export interface CampaignBlueprint {

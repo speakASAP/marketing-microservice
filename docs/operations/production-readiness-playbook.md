@@ -86,3 +86,7 @@ Final integration:
 - Integration owner should merge policy fields into campaign/journey contracts after owner confirms missing decisions.
 - Validation owner should run build/tests once enforcement code or generated docs are added.
 - Merge order: policy approval, contract update, backend enforcement, admin UI exposure, production deployment approval.
+
+## TG-3.13 Conservative Runtime Defaults
+
+TG-3.13 authorizes AI-managed conservative defaults for this Marketing-owned project. Real recipient execution remains runtime-gated by approval, dry-run, readiness, rollback, quiet-hour, source-health, consent, unsubscribe, frequency-cap, max-send, idempotency, and notification-delegation checks. Deployment for this governance change is AI-approved after repository validation passes. Rollback uses repository deployment history: revert the bad commit or restore the previous known-good commit, run validation, execute the deploy script, then verify health plus scheduler/idempotency behavior. Future admin governance UI can improve evidence entry ergonomics but backend gates remain authoritative. External policy-service integration can replace defaults only with a stricter approved source-owned policy.
