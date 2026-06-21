@@ -4,14 +4,15 @@
 
 ## Backlog
 <!-- Human-managed -->
-- TG-3.13 Goal 20 production governance enforcement (blocked: missing owner-approved policy decisions)
+None - TG-3.13 Goal 20 production governance enforcement is complete.
 
 ## Active
 <!-- Coordinator-maintained -->
-None - Goal 20 runtime enforcement remains blocked by missing owner-approved production policy decisions.
+None.
 
 ## Completed
 <!-- Coordinator-append-only -->
+- 2026-06-21 tg-3.13-goal-20-production-governance-runtime-enforcement
 - 2026-06-13 tg-3.7-goal-14-landing-auth-entry-points
 - 2026-06-13 tg-3.8-goal-15-admin-auth-rbac-shell
 - 2026-06-13 tg-3.6-goal-13-lifecycle-journey-engine

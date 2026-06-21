@@ -2225,3 +2225,87 @@ test("fails crm account signal source safely with audit evidence before notifica
     resetInMemoryState();
   }
 });
+
+
+test("blocks production execution without current governance evidence", async () => {
+  resetInMemoryState();
+  const originalPost = axios.post;
+  const originalNow = process.env.MARKETING_PRODUCTION_GOVERNANCE_NOW;
+  process.env.MARKETING_PRODUCTION_GOVERNANCE_NOW = "2026-06-17T10:00:00.000Z";
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+  let postCalls = 0;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set("seg-1", makeSegment({ environment: "production" }));
+    campaigns.set("camp-1", makeCampaign({ environment: "production", updatedAt: "2026-06-17T09:00:00.000Z" }));
+    const run = await executeCampaign("camp-1", "idem-governance-missing");
+    assert.equal(run.status, "failed");
+    assert.equal(run.totalSent, 0);
+    assert.equal(postCalls, 0);
+    assert.ok(run.results.some((result) => result.decisionReason === "production_governance_dry_run_evidence_missing"));
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    if (originalNow === undefined) delete process.env.MARKETING_PRODUCTION_GOVERNANCE_NOW;
+    else process.env.MARKETING_PRODUCTION_GOVERNANCE_NOW = originalNow;
+    resetInMemoryState();
+  }
+});
+
+test("allows low-risk production execution with dry-run readiness and rollback evidence", async () => {
+  resetInMemoryState();
+  const originalPost = axios.post;
+  const originalNow = process.env.MARKETING_PRODUCTION_GOVERNANCE_NOW;
+  process.env.MARKETING_PRODUCTION_GOVERNANCE_NOW = "2026-06-17T10:00:00.000Z";
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+  let postCalls = 0;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set("seg-1", makeSegment({ environment: "production" }));
+    campaigns.set("camp-1", makeCampaign({ environment: "production", updatedAt: "2026-06-17T09:00:00.000Z", catalogMetadata: { governance: { dryRunRunId: "dry-run-prod-1", dryRunReviewedAt: "2026-06-17T09:30:00.000Z", dryRunRecipientCount: 2, readinessChecklistRef: "docs/operations/production-readiness-playbook.md#pre-execution-checklist", rollbackPlanRef: "docs/operations/production-readiness-playbook.md#rollback-checklist" } } }));
+    const run = await executeCampaign("camp-1", "idem-governance-ready");
+    assert.equal(run.status, "completed");
+    assert.equal(run.totalSent, 1);
+    assert.equal(postCalls, 1);
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    if (originalNow === undefined) delete process.env.MARKETING_PRODUCTION_GOVERNANCE_NOW;
+    else process.env.MARKETING_PRODUCTION_GOVERNANCE_NOW = originalNow;
+    resetInMemoryState();
+  }
+});
+
+test("blocks high-risk production execution without two-person approver evidence", async () => {
+  resetInMemoryState();
+  const originalPost = axios.post;
+  const originalNow = process.env.MARKETING_PRODUCTION_GOVERNANCE_NOW;
+  process.env.MARKETING_PRODUCTION_GOVERNANCE_NOW = "2026-06-17T10:00:00.000Z";
+  process.env.NOTIFICATION_SERVICE_URL = "http://notifications-microservice:3368";
+  let postCalls = 0;
+  (axios.post as unknown as typeof originalPost) = (async () => {
+    postCalls += 1;
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    segments.set("seg-1", makeSegment({ environment: "production" }));
+    campaigns.set("camp-1", makeCampaign({ environment: "production", updatedAt: "2026-06-17T09:00:00.000Z", catalogMetadata: { lifecycleStage: "winback", governance: { dryRunRunId: "dry-run-prod-high-1", dryRunReviewedAt: "2026-06-17T09:30:00.000Z", readinessChecklistRef: "docs/operations/production-readiness-playbook.md#pre-execution-checklist", rollbackPlanRef: "docs/operations/production-readiness-playbook.md#rollback-checklist" } } }));
+    const run = await executeCampaign("camp-1", "idem-governance-high");
+    assert.equal(run.status, "failed");
+    assert.equal(run.totalSent, 0);
+    assert.equal(postCalls, 0);
+    assert.ok(run.results.some((result) => result.decisionReason === "production_governance_high_risk_approvers_missing"));
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    if (originalNow === undefined) delete process.env.MARKETING_PRODUCTION_GOVERNANCE_NOW;
+    else process.env.MARKETING_PRODUCTION_GOVERNANCE_NOW = originalNow;
+    resetInMemoryState();
+  }
+});

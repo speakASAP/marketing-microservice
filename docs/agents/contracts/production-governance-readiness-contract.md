@@ -16,6 +16,22 @@ Marketing-microservice owns campaign risk classification, approval evidence, exe
 - Code: [MISSING: enforcement implementation is intentionally blocked pending policy confirmation and admin auth foundations].
 - Validation: Documentation review against `GOALS.md`, `PLAN.md`, and existing campaign, consent, channel, and integration contracts.
 
+
+## Conservative AI-Approved Production Defaults
+
+Owner authorization for TG-3.13 replaces the prior missing-policy blocker. Marketing now uses conservative production-safe defaults until a stricter external policy source is configured. These defaults do not fabricate private user identities and do not assign real users in Auth.
+
+- Auth role mapping contract: marketing_viewer reads admin/session and governance evidence; marketing_operator can request dry-runs, unsubscribe intake, and operational checks; marketing_admin can create/update/approve campaigns and provide low/standard production evidence; marketing_owner is reserved for restricted exceptions, emergency override approval, and production policy changes. Auth remains responsible for real user assignment.
+- Recipient-count thresholds: low 0-50, standard 51-250, high 251-1000, restricted 1001+, unless stricter environment variables are configured. CAMPAIGN_MAX_SEND_PER_RUN and notification chunk limits remain separate hard gates.
+- Analytics/conversion ownership: Marketing owns campaign/run/outcome facts and externally supplied attribution joins only; conversion truth remains with the source analytics, CRM/account, order, or application service that emits the attribution fact.
+- High-risk approver source: evidence must use Auth-backed admin actors or source-owned approver references supplied in campaign governance metadata. Business and governance approvers must be distinct non-automation actors.
+- Restricted approver source: restricted exceptions require a marketing_owner-level owner reference plus distinct governance approver evidence, expiry, reason, and post-run review requirement.
+- Quiet-hour defaults: local tenant/app timezone, 21:00-08:00, weekends blocked for marketing and retention purposes. If timezone is missing or invalid, production execution fails safely.
+- Emergency override defaults: non-automation approver, reason, and expiry no more than four hours in the future. It can bypass quiet-hour/weekend blocks only; it does not bypass consent, unsubscribe, approval, max-send, source-failure, or restricted-exception gates.
+- Deployment/rollback policy: AI may deploy this Marketing-owned change after build/test/diff validation. Rollback uses repository deployment history: revert the bad commit or restore the previous known-good commit, run validation, execute ./scripts/deploy.sh, then verify /health and scheduler/idempotency behavior.
+
+Runtime metadata lives in campaign.catalogMetadata.governance and stores references/evidence only. Marketing must not store private identity assignments, provider credentials, source-owned contact truth, or source-owned conversion truth.
+
 ## Risk Classification
 
 Risk classification is Marketing-owned execution governance metadata. It must never replace consent checks, unsubscribe enforcement, frequency caps, throttling, idempotency, max-send limits, max-30 chunking, registry validation, or notification delegation.
@@ -27,14 +43,7 @@ Risk classification is Marketing-owned execution governance metadata. It must ne
 | `high` | Campaign with elevated legal, reputational, financial, or recipient-experience risk. | Winback at scale, cross-sell/upsell, sensitive lifecycle stage, unusual channel mix, broad multi-app audience. | Two-person approval: business owner and governance/operations approver. | Both approvers, dry-run export/checksum, recipient count bands, quiet-hour policy result, rollback plan link. |
 | `restricted` | Campaign that must not execute until a human owner explicitly authorizes an exception. | Legal/compliance-sensitive content, unclear consent lineage, new tenant/app policy, emergency broadcast. | Explicit owner exception plus governance/operations approval. | Exception reason, expiry, approver identities, incident channel, post-run review requirement. |
 
-Required future fields, subject to contract approval: `riskClass`, `riskReasons[]`, `riskClassifiedBy`, `riskClassifiedAt`, `riskPolicyRef`, `highRiskApprovalStatus`, `highRiskApprovers[]`, and `realExecutionConfirmedBy`.
-
-Blocked decisions before code enforcement:
-
-- [MISSING: production recipient-count thresholds for low, standard, high, and restricted classes]
-- [MISSING: high-risk business approver identity source]
-- [MISSING: governance/operations approver identity source]
-- [MISSING: policy owner for restricted campaign exceptions]
+Runtime fields accepted in campaign.catalogMetadata.governance: riskClass, riskReasons[], riskPolicyRef, dryRunRunId, dryRunEvidenceRef, dryRunReviewedAt, dryRunRecipientCount, readinessChecklistRef, rollbackPlanRef, businessApprover, governanceApprover, restrictedExceptionApprovedBy, restrictedExceptionReason, restrictedExceptionExpiresAt, emergencyOverrideApprovedBy, emergencyOverrideReason, and emergencyOverrideExpiresAt.
 
 ## Approval Workflow Design
 
@@ -74,12 +83,12 @@ Proposed guardrails:
 - Policy outages fail safely before notification delegation for real execution.
 - Dry-run should report policy skips and blocked execution windows without sending.
 
-Default quiet-hour proposal pending owner confirmation:
+Default quiet-hour policy now enforced for governed production execution:
 
 - Local quiet hours: 21:00-08:00.
-- Weekend/holiday restrictions: [MISSING: tenant/app defaults].
-- Channel-specific quiet hours: [MISSING: email/telegram/whatsapp defaults].
-- Emergency override policy: [MISSING: approver and expiry rules].
+- Weekend restrictions: block Saturday and Sunday for marketing and retention purposes.
+- Channel-specific quiet hours: email, Telegram, and WhatsApp share the same default unless a stricter source-owned policy is configured.
+- Emergency override policy: non-automation approver, reason, and expiry within four hours; override applies only to quiet-hour/weekend blocks.
 
 ## Production Readiness Checklist
 
@@ -96,6 +105,6 @@ A campaign or journey-controlled campaign is production-ready only when all item
 - Rollback and incident owner are known before execution.
 - Unsubscribe escalation path is ready and honors the 24-hour operational requirement.
 
-## Future Enforcement Boundaries
+## Runtime Enforcement Boundaries
 
-Enforcement code must wait until journey runtime and admin auth/RBAC foundations are stable. Future code must not edit notification provider behavior, auth/leads source-of-truth models, or contact ownership. Admin UI work may display and request governance evidence only after Goal 15 protects browser admin routes server-side.
+Goal 20.6 runtime enforcement is implemented in Marketing-owned execution gates. Enforcement code does not edit notification provider behavior, auth/leads source-of-truth models, contact ownership, source-owned conversion truth, or Auth user assignment. Admin/service APIs may store governance evidence references in campaign catalog metadata; Auth remains responsible for real production user grants.

@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { Campaign, CampaignFamily, CampaignLifecycleStage, CampaignStatus, Channel, ContactOwner, Journey, JourneyExitRuleType, JourneyStatus, JourneySuppressionRuleType, JourneyTriggerType, Purpose, RegistryEnvironment, Segment, SegmentSource } from "./types";
+import { Campaign, CampaignFamily, CampaignLifecycleStage, CampaignStatus, Channel, ContactOwner, Journey, JourneyExitRuleType, JourneyStatus, JourneySuppressionRuleType, JourneyTriggerType, Purpose, ProductionRiskClass, RegistryEnvironment, Segment, SegmentSource } from "./types";
 
 const CHANNELS: Channel[] = ["email", "telegram", "whatsapp"];
 const PURPOSES: Purpose[] = ["marketing", "retention", "transactional-not-marketing"];
@@ -25,6 +25,7 @@ const CAMPAIGN_LIFECYCLE_STAGES: CampaignLifecycleStage[] = [
   "abandoned_intent",
   "operational_notice"
 ];
+const PRODUCTION_RISK_CLASSES: ProductionRiskClass[] = ["low", "standard", "high", "restricted"];
 const CAMPAIGN_FAMILIES: CampaignFamily[] = [
   "acquisition",
   "activation",
@@ -212,7 +213,45 @@ function validateCatalogMetadata(value: unknown, fields: Record<string, string>)
     }
   }
 
+  if (value.governance !== undefined) {
+    const governance = validateProductionGovernanceMetadata(value.governance, fields);
+    if (governance !== undefined) metadata.governance = governance;
+  }
+
   return metadata;
+}
+
+function validateProductionGovernanceMetadata(value: unknown, fields: Record<string, string>): NonNullable<Campaign["catalogMetadata"]>["governance"] | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (!isRecord(value)) {
+    fields["catalogMetadata.governance"] = "must_be_object_or_null";
+    return undefined;
+  }
+
+  const governance: NonNullable<NonNullable<Campaign["catalogMetadata"]>["governance"]> = {};
+  if (value.riskClass !== undefined) {
+    if (value.riskClass !== null && !PRODUCTION_RISK_CLASSES.includes(value.riskClass as ProductionRiskClass)) fields["catalogMetadata.governance.riskClass"] = `unsupported_value:${String(value.riskClass)}`;
+    else governance.riskClass = value.riskClass as ProductionRiskClass | null;
+  }
+  if (value.riskReasons !== undefined) {
+    if (!Array.isArray(value.riskReasons) || value.riskReasons.some((item) => !isNonEmptyString(item))) fields["catalogMetadata.governance.riskReasons"] = "must_be_string_array";
+    else governance.riskReasons = value.riskReasons.map((item) => item.trim());
+  }
+  for (const key of ["riskPolicyRef", "dryRunRunId", "dryRunEvidenceRef", "readinessChecklistRef", "rollbackPlanRef", "businessApprover", "governanceApprover", "restrictedExceptionApprovedBy", "restrictedExceptionReason", "emergencyOverrideApprovedBy", "emergencyOverrideReason"] as const) {
+    const normalized = readOptionalStringField(value, key, `catalogMetadata.governance.${key}`, fields);
+    if (normalized !== undefined) governance[key] = normalized;
+  }
+  for (const key of ["dryRunReviewedAt", "restrictedExceptionExpiresAt", "emergencyOverrideExpiresAt"] as const) {
+    const normalized = readOptionalStringField(value, key, `catalogMetadata.governance.${key}`, fields);
+    if (normalized !== undefined) {
+      if (normalized !== null && !isValidIsoDate(normalized)) fields[`catalogMetadata.governance.${key}`] = "must_be_iso_8601_utc_string_or_null";
+      else governance[key] = normalized;
+    }
+  }
+  const dryRunRecipientCount = validateOptionalNonNegativeInteger(value.dryRunRecipientCount, "catalogMetadata.governance.dryRunRecipientCount", fields);
+  if (dryRunRecipientCount !== undefined) governance.dryRunRecipientCount = dryRunRecipientCount;
+  return governance;
 }
 
 export function validateSegmentBody(body: unknown, partial = false): ValidationResult<Partial<Segment>> {
