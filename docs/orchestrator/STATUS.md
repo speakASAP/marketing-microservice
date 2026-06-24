@@ -3089,3 +3089,39 @@ Parallel execution section:
 - Future independent lane: stricter external policy-source integration; allowed files policy adapter/docs/tests; forbidden Auth assignments and provider credentials; validation owner policy integration worker.
 - Future independent lane: production monitoring; read-only deployment health and audit evidence checks.
 - Integration owner: this thread. Merge order: runtime gate, docs/state, validation, commit, push, deploy if validation passes.
+
+## 2026-06-24 - Hosted Auth Redirect/Callback Verification
+
+Current focus: Marketing hosted Auth redirect/callback verification and stale blocker reconciliation.
+
+Intent Preservation Chain:
+
+- Vision: Alfares applications use Auth-hosted login and registration instead of app-local credential collection.
+- Goal Impact: Marketing admin entry remains delegated to Auth while Marketing preserves campaign execution, recipient/contact, notification provider, and service-token ownership boundaries.
+- System: Auth owns hosted `/login`, `/register`, and `/auth/validate`; Marketing owns `/auth/login`, `/auth/register`, `/auth/callback`, admin session handoff, and protected Marketing APIs.
+- Feature: Hosted Auth redirect/callback verification for Marketing.
+- Task: Verify current Marketing auth routes, reconcile stale docs that still say login/register is blocked, and patch only small safe standards gaps.
+- Execution Plan: Remote-only static/source validation; no secrets, `.env` values, Kubernetes Secret data, live DB data, deploys, campaign execution, recipient/contact exports, notification provider config, service-token changes, DB/migration files, or deploy/k8s files.
+- Coding Prompt: Preserve Auth as browser identity owner and `/auth/validate` authority; keep service-token protected write APIs separate; route login/register through hosted Auth with `return_url`, `client_id`, and `state`; callback must fail closed on missing/mismatched state.
+- Code: `public/auth-callback.html`, `test/api-contracts.test.ts`, and `docs/orchestrator/2026-06-24-marketing-hosted-auth-verification-plan.md`.
+- Validation: `npm run build` passed; `npm test` passed with 73 tests; `npx tsx --test --test-concurrency=1 test/api-contracts.test.ts` passed with 24 tests; hosted Auth static route scan passed; `git diff --check` passed after formatting cleanup.
+
+Current auth surface:
+
+- `src/main.ts` implements `GET /auth/login` and `GET /auth/register` redirects to hosted Auth with `return_url=https://marketing.alfares.cz/auth/callback`, `client_id=marketing-microservice`, and generated `state`.
+- `src/main.ts` serves `GET /auth/callback` from `public/auth-callback.html` with the configured admin access-token cookie name.
+- `public/auth-callback.html` parses URL fragment tokens, now requires an existing `marketing_auth_state` cookie and matching returned `state`, stores only the Auth access token on the admin cookie path, clears the temporary state cookie, and redirects to `/admin`.
+- `src/admin-auth.ts` continues server-side browser admin validation through Auth `POST /auth/validate` and role mapping.
+- Service-token protected write APIs were not changed.
+
+Stale-doc reconciliation:
+
+- Historical 2026-06-13 `STATUS.md` entries that say Goal 14.3/14.4 were blocked by missing auth URL, return URL, or admin route contracts are superseded by later Goal 14/15 completion evidence and this verification.
+- `docs/orchestrator/GOALS.md` currently marks Goal 14 chunks 14.1-14.5 complete, including register/login/admin buttons and Auth return URLs.
+- Current source and tests confirm hosted Auth login/register redirect and callback behavior; do not treat older blocked lines as current state without new regression evidence.
+
+Blockers and unknowns:
+
+- `[UNKNOWN: current deployed version versus source]`; no deploy or live runtime parity check was permitted.
+- `[MISSING: live admin callback/session smoke with safe token]`; no secrets, token values, or live DB/runtime data were read.
+- `[MISSING: production Auth role grant evidence]`; Auth role assignments were outside this verification scope.
