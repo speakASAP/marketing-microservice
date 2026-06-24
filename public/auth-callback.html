@@ -47,8 +47,8 @@
           fail("Auth did not return an access token. Start again from Marketing.");
           return;
         }
-        if (expectedState && returnedState !== expectedState) {
-          fail("Auth state did not match. Start again from Marketing.");
+        if (!expectedState || returnedState !== expectedState) {
+          fail("Auth state was missing or did not match. Start again from Marketing.");
           return;
         }
 
