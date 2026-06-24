@@ -38,7 +38,13 @@
           status.textContent = message;
         }
 
-        var fragment = new URLSearchParams(window.location.hash ? window.location.hash.slice(1) : "");
+        var rawFragment = window.location.hash ? window.location.hash.slice(1) : "";
+        var fragment = new URLSearchParams(rawFragment);
+
+        if (window.location.hash && window.history && typeof window.history.replaceState === "function") {
+          window.history.replaceState(null, document.title, window.location.pathname + window.location.search);
+        }
+
         var accessToken = fragment.get("access_token") || "";
         var returnedState = fragment.get("state") || "";
         var expectedState = readCookie(stateCookieName);

@@ -219,7 +219,10 @@ test("public auth entry points delegate login and registration to auth with retu
     assert.match(callback.body, /auth_access_token/);
     assert.match(callback.body, /marketing_auth_state/);
     assert.match(callback.body, /!expectedState \|\| returnedState !== expectedState/);
+    assert.match(callback.body, /window\.history\.replaceState\(null, document\.title, window\.location\.pathname \+ window\.location\.search\)/);
     assert.match(callback.body, /window\.location\.replace\("\/admin"\)/);
+    assert.ok(callback.body.indexOf("window.history.replaceState") < callback.body.indexOf("document.cookie = cookieName"));
+    assert.ok(callback.body.indexOf("window.history.replaceState") < callback.body.indexOf('window.location.replace("/admin")'));
     assert.doesNotMatch(callback.body, /MARKETING_API_TOKEN|SERVICE_API_TOKEN|x-service-token|refresh_token\)/);
   });
 });
