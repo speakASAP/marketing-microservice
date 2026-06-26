@@ -342,7 +342,13 @@ function authRequestHeaders(): Record<string, string> | undefined {
 
 function leadsRequestHeaders(): Record<string, string> | undefined {
   const token = process.env.LEADS_SERVICE_TOKEN;
-  return token ? { Authorization: `Bearer ${token}` } : undefined;
+  return token
+    ? {
+        Authorization: `Bearer ${token}`,
+        "x-internal-service-token": token,
+        "x-service-name": "marketing-microservice"
+      }
+    : undefined;
 }
 
 function ordersRequestHeaders(): Record<string, string> | undefined {
