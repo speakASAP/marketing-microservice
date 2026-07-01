@@ -2,6 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { Pool } from "pg";
 import { buildJourneyStepDecisionEvidence } from "./journey-audit";
+import {
+  APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY,
+  ORDER_CAMPAIGN_ATTRIBUTION_BLOCKER,
+  ORDER_EVENTS_TRANSPORT_BLOCKER,
+  ORDERS_EVENTS_EXCHANGE,
+  ORDERS_ORDER_CREATED_V1,
+  OrdersLifecycleSignal,
+  OrdersLifecycleStats
+} from "./order-lifecycle-events";
 import { Campaign, CampaignApprovalStatus, DeliveryResult, ExecutionRun, Journey, JourneyStepClaim, Segment } from "./types";
 
 export const segments = new Map<string, Segment>();
@@ -10,6 +19,17 @@ export const runs = new Map<string, ExecutionRun>();
 export const journeys = new Map<string, Journey>();
 export const journeyStepClaims = new Map<string, JourneyStepClaim>();
 export const sendHistory = new Map<string, string[]>();
+export const orderLifecycleEvents = new Map<string, StoredOrdersLifecycleEvent>();
+
+export interface StoredOrdersLifecycleEvent extends OrdersLifecycleSignal {
+  receivedAt: string;
+}
+
+export interface StoredOrdersLifecycleEventResult {
+  accepted: boolean;
+  duplicate: boolean;
+  event: StoredOrdersLifecycleEvent;
+}
 
 export interface MarketingStore {
   init(): Promise<void>;
@@ -35,6 +55,8 @@ export interface MarketingStore {
   completeJourneyStepClaim(claimId: string, runId: string | null, status: "completed" | "failed", error?: string | null): Promise<JourneyStepClaim | undefined>;
   getSendHistory(recipientRef: string): Promise<string[]>;
   recordSend(recipientRef: string, campaignId: string, runId: string, sentAt: string): Promise<void>;
+  recordOrdersLifecycleEvent(signal: OrdersLifecycleSignal, receivedAt: string): Promise<StoredOrdersLifecycleEventResult>;
+  getOrdersLifecycleStats(): Promise<OrdersLifecycleStats>;
 }
 
 export class InMemoryMarketingStore implements MarketingStore {
@@ -47,6 +69,7 @@ export class InMemoryMarketingStore implements MarketingStore {
     journeys.clear();
     journeyStepClaims.clear();
     sendHistory.clear();
+    orderLifecycleEvents.clear();
   }
 
   async getSegment(id: string): Promise<Segment | undefined> {
@@ -222,6 +245,19 @@ export class InMemoryMarketingStore implements MarketingStore {
     history.push(sentAt);
     sendHistory.set(recipientRef, history);
   }
+
+  async recordOrdersLifecycleEvent(signal: OrdersLifecycleSignal, receivedAt: string): Promise<StoredOrdersLifecycleEventResult> {
+    const event: StoredOrdersLifecycleEvent = { ...signal, receivedAt };
+    const duplicate = orderLifecycleEvents.has(signal.eventId);
+    if (!duplicate) {
+      orderLifecycleEvents.set(signal.eventId, event);
+    }
+    return { accepted: !duplicate, duplicate, event: orderLifecycleEvents.get(signal.eventId) ?? event };
+  }
+
+  async getOrdersLifecycleStats(): Promise<OrdersLifecycleStats> {
+    return buildOrdersLifecycleStats(Array.from(orderLifecycleEvents.values()));
+  }
 }
 
 function matchesScopeFilters<T extends { tenantId: string; appId: string; brandId: string; businessId?: string | null; productLine?: string | null; lifecycleScope?: string | null; environment?: string | null }>(value: T, filters: Partial<Pick<T, "tenantId" | "appId" | "brandId" | "businessId" | "productLine" | "lifecycleScope" | "environment">>): boolean {
@@ -292,7 +328,7 @@ export class PostgresMarketingStore implements MarketingStore {
   }
 
   async reset(): Promise<void> {
-    await this.pool.query("truncate table marketing_journey_step_claims, marketing_journeys, marketing_send_history, marketing_idempotency_keys, marketing_suppression_evidence, marketing_delivery_outcomes, marketing_campaign_runs, marketing_campaigns, marketing_segments restart identity cascade");
+    await this.pool.query("truncate table marketing_order_lifecycle_events, marketing_journey_step_claims, marketing_journeys, marketing_send_history, marketing_idempotency_keys, marketing_suppression_evidence, marketing_delivery_outcomes, marketing_campaign_runs, marketing_campaigns, marketing_segments restart identity cascade");
   }
 
   async getSegment(id: string): Promise<Segment | undefined> {
@@ -689,6 +725,44 @@ export class PostgresMarketingStore implements MarketingStore {
     );
   }
 
+  async recordOrdersLifecycleEvent(signal: OrdersLifecycleSignal, receivedAt: string): Promise<StoredOrdersLifecycleEventResult> {
+    const result = await this.pool.query(
+      `insert into marketing_order_lifecycle_events (
+        event_id, event_type, event_version, order_id, occurred_at, received_at, channel, status, previous_status
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       on conflict (event_id) do nothing
+       returning *`,
+      [
+        signal.eventId,
+        signal.eventType,
+        signal.eventVersion,
+        signal.orderId,
+        signal.occurredAt,
+        receivedAt,
+        signal.channel ?? null,
+        signal.status ?? null,
+        signal.previousStatus ?? null
+      ]
+    );
+
+    const duplicate = (result.rowCount ?? 0) === 0;
+    if (!duplicate) {
+      return { accepted: true, duplicate: false, event: rowToStoredOrdersLifecycleEvent(result.rows[0]) };
+    }
+
+    const existing = await this.pool.query("select * from marketing_order_lifecycle_events where event_id = $1", [signal.eventId]);
+    return {
+      accepted: false,
+      duplicate: true,
+      event: existing.rows[0] ? rowToStoredOrdersLifecycleEvent(existing.rows[0]) : { ...signal, receivedAt }
+    };
+  }
+
+  async getOrdersLifecycleStats(): Promise<OrdersLifecycleStats> {
+    const result = await this.pool.query("select * from marketing_order_lifecycle_events order by occurred_at asc, event_id asc");
+    return buildOrdersLifecycleStats(result.rows.map(rowToStoredOrdersLifecycleEvent));
+  }
+
   private async getRun(id: string): Promise<ExecutionRun | undefined> {
     const runResult = await this.pool.query("select * from marketing_campaign_runs where id = $1", [id]);
     if (!runResult.rows[0]) return undefined;
@@ -744,6 +818,76 @@ function rowToSegment(row: Record<string, unknown>): Segment {
     rules: asJsonObject(row.rules),
     isDynamic: Boolean(row.is_dynamic),
     estimatedCount: row.estimated_count === null ? null : Number(row.estimated_count)
+  };
+}
+
+function rowToStoredOrdersLifecycleEvent(row: Record<string, unknown>): StoredOrdersLifecycleEvent {
+  return {
+    eventType: String(row.event_type) as OrdersLifecycleSignal["eventType"],
+    eventVersion: Number(row.event_version) as 1,
+    eventId: String(row.event_id),
+    occurredAt: iso(row.occurred_at) ?? new Date().toISOString(),
+    receivedAt: iso(row.received_at) ?? new Date().toISOString(),
+    orderId: String(row.order_id),
+    channel: row.channel === null || row.channel === undefined ? undefined : String(row.channel),
+    status: row.status === null || row.status === undefined ? undefined : String(row.status),
+    previousStatus: row.previous_status === null || row.previous_status === undefined ? undefined : String(row.previous_status)
+  };
+}
+
+function incrementRecord(record: Record<string, number>, key: string | undefined): void {
+  if (!key) return;
+  record[key] = (record[key] ?? 0) + 1;
+}
+
+function sortedNumberRecord(record: Record<string, number>): Record<string, number> {
+  return Object.keys(record)
+    .sort()
+    .reduce<Record<string, number>>((accumulator, key) => {
+      accumulator[key] = record[key];
+      return accumulator;
+    }, {});
+}
+
+function buildOrdersLifecycleStats(events: StoredOrdersLifecycleEvent[]): OrdersLifecycleStats {
+  const byEventType: Record<string, number> = {};
+  const byChannel: Record<string, number> = {};
+  const byStatus: Record<string, number> = {};
+  const orderIds = new Set<string>();
+
+  for (const event of events) {
+    incrementRecord(byEventType, event.eventType);
+    incrementRecord(byChannel, event.channel);
+    incrementRecord(byStatus, event.status);
+    orderIds.add(event.orderId);
+  }
+
+  return {
+    sourceOwner: "orders-microservice",
+    consumerOwner: "marketing-microservice",
+    exchange: ORDERS_EVENTS_EXCHANGE,
+    bindings: {
+      orderCreated: ORDERS_ORDER_CREATED_V1,
+      orderStatusChanged: APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY
+    },
+    processedEventIds: events.map((event) => event.eventId).sort(),
+    orderRefs: Array.from(orderIds).map((orderId) => `orders:order:${orderId}`).sort(),
+    totals: {
+      acceptedEvents: events.length,
+      duplicateEvents: 0,
+      rejectedEvents: 0,
+      orderCreated: events.filter((event) => event.eventType === ORDERS_ORDER_CREATED_V1).length,
+      orderStatusChanged: events.filter((event) => event.eventType === APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY).length,
+      unattributedOrderSignals: events.length,
+      campaignAttributionUpdates: 0
+    },
+    byEventType: sortedNumberRecord(byEventType),
+    byChannel: sortedNumberRecord(byChannel),
+    byStatus: sortedNumberRecord(byStatus),
+    blockers: [
+      ORDER_EVENTS_TRANSPORT_BLOCKER,
+      ORDER_CAMPAIGN_ATTRIBUTION_BLOCKER
+    ]
   };
 }
 

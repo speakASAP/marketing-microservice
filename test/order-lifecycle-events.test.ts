@@ -1,14 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY,
   ORDER_CAMPAIGN_ATTRIBUTION_BLOCKER,
-  ORDER_STATUS_CHANGED_ROUTING_KEY_BLOCKER,
+  ORDER_STATUS_CHANGED_ROUTING_KEY_DECISION,
   ORDERS_ORDER_CREATED_V1,
   ORDERS_ORDER_UPDATED_V1,
   OrdersLifecycleAttributionAccumulator,
   parseOrdersLifecycleEvent,
   REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1
 } from "../src/order-lifecycle-events";
+import { ordersEventsConsumerOptionsFromEnv, processOrdersEventMessage } from "../src/orders-events-consumer";
+import { InMemoryMarketingStore } from "../src/store";
 
 process.env.NODE_ENV = "test";
 
@@ -75,10 +78,13 @@ test("orders lifecycle accumulator handles created and current status update eve
   assert.deepEqual(updated.stats.byChannel, { flipflop: 1 });
   assert.deepEqual(updated.stats.byStatus, { processing: 1 });
   assert.deepEqual(updated.stats.orderRefs, ["orders:order:order-1001"]);
+  assert.equal(updated.stats.bindings.orderStatusChanged, APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY);
   assert.ok(updated.stats.blockers.includes(ORDER_CAMPAIGN_ATTRIBUTION_BLOCKER));
+  assert.equal(updated.stats.blockers.some((blocker) => blocker.includes("status_changed")), false);
+  assert.equal(ORDER_STATUS_CHANGED_ROUTING_KEY_DECISION.includes(ORDERS_ORDER_UPDATED_V1), true);
 });
 
-test("requested orders.order.status_changed.v1 remains blocked until Orders publishes it", () => {
+test("unapproved orders.order.status_changed.v1 alias is rejected while updated.v1 is the binding", () => {
   const accumulator = new OrdersLifecycleAttributionAccumulator();
   const result = accumulator.process({
     ...orderUpdatedEvent(),
@@ -88,8 +94,9 @@ test("requested orders.order.status_changed.v1 remains blocked until Orders publ
 
   assert.equal(result.accepted, false);
   assert.equal(result.reason, `unsupported_order_event_type:${REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1}`);
-  assert.equal(result.blocker, ORDER_STATUS_CHANGED_ROUTING_KEY_BLOCKER);
+  assert.equal(result.blocker, undefined);
   assert.equal(result.stats.totals.rejectedEvents, 1);
+  assert.equal(result.stats.bindings.orderStatusChanged, ORDERS_ORDER_UPDATED_V1);
 });
 
 test("order lifecycle parser rejects sensitive or non-contract payload fields", () => {
@@ -126,4 +133,36 @@ test("order lifecycle parser accepts safe approval metadata on status updates", 
   if (parsed.ok) {
     assert.equal(parsed.signal.status, "cancelled");
   }
+});
+
+test("orders event message processing persists accepted events and deduplicates replays", async () => {
+  const store = new InMemoryMarketingStore();
+  await store.reset();
+
+  const first = await processOrdersEventMessage(JSON.stringify(orderCreatedEvent()), store, "2026-07-01T10:00:00.000Z");
+  const replay = await processOrdersEventMessage(JSON.stringify(orderCreatedEvent()), store, "2026-07-01T10:01:00.000Z");
+  const stats = await store.getOrdersLifecycleStats();
+
+  assert.equal(first.accepted, true);
+  assert.equal(first.duplicate, false);
+  assert.equal(replay.accepted, false);
+  assert.equal(replay.duplicate, true);
+  assert.equal(stats.totals.acceptedEvents, 1);
+  assert.equal(stats.totals.orderCreated, 1);
+  assert.deepEqual(stats.orderRefs, ["orders:order:order-1001"]);
+});
+
+test("orders event consumer config binds created and approved updated routing keys", () => {
+  const config = ordersEventsConsumerOptionsFromEnv({
+    ORDERS_EVENTS_CONSUMER_ENABLED: "true",
+    RABBITMQ_URL: "amqp://example.invalid",
+    ORDERS_EVENTS_QUEUE: "marketing.orders.lifecycle",
+    ORDERS_EVENTS_PREFETCH: "5"
+  });
+
+  assert.equal(config.enabled, true);
+  assert.equal(config.queue, "marketing.orders.lifecycle");
+  assert.equal(config.prefetch, 5);
+  assert.deepEqual(config.routingKeys, [ORDERS_ORDER_CREATED_V1, ORDERS_ORDER_UPDATED_V1]);
+  assert.equal(config.routingKeys.includes(REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1), false);
 });

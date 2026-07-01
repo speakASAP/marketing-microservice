@@ -20,6 +20,7 @@ import { ADMIN_SHELL_ROUTES, renderAdminShell } from "./admin-shell";
 import { executeCampaign } from "./executor";
 import { logDecision } from "./logger";
 import { readNotificationChannelRegistry } from "./notification-channel-registry";
+import { startOrdersEventsConsumer } from "./orders-events-consumer";
 import { runDueScheduledCampaigns } from "./scheduler";
 import { getStore, initializeConfiguredStore } from "./store";
 import { Campaign, Channel, ExecutionRun, Journey, JourneyStep, Segment } from "./types";
@@ -1400,6 +1401,7 @@ app.post("/scheduler/run-due", requireServiceAuth, async (req, res) => {
 export async function startServer(): Promise<void> {
   const port = Number(process.env.PORT || 4600);
   await initializeConfiguredStore();
+  await startOrdersEventsConsumer();
   app.listen(port, () => {
     console.log(JSON.stringify({ event: "service_started", timestamp: new Date().toISOString(), port }));
   });

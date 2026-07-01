@@ -13,6 +13,8 @@
     "check:auth-static": "node scripts/check-hosted-auth-static.mjs"
   },
   "dependencies": {
+    "@types/amqplib": "^0.10.8",
+    "amqplib": "^2.0.1",
     "axios": "latest",
     "dotenv": "latest",
     "express": "latest",

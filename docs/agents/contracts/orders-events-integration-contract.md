@@ -14,43 +14,60 @@ Live source verification on 2026-07-01 found:
 - RabbitMQ exchange: `orders.events`.
 - Current created routing key: `orders.order.created.v1`.
 - Current status-change routing key: `orders.order.updated.v1`.
-- Requested routing key `orders.order.status_changed.v1`: `[MISSING: Orders producer routing key orders.order.status_changed.v1; current source publishes orders.order.updated.v1 for status changes]`.
+- Approved Marketing status-change binding: `orders.order.updated.v1`.
+- Unapproved alias `orders.order.status_changed.v1`: not used by Marketing unless Orders adds it in a future producer contract.
 - Fixture verifier in Orders: `npm run verify:event-contracts`.
 
 Allowed payload fields in the verified Orders contract are bounded to order references and safe lifecycle metadata. Events must not include customer objects, customer addresses, billing addresses, payment method details, provider secrets, bearer tokens, JWTs, passwords, raw credentials, tracking numbers, tracking URLs, operator email addresses, or approver display identities.
 
-## Marketing Consumer Core
+## Marketing Consumer Core And Runtime Adapter
 
-Marketing now has a transport-independent consumer core in `src/order-lifecycle-events.ts`.
+Marketing now has a transport-independent consumer core in `src/order-lifecycle-events.ts` and a gated AMQP adapter in `src/orders-events-consumer.ts`.
 
 It supports:
 
 - Validating `orders.order.created.v1` and the currently verified status-change event, `orders.order.updated.v1`.
-- Rejecting the requested but unproduced `orders.order.status_changed.v1` with a `[MISSING: ...]` blocker.
+- Rejecting unapproved `orders.order.status_changed.v1` messages while binding to `orders.order.updated.v1`.
 - Idempotency by `eventId`.
 - Aggregate order signal statistics by event type, channel, and status.
 - Order references as `orders:order:<orderId>`.
 - Campaign attribution status as blocked when campaign/run/correlation references are absent from the Orders event contract.
 
-It does not yet start a RabbitMQ listener. Marketing currently has no broker dependency, no queue binding, and no runtime consumer configuration.
+The adapter:
+
+- Starts only when `ORDERS_EVENTS_CONSUMER_ENABLED=true`.
+- Uses `RABBITMQ_URL` without logging the value.
+- Asserts durable exchange `orders.events`.
+- Asserts durable Marketing queue `marketing.orders.lifecycle`.
+- Binds `orders.order.created.v1` and `orders.order.updated.v1`.
+- Uses dead-letter exchange `marketing.orders.lifecycle.dlx` with `ORDERS_EVENTS_REQUEUE_ON_ERROR=false` by default.
+- Acknowledges valid accepted, duplicate, and malformed contract-rejected messages after recording sanitized audit evidence.
+- Nacks processing/storage errors without requeue by default so RabbitMQ can dead-letter them.
 
 ## Runtime Blockers
 
-- `[MISSING: Marketing RabbitMQ consumer transport and queue binding configuration for orders.events]`.
-- `[MISSING: approved Marketing queue name, dead-letter behavior, replay/backfill policy, and consumer deployment switch]`.
-- `[MISSING: Orders producer routing key orders.order.status_changed.v1; current source publishes orders.order.updated.v1 for status changes]`.
 - `[MISSING: Orders event payload campaignId/runId/correlationId or approved attribution join contract for campaign-level attribution]`.
 
-## Proposed Runtime Contract
+## Runtime Configuration
 
-When the runtime broker standard is approved, Marketing should add a small adapter that:
+Keys:
 
-- Connects to the approved broker URL from environment configuration without logging secret values.
-- Asserts or binds an approved durable Marketing-owned queue to `orders.events`.
-- Binds `orders.order.created.v1` and the approved status-change key. Use `orders.order.updated.v1` if Orders keeps the current source contract, or `orders.order.status_changed.v1` only after Orders publishes it.
-- Acknowledges messages only after `OrdersLifecycleAttributionAccumulator` or its persisted successor accepts the event.
-- Deduplicates by `eventId` before changing Marketing-owned attribution/statistics state.
-- Treats malformed or sensitive-field events as rejected evidence and does not trigger campaign execution.
+- `RABBITMQ_URL`: broker URL supplied by runtime/secret configuration; value must not be logged. Kubernetes maps this name from the existing Vault-backed `secret/prod/runlayer` `RABBITMQ_URL` property.
+- `ORDERS_EVENTS_CONSUMER_ENABLED`: `true` to start the consumer. Production deployment config is enabled after Vault-backed `RABBITMQ_URL` mapping is present.
+- `ORDERS_EVENTS_EXCHANGE`: default `orders.events`.
+- `ORDERS_EVENTS_QUEUE`: default `marketing.orders.lifecycle`.
+- `ORDERS_EVENTS_ROUTING_KEYS`: default `orders.order.created.v1,orders.order.updated.v1`.
+- `ORDERS_EVENTS_DEAD_LETTER_EXCHANGE`: default `marketing.orders.lifecycle.dlx`.
+- `ORDERS_EVENTS_PREFETCH`: default `10`.
+- `ORDERS_EVENTS_REQUEUE_ON_ERROR`: default `false`.
+
+## Persistence And Replay Contract
+
+Migration `0011_order_lifecycle_event_consumer.sql` adds `marketing_order_lifecycle_events` with `event_id` as the primary key. This table stores only bounded lifecycle signal fields: event ID, event type/version, order ID, occurred/received timestamps, channel, status, and previous status.
+
+Replay/backfill uses the same queue or message content path and deduplicates by `eventId`. Replayed duplicates are acknowledged and logged as duplicates without changing statistics.
+
+Malformed contract-rejected events are not persisted because they are not valid Orders lifecycle signals.
 
 ## Ownership Boundary
 

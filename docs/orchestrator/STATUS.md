@@ -3199,3 +3199,99 @@ Parallel execution section:
 Next unfinished step:
 
 - Decide whether Marketing should bind to current `orders.order.updated.v1` or wait for Orders to publish `orders.order.status_changed.v1`, then approve the Marketing queue/runtime config contract before implementing a live RabbitMQ consumer.
+
+## 2026-07-01 - Orders Events Status-Change Binding Decision
+
+Current focus: Apply owner decision for Goal 7.4 Marketing Orders-events status-change routing.
+
+Intent Preservation Chain:
+
+- Vision: Marketing consumes canonical Orders lifecycle facts without becoming the Orders source of truth.
+- Goal Impact: The status-change routing-key decision is resolved for Marketing: bind to current `orders.order.updated.v1`.
+- System: Orders remains order lifecycle event owner; Marketing remains campaign and segmentation control plane.
+- Feature: Orders lifecycle event consumer contract.
+- Task: Update Marketing consumer contract/tests/docs to treat `orders.order.updated.v1` as the approved status-change binding.
+- Execution Plan: Small Marketing-only follow-up; no runtime listener, deployment, env secret, DB migration, or Orders edit.
+- Coding Prompt: Remove `orders.order.status_changed.v1` from active runtime blockers while still rejecting it as an unapproved alias unless Orders adds that producer contract later.
+- Code: `src/order-lifecycle-events.ts`, `test/order-lifecycle-events.test.ts`, `docs/agents/contracts/orders-events-integration-contract.md`, and this status entry.
+- Validation: focused Orders event tests passed; `npm run build` passed; `npm test` passed with 77 tests; `git diff --check` passed.
+
+Decision applied:
+
+- Marketing should bind status changes to the current Orders producer key: `orders.order.updated.v1`.
+- `orders.order.status_changed.v1` is no longer a blocker for this Marketing lane; it remains an unsupported alias unless Orders publishes it in a future contract.
+- Remaining runtime blockers are broker/queue/replay config and missing campaign/run/correlation attribution references in Orders events.
+
+Next unfinished step:
+
+- Approve Marketing RabbitMQ queue/runtime config, dead-letter behavior, replay/backfill policy, and persistence contract before implementing a live consumer adapter.
+
+## 2026-07-01 - Orders Events Live Consumer Adapter
+
+Current focus: Implement the approved live Marketing consumer adapter for Orders lifecycle events.
+
+Intent Preservation Chain:
+
+- Vision: Marketing can consume canonical Orders lifecycle facts without owning order truth or creating campaign execution side effects.
+- Goal Impact: The runtime lane now has a gated AMQP adapter, durable idempotency storage, queue/dead-letter defaults, and replay-safe processing for `orders.order.created.v1` plus `orders.order.updated.v1`.
+- System: Orders owns order records, status lifecycle, and lifecycle event publication. Marketing owns only bounded campaign attribution/stat signal evidence. Notifications owns outbound delivery. Auth/leads own contacts, consent, preferences, and unsubscribe truth.
+- Feature: Gated RabbitMQ consumer for `orders.events`.
+- Task: Add AMQP consumer, durable event dedupe, runtime env keys, config defaults, tests, and docs.
+- Execution Plan: Marketing repo only; do not edit Orders; do not deploy; do not log broker URL or payload secrets; default Kubernetes config keeps the consumer disabled until runtime secret/config is confirmed.
+- Coding Prompt: Bind `orders.order.created.v1` and approved `orders.order.updated.v1`, persist bounded lifecycle facts by `eventId`, reject malformed/sensitive events without campaign execution, dead-letter processing errors by default, and preserve source ownership.
+- Code: `src/orders-events-consumer.ts`, `src/order-lifecycle-events.ts`, `src/store.ts`, `migrations/0011_order_lifecycle_event_consumer.sql`, `.env.example`, `k8s/configmap.yaml`, `test/order-lifecycle-events.test.ts`, `docs/agents/contracts/orders-events-integration-contract.md`, package dependency updates, and this status entry.
+- Validation: focused Orders event tests passed with 6 tests; `npm run build` passed; `npm test` passed with 79 tests; `git diff --check` passed.
+
+Runtime contract applied:
+
+- Queue: `marketing.orders.lifecycle`.
+- Exchange: `orders.events`.
+- Bindings: `orders.order.created.v1`, `orders.order.updated.v1`.
+- Dead-letter exchange: `marketing.orders.lifecycle.dlx`.
+- Prefetch: `10`.
+- Requeue on processing/storage error: `false` by default.
+- Deployment switch: `ORDERS_EVENTS_CONSUMER_ENABLED`; initially disabled until runtime secret confirmation, then enabled in `k8s/configmap.yaml` after owner approval.
+- Broker URL: `RABBITMQ_URL`, documented in `.env.example`; value is not logged and is not placed in ConfigMap.
+- Runtime name check after implementation: current Kubernetes deployment environment did not list `RABBITMQ_URL` or `ORDERS_EVENTS_*` names before the Vault/config manifest update.
+
+Persistence and replay:
+
+- Migration `0011_order_lifecycle_event_consumer.sql` creates `marketing_order_lifecycle_events`.
+- `event_id` is the primary key and dedupes live delivery plus replay/backfill.
+- Persisted fields are bounded to event ID, event type/version, order ID, timestamps, channel, status, and previous status.
+- No customer/contact/address/payment/tracking/provider/token payload data is stored.
+
+Remaining blocker:
+
+- `[MISSING: Orders event payload campaignId/runId/correlationId or approved attribution join contract for campaign-level attribution]`.
+
+Next unfinished step:
+
+- Confirm runtime `RABBITMQ_URL` secret/config exists and then decide whether to deploy with `ORDERS_EVENTS_CONSUMER_ENABLED=true`.
+
+## 2026-07-01 - Orders Events Vault Runtime Enablement
+
+Current focus: Wire Kubernetes/Vault runtime configuration and proceed toward deployment for Goal 7.4.
+
+Intent Preservation Chain:
+
+- Vision: Marketing consumes canonical Orders lifecycle facts while Orders remains the order lifecycle source of truth.
+- Goal Impact: The live consumer now has explicit runtime configuration names and a Vault-backed broker URL mapping without exposing secret values.
+- System: Marketing reads Orders lifecycle events only as bounded campaign attribution/stat signals; it does not own Orders records, payment, contact, delivery, or approval authority.
+- Feature: Orders events AMQP runtime enablement.
+- Task: Add `RABBITMQ_URL` to the Marketing ExternalSecret, enable `ORDERS_EVENTS_CONSUMER_ENABLED`, and validate before deploy.
+- Execution Plan: Reuse the existing Kubernetes Vault mapping source by name, keep non-secret event settings in ConfigMap, run focused/full validation, then deploy only after checks pass.
+- Coding Prompt: Map the broker URL secret by name only, bind to `orders.order.created.v1` and `orders.order.updated.v1`, avoid logging secret values, and preserve dead-letter/idempotency behavior.
+- Code: `k8s/external-secret.yaml`, `k8s/configmap.yaml`, `docs/agents/contracts/orders-events-integration-contract.md`, and this status entry.
+- Validation: focused Orders event tests passed with 6 tests; `npm run build` passed; `npm test` passed with 79 tests; `git diff --check` passed after whitespace repair.
+
+Runtime evidence:
+
+- Existing namespace ExternalSecret evidence showed `RABBITMQ_URL` mapped from Vault path `secret/prod/runlayer` property `RABBITMQ_URL` through `runlayer-secret`; value was not printed.
+- Existing `marketing-microservice-secret` exposed only key names `DB_PASSWORD`, `JWT_TOKEN`, `MARKETING_API_TOKEN`, and `NOTIFICATION_SERVICE_TOKEN` before this change; no values were printed.
+- `k8s/external-secret.yaml` now maps Marketing secret key `RABBITMQ_URL` from `secret/prod/runlayer` property `RABBITMQ_URL`.
+- `k8s/configmap.yaml` now sets `ORDERS_EVENTS_CONSUMER_ENABLED="true"` and carries non-secret queue/exchange/dead-letter defaults.
+
+Remaining blocker:
+
+- `[MISSING: Orders event payload campaignId/runId/correlationId or approved attribution join contract for campaign-level attribution]`.

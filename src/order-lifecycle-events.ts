@@ -2,9 +2,10 @@ export const ORDERS_EVENTS_EXCHANGE = "orders.events";
 export const ORDERS_ORDER_CREATED_V1 = "orders.order.created.v1";
 export const ORDERS_ORDER_UPDATED_V1 = "orders.order.updated.v1";
 export const REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1 = "orders.order.status_changed.v1";
+export const APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY = ORDERS_ORDER_UPDATED_V1;
 
-export const ORDER_STATUS_CHANGED_ROUTING_KEY_BLOCKER =
-  "[MISSING: Orders producer routing key orders.order.status_changed.v1; current verified source publishes orders.order.updated.v1 for status changes]";
+export const ORDER_STATUS_CHANGED_ROUTING_KEY_DECISION =
+  "Marketing binds orders.order.updated.v1 as the approved canonical Orders status-change event for the current producer contract.";
 
 export const ORDER_CAMPAIGN_ATTRIBUTION_BLOCKER =
   "[MISSING: Orders event payload campaignId/runId/correlationId or approved attribution join contract for campaign-level attribution]";
@@ -38,6 +39,10 @@ export interface OrdersLifecycleStats {
   sourceOwner: "orders-microservice";
   consumerOwner: "marketing-microservice";
   exchange: typeof ORDERS_EVENTS_EXCHANGE;
+  bindings: {
+    orderCreated: typeof ORDERS_ORDER_CREATED_V1;
+    orderStatusChanged: typeof APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY;
+  };
   processedEventIds: string[];
   orderRefs: string[];
   totals: {
@@ -97,7 +102,7 @@ export function parseOrdersLifecycleEvent(input: unknown): ParsedEvent | Rejecte
 
   const type = readString(input, "type");
   if (type === REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1) {
-    return reject(`unsupported_order_event_type:${REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1}`, ORDER_STATUS_CHANGED_ROUTING_KEY_BLOCKER);
+    return reject(`unsupported_order_event_type:${REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1}`);
   }
   if (type !== ORDERS_ORDER_CREATED_V1 && type !== ORDERS_ORDER_UPDATED_V1) {
     return reject(`unsupported_order_event_type:${type || "missing"}`);
@@ -222,6 +227,10 @@ export class OrdersLifecycleAttributionAccumulator {
       sourceOwner: "orders-microservice",
       consumerOwner: "marketing-microservice",
       exchange: ORDERS_EVENTS_EXCHANGE,
+      bindings: {
+        orderCreated: ORDERS_ORDER_CREATED_V1,
+        orderStatusChanged: APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY
+      },
       processedEventIds: Array.from(this.processedEventIds).sort(),
       orderRefs: Array.from(this.orderStates.keys()).map((orderId) => `orders:order:${orderId}`).sort(),
       totals: { ...this.totals },
@@ -230,7 +239,6 @@ export class OrdersLifecycleAttributionAccumulator {
       byStatus: sortedRecord(this.byStatus),
       blockers: [
         ORDER_EVENTS_TRANSPORT_BLOCKER,
-        ORDER_STATUS_CHANGED_ROUTING_KEY_BLOCKER,
         ORDER_CAMPAIGN_ATTRIBUTION_BLOCKER
       ]
     };
