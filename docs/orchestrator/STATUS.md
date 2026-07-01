@@ -3295,3 +3295,36 @@ Runtime evidence:
 Remaining blocker:
 
 - `[MISSING: Orders event payload campaignId/runId/correlationId or approved attribution join contract for campaign-level attribution]`.
+
+## 2026-07-01 - Orders Events Consumer Production Deploy
+
+Current focus: Deploy and verify Goal 7.4 Marketing Orders-events runtime integration.
+
+Intent Preservation Chain:
+
+- Vision: Marketing consumes canonical Orders lifecycle facts while Orders remains the source of truth.
+- Goal Impact: The live Orders event consumer is deployed with Vault-backed broker configuration and current Orders routing keys.
+- System: Marketing consumes read-only order lifecycle signals only; it does not own order truth, customer/contact data, payment data, delivery execution, or campaign approval authority from Orders events.
+- Feature: Production AMQP consumer for `orders.events`.
+- Task: Deploy commit `5178b9c`, verify Kubernetes config/secret names, health, rollout, and consumer startup logs.
+- Execution Plan: Deploy after validation; inspect names only for secret/env evidence; avoid printing secret values; keep remaining attribution blocker explicit.
+- Coding Prompt: Confirm the consumer starts on `orders.order.created.v1` and `orders.order.updated.v1` with durable queue/dead-letter defaults and no direct campaign execution side effects.
+- Code: deployed image `localhost:5000/marketing-microservice:5178b9c`.
+- Validation: rollout succeeded; pod `1/1 Running`; ExternalSecret `SecretSynced=True`; health returned `status=ok`; runtime env names include `RABBITMQ_URL` and `ORDERS_EVENTS_*`; logs show `orders_events_consumer_started` for `orders.order.created.v1` and `orders.order.updated.v1`.
+
+Deployment evidence:
+
+- `./scripts/deploy.sh` completed successfully in 162.59s.
+- Kubernetes deployment `marketing-microservice` rolled out successfully.
+- Runtime secret key names include `RABBITMQ_URL`; secret value was not printed.
+- Runtime env names include `ORDERS_EVENTS_CONSUMER_ENABLED`, exchange, queue, routing keys, dead-letter, prefetch, requeue, and `RABBITMQ_URL`; values were not printed.
+- Consumer startup log shows exchange `orders.events`, queue `marketing.orders.lifecycle`, routing keys `orders.order.created.v1` and `orders.order.updated.v1`, dead-letter exchange `marketing.orders.lifecycle.dlx`, and prefetch `10`.
+
+Known residual evidence:
+
+- `npm install`/Docker `npm ci` reported existing dependency audit issues: 3 local audit findings before deploy and 2 production-image findings during deploy. They were not remediated in this lane because they are outside the narrow Orders-events integration.
+- One post-deploy audit-forward log returned status 404; service health and consumer startup were OK. This appears unrelated to Orders event consumption and was not changed in this lane.
+
+Remaining blocker:
+
+- `[MISSING: Orders event payload campaignId/runId/correlationId or approved attribution join contract for campaign-level attribution]`.
