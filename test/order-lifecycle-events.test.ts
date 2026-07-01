@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY,
-  ORDER_CAMPAIGN_ATTRIBUTION_BLOCKER,
+  ORDER_RUN_ATTRIBUTION_BLOCKER,
   ORDER_STATUS_CHANGED_ROUTING_KEY_DECISION,
   ORDERS_ORDER_CREATED_V1,
   ORDERS_ORDER_UPDATED_V1,
@@ -79,7 +79,8 @@ test("orders lifecycle accumulator handles created and current status update eve
   assert.deepEqual(updated.stats.byStatus, { processing: 1 });
   assert.deepEqual(updated.stats.orderRefs, ["orders:order:order-1001"]);
   assert.equal(updated.stats.bindings.orderStatusChanged, APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY);
-  assert.ok(updated.stats.blockers.includes(ORDER_CAMPAIGN_ATTRIBUTION_BLOCKER));
+  assert.ok(updated.stats.blockers.includes(ORDER_RUN_ATTRIBUTION_BLOCKER));
+  assert.equal(updated.stats.blockers.some((blocker) => blocker.includes("campaign-level")), false);
   assert.equal(updated.stats.blockers.some((blocker) => blocker.includes("status_changed")), false);
   assert.equal(ORDER_STATUS_CHANGED_ROUTING_KEY_DECISION.includes(ORDERS_ORDER_UPDATED_V1), true);
 });
@@ -135,12 +136,46 @@ test("order lifecycle parser accepts safe approval metadata on status updates", 
   }
 });
 
+test("orders lifecycle attribution uses explicit leadAttribution campaignId join key", () => {
+  const accumulator = new OrdersLifecycleAttributionAccumulator();
+
+  const created = accumulator.process(orderCreatedEvent({
+    payload: {
+      orderId: "order-1001",
+      channel: "flipflop",
+      leadAttribution: {
+        leadId: "lead-1001",
+        source: "flipflop-checkout",
+        campaignId: "campaign-1001"
+      }
+    }
+  }));
+  const updated = accumulator.process(orderUpdatedEvent());
+
+  assert.equal(created.attributionStatus, "attributed_campaign");
+  assert.equal(updated.attributionStatus, "attributed_campaign");
+  assert.equal(updated.event?.campaignId, "campaign-1001");
+  assert.equal(updated.stats.totals.unattributedOrderSignals, 0);
+  assert.equal(updated.stats.totals.campaignAttributionUpdates, 2);
+  assert.deepEqual(updated.stats.byCampaignId, { "campaign-1001": 2 });
+  assert.deepEqual(updated.stats.campaignRefs, ["marketing:campaign:campaign-1001"]);
+});
+
 test("orders event message processing persists accepted events and deduplicates replays", async () => {
   const store = new InMemoryMarketingStore();
   await store.reset();
 
-  const first = await processOrdersEventMessage(JSON.stringify(orderCreatedEvent()), store, "2026-07-01T10:00:00.000Z");
-  const replay = await processOrdersEventMessage(JSON.stringify(orderCreatedEvent()), store, "2026-07-01T10:01:00.000Z");
+  const attributedCreated = orderCreatedEvent({
+    payload: {
+      orderId: "order-1001",
+      channel: "flipflop",
+      leadAttribution: {
+        campaignId: "campaign-1001"
+      }
+    }
+  });
+  const first = await processOrdersEventMessage(JSON.stringify(attributedCreated), store, "2026-07-01T10:00:00.000Z");
+  const replay = await processOrdersEventMessage(JSON.stringify(attributedCreated), store, "2026-07-01T10:01:00.000Z");
   const stats = await store.getOrdersLifecycleStats();
 
   assert.equal(first.accepted, true);
@@ -149,7 +184,10 @@ test("orders event message processing persists accepted events and deduplicates 
   assert.equal(replay.duplicate, true);
   assert.equal(stats.totals.acceptedEvents, 1);
   assert.equal(stats.totals.orderCreated, 1);
+  assert.equal(stats.totals.campaignAttributionUpdates, 1);
   assert.deepEqual(stats.orderRefs, ["orders:order:order-1001"]);
+  assert.deepEqual(stats.campaignRefs, ["marketing:campaign:campaign-1001"]);
+  assert.deepEqual(stats.byCampaignId, { "campaign-1001": 1 });
 });
 
 test("orders event consumer config binds created and approved updated routing keys", () => {

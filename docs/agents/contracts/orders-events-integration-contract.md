@@ -17,6 +17,7 @@ Live source verification on 2026-07-01 found:
 - Approved Marketing status-change binding: `orders.order.updated.v1`.
 - Unapproved alias `orders.order.status_changed.v1`: not used by Marketing unless Orders adds it in a future producer contract.
 - Fixture verifier in Orders: `npm run verify:event-contracts`.
+- Current approved campaign join key on created events: optional `payload.leadAttribution.campaignId` on `orders.order.created.v1`.
 
 Allowed payload fields in the verified Orders contract are bounded to order references and safe lifecycle metadata. Events must not include customer objects, customer addresses, billing addresses, payment method details, provider secrets, bearer tokens, JWTs, passwords, raw credentials, tracking numbers, tracking URLs, operator email addresses, or approver display identities.
 
@@ -31,7 +32,9 @@ It supports:
 - Idempotency by `eventId`.
 - Aggregate order signal statistics by event type, channel, and status.
 - Order references as `orders:order:<orderId>`.
-- Campaign attribution status as blocked when campaign/run/correlation references are absent from the Orders event contract.
+- Campaign-level attribution when `orders.order.created.v1` includes explicit `payload.leadAttribution.campaignId` from an approved channel caller.
+- Status-update attribution by joining later `orders.order.updated.v1` events to the previously seen attributed `orderId`.
+- Run/correlation attribution remains blocked until Orders or an approved source emits explicit `runId` or `correlationId` metadata.
 
 The adapter:
 
@@ -46,7 +49,7 @@ The adapter:
 
 ## Runtime Blockers
 
-- `[MISSING: Orders event payload campaignId/runId/correlationId or approved attribution join contract for campaign-level attribution]`.
+- `[MISSING: Orders event payload runId/correlationId or approved attribution join contract for run-level attribution]`.
 
 ## Runtime Configuration
 
@@ -61,9 +64,34 @@ Keys:
 - `ORDERS_EVENTS_PREFETCH`: default `10`.
 - `ORDERS_EVENTS_REQUEUE_ON_ERROR`: default `false`.
 
+## Campaign Attribution Join Contract
+
+Marketing accepts exactly one campaign-level Orders join key today:
+
+```json
+{
+  "type": "orders.order.created.v1",
+  "payload": {
+    "orderId": "order-1001",
+    "channel": "flipflop",
+    "leadAttribution": {
+      "campaignId": "campaign-1001"
+    }
+  }
+}
+```
+
+Rules:
+
+- `payload.leadAttribution.campaignId` is optional and must be supplied explicitly by an approved Orders create caller; Marketing must not infer it from customer/contact/address/payment data.
+- Marketing uses only `campaignId` from `leadAttribution` for campaign-level attribution. `leadId` and `source`, when present for Leads, remain source-owned and are not persisted by Marketing in this Orders lifecycle table.
+- Later status events are attributed to the same campaign only through the already persisted `orderId -> campaignId` association from the created event.
+- The event must not approve, schedule, execute, dry-run, or deliver any campaign.
+- `runId` and `correlationId` are still unavailable in the verified Orders event contract and remain `[MISSING: ...]` for run-level attribution.
+
 ## Persistence And Replay Contract
 
-Migration `0011_order_lifecycle_event_consumer.sql` adds `marketing_order_lifecycle_events` with `event_id` as the primary key. This table stores only bounded lifecycle signal fields: event ID, event type/version, order ID, occurred/received timestamps, channel, status, and previous status.
+Migration `0011_order_lifecycle_event_consumer.sql` adds `marketing_order_lifecycle_events` with `event_id` as the primary key. Migration `0012_order_lifecycle_campaign_attribution.sql` adds nullable `campaign_id`. This table stores only bounded lifecycle signal fields: event ID, event type/version, order ID, occurred/received timestamps, channel, status, previous status, and optional campaign ID.
 
 Replay/backfill uses the same queue or message content path and deduplicates by `eventId`. Replayed duplicates are acknowledged and logged as duplicates without changing statistics.
 

@@ -5,7 +5,7 @@
 | auth-microservice | Registered users, contacts, preferences, consent | Read registered-user recipients and tenant/app/purpose/channel consent; forward registered-user unsubscribe writes when configured | Do not duplicate auth as source of truth |
 | leads-microservice | Leads, contacts, preferences, consent | Read lead recipients and tenant/app/purpose/channel consent; forward lead unsubscribe writes when configured | Do not target leads without explicit consent |
 | notifications-microservice | Email/Telegram/WhatsApp delivery and channel registry | Send delegated notification requests and read registry metadata where needed | Never send directly from marketing |
-| orders-microservice | Order history, purchase signals, order lifecycle events | Optional segment signal source; transport-independent `orders.events` consumer core for read-only lifecycle signal statistics | Do not move order ownership into marketing; no campaign execution from order events |
+| orders-microservice | Order history, purchase signals, order lifecycle events | Optional segment signal source; live `orders.events` consumer for read-only lifecycle signal statistics and campaign-level attribution via explicit `payload.leadAttribution.campaignId` | Do not move order ownership into marketing; no campaign execution from order events |
 | catalog-microservice | Product truth and product metadata | Optional product-based segment signal source | Do not move product truth into marketing |
 | Flipflop | App behavior and product/customer interaction signals | Optional application signal source | App must not become campaign engine |
 | SpeakASap | App behavior and learning lifecycle signals | Optional application signal source | App must not become campaign engine |

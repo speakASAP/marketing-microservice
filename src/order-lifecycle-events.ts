@@ -7,11 +7,8 @@ export const APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY = ORDERS_ORDER_UPDATED_V1
 export const ORDER_STATUS_CHANGED_ROUTING_KEY_DECISION =
   "Marketing binds orders.order.updated.v1 as the approved canonical Orders status-change event for the current producer contract.";
 
-export const ORDER_CAMPAIGN_ATTRIBUTION_BLOCKER =
-  "[MISSING: Orders event payload campaignId/runId/correlationId or approved attribution join contract for campaign-level attribution]";
-
-export const ORDER_EVENTS_TRANSPORT_BLOCKER =
-  "[MISSING: Marketing RabbitMQ consumer transport and queue binding configuration for orders.events]";
+export const ORDER_RUN_ATTRIBUTION_BLOCKER =
+  "[MISSING: Orders event payload runId/correlationId or approved attribution join contract for run-level attribution]";
 
 export type SupportedOrdersLifecycleEventType = typeof ORDERS_ORDER_CREATED_V1 | typeof ORDERS_ORDER_UPDATED_V1;
 
@@ -33,6 +30,7 @@ export interface OrdersLifecycleSignal {
   channel?: string;
   status?: string;
   previousStatus?: string;
+  campaignId?: string;
 }
 
 export interface OrdersLifecycleStats {
@@ -57,6 +55,8 @@ export interface OrdersLifecycleStats {
   byEventType: Record<string, number>;
   byChannel: Record<string, number>;
   byStatus: Record<string, number>;
+  byCampaignId: Record<string, number>;
+  campaignRefs: string[];
   blockers: string[];
 }
 
@@ -66,7 +66,7 @@ export interface OrdersLifecycleProcessingResult {
   event?: OrdersLifecycleSignal;
   reason?: string;
   blocker?: string;
-  attributionStatus: "not_applicable" | "blocked_missing_order_marketing_refs";
+  attributionStatus: "not_applicable" | "blocked_missing_order_marketing_refs" | "attributed_campaign";
   stats: OrdersLifecycleStats;
 }
 
@@ -77,6 +77,7 @@ interface MutableOrderState {
   channel?: string;
   status?: string;
   previousStatus?: string;
+  campaignId?: string;
 }
 
 interface ParsedEvent {
@@ -93,9 +94,10 @@ interface RejectedEvent {
 const FORBIDDEN_FIELD_PATTERN =
   /(customer|address|billing|street|postal|paymentMethod|providerSecret|bearer|token|jwt|password|credential|trackingNumber|trackingUrl|operatorEmail|approverEmail|email|phone)/i;
 
-const CREATED_PAYLOAD_FIELDS = new Set(["orderId", "channel"]);
+const CREATED_PAYLOAD_FIELDS = new Set(["orderId", "channel", "leadAttribution"]);
 const UPDATED_PAYLOAD_FIELDS = new Set(["orderId", "status", "previousStatus", "approval"]);
 const APPROVAL_PAYLOAD_FIELDS = new Set(["approvalType", "reasonCode", "sideEffectsHandled", "approvedAt"]);
+const LEAD_ATTRIBUTION_PAYLOAD_FIELDS = new Set(["leadId", "source", "campaignId"]);
 
 export function parseOrdersLifecycleEvent(input: unknown): ParsedEvent | RejectedEvent {
   if (!isObject(input)) return reject("invalid_order_event_envelope");
@@ -129,9 +131,11 @@ export function parseOrdersLifecycleEvent(input: unknown): ParsedEvent | Rejecte
   if (type === ORDERS_ORDER_CREATED_V1) {
     const channel = readString(input.payload, "channel");
     if (!channel) return reject("order_created_channel_missing");
+    const campaignId = readCampaignAttributionId(input.payload.leadAttribution);
+    if (campaignId === null) return reject("order_event_lead_attribution_invalid");
     return {
       ok: true,
-      signal: { eventType: type, eventVersion: 1, eventId, occurredAt, orderId, channel }
+      signal: { eventType: type, eventVersion: 1, eventId, occurredAt, orderId, channel, campaignId: campaignId || undefined }
     };
   }
 
@@ -162,6 +166,7 @@ export class OrdersLifecycleAttributionAccumulator {
   private readonly byEventType: Record<string, number> = {};
   private readonly byChannel: Record<string, number> = {};
   private readonly byStatus: Record<string, number> = {};
+  private readonly byCampaignId: Record<string, number> = {};
 
   process(input: unknown): OrdersLifecycleProcessingResult {
     const parsed = parseOrdersLifecycleEvent(input);
@@ -180,28 +185,36 @@ export class OrdersLifecycleAttributionAccumulator {
     const signal = parsed.signal;
     if (this.processedEventIds.has(signal.eventId)) {
       this.totals.duplicateEvents += 1;
+      const campaignId = signal.campaignId ?? this.orderStates.get(signal.orderId)?.campaignId;
       return {
         accepted: true,
         duplicate: true,
-        event: signal,
-        attributionStatus: "blocked_missing_order_marketing_refs",
+        event: campaignId && !signal.campaignId ? { ...signal, campaignId } : signal,
+        attributionStatus: campaignId ? "attributed_campaign" : "blocked_missing_order_marketing_refs",
         stats: this.snapshot()
       };
     }
 
     this.processedEventIds.add(signal.eventId);
     this.totals.acceptedEvents += 1;
-    this.totals.unattributedOrderSignals += 1;
     increment(this.byEventType, signal.eventType);
 
     const existing = this.orderStates.get(signal.orderId);
+    const campaignId = signal.campaignId ?? existing?.campaignId;
+    if (campaignId) {
+      this.totals.campaignAttributionUpdates += 1;
+      increment(this.byCampaignId, campaignId);
+    } else {
+      this.totals.unattributedOrderSignals += 1;
+    }
     const nextState: MutableOrderState = {
       orderId: signal.orderId,
       firstSeenAt: existing?.firstSeenAt ?? signal.occurredAt,
       lastEventAt: signal.occurredAt,
       channel: signal.channel ?? existing?.channel,
       status: signal.status ?? existing?.status,
-      previousStatus: signal.previousStatus ?? existing?.previousStatus
+      previousStatus: signal.previousStatus ?? existing?.previousStatus,
+      campaignId
     };
     this.orderStates.set(signal.orderId, nextState);
 
@@ -216,8 +229,8 @@ export class OrdersLifecycleAttributionAccumulator {
     return {
       accepted: true,
       duplicate: false,
-      event: signal,
-      attributionStatus: "blocked_missing_order_marketing_refs",
+      event: campaignId && !signal.campaignId ? { ...signal, campaignId } : signal,
+      attributionStatus: campaignId ? "attributed_campaign" : "blocked_missing_order_marketing_refs",
       stats: this.snapshot()
     };
   }
@@ -237,10 +250,11 @@ export class OrdersLifecycleAttributionAccumulator {
       byEventType: sortedRecord(this.byEventType),
       byChannel: sortedRecord(this.byChannel),
       byStatus: sortedRecord(this.byStatus),
-      blockers: [
-        ORDER_EVENTS_TRANSPORT_BLOCKER,
-        ORDER_CAMPAIGN_ATTRIBUTION_BLOCKER
-      ]
+      byCampaignId: sortedRecord(this.byCampaignId),
+      campaignRefs: Array.from(new Set(Array.from(this.orderStates.values()).map((state) => state.campaignId).filter(Boolean) as string[]))
+        .map((campaignId) => `marketing:campaign:${campaignId}`)
+        .sort(),
+      blockers: [ORDER_RUN_ATTRIBUTION_BLOCKER]
     };
   }
 }
@@ -294,6 +308,16 @@ function findForbiddenField(value: unknown, path = "payload"): string | null {
     if (found) return found;
   }
   return null;
+}
+
+function readCampaignAttributionId(value: unknown): string | undefined | null {
+  if (value === undefined) return undefined;
+  if (!isObject(value)) return null;
+  for (const key of Object.keys(value)) {
+    if (!LEAD_ATTRIBUTION_PAYLOAD_FIELDS.has(key)) return null;
+  }
+  const campaignId = readString(value, "campaignId");
+  return campaignId || undefined;
 }
 
 function isSafeApprovalObject(value: unknown): boolean {

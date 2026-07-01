@@ -4,8 +4,7 @@ import { Pool } from "pg";
 import { buildJourneyStepDecisionEvidence } from "./journey-audit";
 import {
   APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY,
-  ORDER_CAMPAIGN_ATTRIBUTION_BLOCKER,
-  ORDER_EVENTS_TRANSPORT_BLOCKER,
+  ORDER_RUN_ATTRIBUTION_BLOCKER,
   ORDERS_EVENTS_EXCHANGE,
   ORDERS_ORDER_CREATED_V1,
   OrdersLifecycleSignal,
@@ -728,8 +727,8 @@ export class PostgresMarketingStore implements MarketingStore {
   async recordOrdersLifecycleEvent(signal: OrdersLifecycleSignal, receivedAt: string): Promise<StoredOrdersLifecycleEventResult> {
     const result = await this.pool.query(
       `insert into marketing_order_lifecycle_events (
-        event_id, event_type, event_version, order_id, occurred_at, received_at, channel, status, previous_status
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        event_id, event_type, event_version, order_id, occurred_at, received_at, channel, status, previous_status, campaign_id
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        on conflict (event_id) do nothing
        returning *`,
       [
@@ -741,7 +740,8 @@ export class PostgresMarketingStore implements MarketingStore {
         receivedAt,
         signal.channel ?? null,
         signal.status ?? null,
-        signal.previousStatus ?? null
+        signal.previousStatus ?? null,
+        signal.campaignId ?? null
       ]
     );
 
@@ -831,7 +831,8 @@ function rowToStoredOrdersLifecycleEvent(row: Record<string, unknown>): StoredOr
     orderId: String(row.order_id),
     channel: row.channel === null || row.channel === undefined ? undefined : String(row.channel),
     status: row.status === null || row.status === undefined ? undefined : String(row.status),
-    previousStatus: row.previous_status === null || row.previous_status === undefined ? undefined : String(row.previous_status)
+    previousStatus: row.previous_status === null || row.previous_status === undefined ? undefined : String(row.previous_status),
+    campaignId: row.campaign_id === null || row.campaign_id === undefined ? undefined : String(row.campaign_id)
   };
 }
 
@@ -853,13 +854,28 @@ function buildOrdersLifecycleStats(events: StoredOrdersLifecycleEvent[]): Orders
   const byEventType: Record<string, number> = {};
   const byChannel: Record<string, number> = {};
   const byStatus: Record<string, number> = {};
+  const byCampaignId: Record<string, number> = {};
   const orderIds = new Set<string>();
+  const campaignByOrderId = new Map<string, string>();
 
+  for (const event of events) {
+    if (event.campaignId) campaignByOrderId.set(event.orderId, event.campaignId);
+  }
+
+  let campaignAttributionUpdates = 0;
+  let unattributedOrderSignals = 0;
   for (const event of events) {
     incrementRecord(byEventType, event.eventType);
     incrementRecord(byChannel, event.channel);
     incrementRecord(byStatus, event.status);
     orderIds.add(event.orderId);
+    const campaignId = event.campaignId ?? campaignByOrderId.get(event.orderId);
+    if (campaignId) {
+      campaignAttributionUpdates += 1;
+      incrementRecord(byCampaignId, campaignId);
+    } else {
+      unattributedOrderSignals += 1;
+    }
   }
 
   return {
@@ -878,16 +894,17 @@ function buildOrdersLifecycleStats(events: StoredOrdersLifecycleEvent[]): Orders
       rejectedEvents: 0,
       orderCreated: events.filter((event) => event.eventType === ORDERS_ORDER_CREATED_V1).length,
       orderStatusChanged: events.filter((event) => event.eventType === APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY).length,
-      unattributedOrderSignals: events.length,
-      campaignAttributionUpdates: 0
+      unattributedOrderSignals,
+      campaignAttributionUpdates
     },
     byEventType: sortedNumberRecord(byEventType),
     byChannel: sortedNumberRecord(byChannel),
     byStatus: sortedNumberRecord(byStatus),
-    blockers: [
-      ORDER_EVENTS_TRANSPORT_BLOCKER,
-      ORDER_CAMPAIGN_ATTRIBUTION_BLOCKER
-    ]
+    byCampaignId: sortedNumberRecord(byCampaignId),
+    campaignRefs: Array.from(new Set(campaignByOrderId.values()))
+      .map((campaignId) => `marketing:campaign:${campaignId}`)
+      .sort(),
+    blockers: [ORDER_RUN_ATTRIBUTION_BLOCKER]
   };
 }
 

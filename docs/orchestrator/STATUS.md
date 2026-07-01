@@ -3328,3 +3328,37 @@ Known residual evidence:
 Remaining blocker:
 
 - `[MISSING: Orders event payload campaignId/runId/correlationId or approved attribution join contract for campaign-level attribution]`.
+
+## 2026-07-01 - Orders Events Campaign Attribution Join Contract
+
+Current focus: Define and execute the Orders-to-Marketing campaign attribution join contract for Goal 7.4.
+
+Intent Preservation Chain:
+
+- Vision: Marketing consumes canonical Orders lifecycle facts while Orders remains the source of truth for order lifecycle and event publication.
+- Goal Impact: Campaign-level attribution is no longer blocked when Orders created events carry the current explicit join key `payload.leadAttribution.campaignId`.
+- System: Orders owns order records and events; Marketing owns campaign definitions and Marketing-owned aggregate attribution evidence; Leads/Auth remain identity/contact/consent owners; Notifications remains delivery owner.
+- Feature: Orders event campaign attribution join.
+- Task: Use the verified Orders optional `leadAttribution.campaignId` field as the only current campaign-level join key, persist it as bounded Marketing attribution evidence, and keep run/correlation attribution blocked until explicit fields exist.
+- Execution Plan: Marketing repo only; read Orders source/docs; do not edit Orders; add nullable `campaign_id`, parser validation, stats aggregation, tests, docs, and status evidence; deploy after validation.
+- Coding Prompt: Accept `orders.order.created.v1` with optional `payload.leadAttribution.campaignId`, ignore `leadId/source` for Marketing persistence, join later status events by `orderId`, preserve idempotency and no campaign execution side effects.
+- Code: `src/order-lifecycle-events.ts`, `src/store.ts`, `migrations/0012_order_lifecycle_campaign_attribution.sql`, `test/order-lifecycle-events.test.ts`, `docs/agents/contracts/orders-events-integration-contract.md`, `docs/agents/contracts/integration-api-matrix.md`, and this status entry.
+- Validation: focused Orders event tests passed with 7 tests; `npm run build` passed; `npm test` passed with 80 tests; `git diff --check` passed.
+
+Verified producer evidence:
+
+- Orders repo already documents and verifies optional `payload.leadAttribution.campaignId` on `orders.order.created.v1`.
+- Marketing did not edit Orders or infer attribution from customer/contact/address/payment data.
+
+Attribution contract applied:
+
+- Accepted campaign join key: `payload.leadAttribution.campaignId` on `orders.order.created.v1`.
+- Persisted Marketing field: nullable `marketing_order_lifecycle_events.campaign_id`.
+- Marketing ignores `leadAttribution.leadId` and `leadAttribution.source` for this table; those remain source-owned and are not copied as Marketing identity truth.
+- Later `orders.order.updated.v1` events are campaign-attributed only through previously persisted `orderId -> campaignId` evidence.
+- Campaign attribution stats now expose `byCampaignId`, `campaignRefs`, `campaignAttributionUpdates`, and `unattributedOrderSignals`.
+- No Orders event approves, schedules, dry-runs, executes, or delivers a campaign.
+
+Remaining blocker:
+
+- `[MISSING: Orders event payload runId/correlationId or approved attribution join contract for run-level attribution]`.
