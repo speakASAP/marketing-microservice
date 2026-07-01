@@ -1,0 +1,306 @@
+export const ORDERS_EVENTS_EXCHANGE = "orders.events";
+export const ORDERS_ORDER_CREATED_V1 = "orders.order.created.v1";
+export const ORDERS_ORDER_UPDATED_V1 = "orders.order.updated.v1";
+export const REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1 = "orders.order.status_changed.v1";
+
+export const ORDER_STATUS_CHANGED_ROUTING_KEY_BLOCKER =
+  "[MISSING: Orders producer routing key orders.order.status_changed.v1; current verified source publishes orders.order.updated.v1 for status changes]";
+
+export const ORDER_CAMPAIGN_ATTRIBUTION_BLOCKER =
+  "[MISSING: Orders event payload campaignId/runId/correlationId or approved attribution join contract for campaign-level attribution]";
+
+export const ORDER_EVENTS_TRANSPORT_BLOCKER =
+  "[MISSING: Marketing RabbitMQ consumer transport and queue binding configuration for orders.events]";
+
+export type SupportedOrdersLifecycleEventType = typeof ORDERS_ORDER_CREATED_V1 | typeof ORDERS_ORDER_UPDATED_V1;
+
+export interface OrdersLifecycleEventEnvelope {
+  type: SupportedOrdersLifecycleEventType;
+  eventVersion: 1;
+  eventId: string;
+  occurredAt: string;
+  source: "orders-microservice";
+  payload: Record<string, unknown>;
+}
+
+export interface OrdersLifecycleSignal {
+  eventType: SupportedOrdersLifecycleEventType;
+  eventVersion: 1;
+  eventId: string;
+  occurredAt: string;
+  orderId: string;
+  channel?: string;
+  status?: string;
+  previousStatus?: string;
+}
+
+export interface OrdersLifecycleStats {
+  sourceOwner: "orders-microservice";
+  consumerOwner: "marketing-microservice";
+  exchange: typeof ORDERS_EVENTS_EXCHANGE;
+  processedEventIds: string[];
+  orderRefs: string[];
+  totals: {
+    acceptedEvents: number;
+    duplicateEvents: number;
+    rejectedEvents: number;
+    orderCreated: number;
+    orderStatusChanged: number;
+    unattributedOrderSignals: number;
+    campaignAttributionUpdates: number;
+  };
+  byEventType: Record<string, number>;
+  byChannel: Record<string, number>;
+  byStatus: Record<string, number>;
+  blockers: string[];
+}
+
+export interface OrdersLifecycleProcessingResult {
+  accepted: boolean;
+  duplicate: boolean;
+  event?: OrdersLifecycleSignal;
+  reason?: string;
+  blocker?: string;
+  attributionStatus: "not_applicable" | "blocked_missing_order_marketing_refs";
+  stats: OrdersLifecycleStats;
+}
+
+interface MutableOrderState {
+  orderId: string;
+  firstSeenAt: string;
+  lastEventAt: string;
+  channel?: string;
+  status?: string;
+  previousStatus?: string;
+}
+
+interface ParsedEvent {
+  ok: true;
+  signal: OrdersLifecycleSignal;
+}
+
+interface RejectedEvent {
+  ok: false;
+  reason: string;
+  blocker?: string;
+}
+
+const FORBIDDEN_FIELD_PATTERN =
+  /(customer|address|billing|street|postal|paymentMethod|providerSecret|bearer|token|jwt|password|credential|trackingNumber|trackingUrl|operatorEmail|approverEmail|email|phone)/i;
+
+const CREATED_PAYLOAD_FIELDS = new Set(["orderId", "channel"]);
+const UPDATED_PAYLOAD_FIELDS = new Set(["orderId", "status", "previousStatus", "approval"]);
+const APPROVAL_PAYLOAD_FIELDS = new Set(["approvalType", "reasonCode", "sideEffectsHandled", "approvedAt"]);
+
+export function parseOrdersLifecycleEvent(input: unknown): ParsedEvent | RejectedEvent {
+  if (!isObject(input)) return reject("invalid_order_event_envelope");
+
+  const type = readString(input, "type");
+  if (type === REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1) {
+    return reject(`unsupported_order_event_type:${REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1}`, ORDER_STATUS_CHANGED_ROUTING_KEY_BLOCKER);
+  }
+  if (type !== ORDERS_ORDER_CREATED_V1 && type !== ORDERS_ORDER_UPDATED_V1) {
+    return reject(`unsupported_order_event_type:${type || "missing"}`);
+  }
+
+  if (input.eventVersion !== 1) return reject("unsupported_order_event_version");
+  const eventId = readString(input, "eventId");
+  if (!eventId) return reject("order_event_id_missing");
+  const occurredAt = readString(input, "occurredAt");
+  if (!isIsoTimestamp(occurredAt)) return reject("order_event_occurred_at_invalid");
+  if (readString(input, "source") !== "orders-microservice") return reject("order_event_source_invalid");
+  if (!isObject(input.payload)) return reject("order_event_payload_invalid");
+  const forbiddenPath = findForbiddenField(input.payload);
+  if (forbiddenPath) return reject(`order_event_forbidden_field:${forbiddenPath}`);
+
+  const allowedFields = type === ORDERS_ORDER_CREATED_V1 ? CREATED_PAYLOAD_FIELDS : UPDATED_PAYLOAD_FIELDS;
+  for (const key of Object.keys(input.payload)) {
+    if (!allowedFields.has(key)) return reject(`order_event_unexpected_payload_field:${key}`);
+  }
+
+  const orderId = readString(input.payload, "orderId");
+  if (!orderId) return reject("order_event_order_id_missing");
+
+  if (type === ORDERS_ORDER_CREATED_V1) {
+    const channel = readString(input.payload, "channel");
+    if (!channel) return reject("order_created_channel_missing");
+    return {
+      ok: true,
+      signal: { eventType: type, eventVersion: 1, eventId, occurredAt, orderId, channel }
+    };
+  }
+
+  const status = readString(input.payload, "status");
+  if (!status) return reject("order_status_missing");
+  const previousStatus = readString(input.payload, "previousStatus") || undefined;
+  const approval = input.payload.approval;
+  if (approval !== undefined && !isSafeApprovalObject(approval)) return reject("order_event_approval_invalid");
+
+  return {
+    ok: true,
+    signal: { eventType: type, eventVersion: 1, eventId, occurredAt, orderId, status, previousStatus }
+  };
+}
+
+export class OrdersLifecycleAttributionAccumulator {
+  private readonly processedEventIds = new Set<string>();
+  private readonly orderStates = new Map<string, MutableOrderState>();
+  private readonly totals: OrdersLifecycleStats["totals"] = {
+    acceptedEvents: 0,
+    duplicateEvents: 0,
+    rejectedEvents: 0,
+    orderCreated: 0,
+    orderStatusChanged: 0,
+    unattributedOrderSignals: 0,
+    campaignAttributionUpdates: 0
+  };
+  private readonly byEventType: Record<string, number> = {};
+  private readonly byChannel: Record<string, number> = {};
+  private readonly byStatus: Record<string, number> = {};
+
+  process(input: unknown): OrdersLifecycleProcessingResult {
+    const parsed = parseOrdersLifecycleEvent(input);
+    if (!parsed.ok) {
+      this.totals.rejectedEvents += 1;
+      return {
+        accepted: false,
+        duplicate: false,
+        reason: parsed.reason,
+        blocker: parsed.blocker,
+        attributionStatus: "not_applicable",
+        stats: this.snapshot()
+      };
+    }
+
+    const signal = parsed.signal;
+    if (this.processedEventIds.has(signal.eventId)) {
+      this.totals.duplicateEvents += 1;
+      return {
+        accepted: true,
+        duplicate: true,
+        event: signal,
+        attributionStatus: "blocked_missing_order_marketing_refs",
+        stats: this.snapshot()
+      };
+    }
+
+    this.processedEventIds.add(signal.eventId);
+    this.totals.acceptedEvents += 1;
+    this.totals.unattributedOrderSignals += 1;
+    increment(this.byEventType, signal.eventType);
+
+    const existing = this.orderStates.get(signal.orderId);
+    const nextState: MutableOrderState = {
+      orderId: signal.orderId,
+      firstSeenAt: existing?.firstSeenAt ?? signal.occurredAt,
+      lastEventAt: signal.occurredAt,
+      channel: signal.channel ?? existing?.channel,
+      status: signal.status ?? existing?.status,
+      previousStatus: signal.previousStatus ?? existing?.previousStatus
+    };
+    this.orderStates.set(signal.orderId, nextState);
+
+    if (signal.eventType === ORDERS_ORDER_CREATED_V1) {
+      this.totals.orderCreated += 1;
+      if (signal.channel) increment(this.byChannel, signal.channel);
+    } else {
+      this.totals.orderStatusChanged += 1;
+      if (signal.status) increment(this.byStatus, signal.status);
+    }
+
+    return {
+      accepted: true,
+      duplicate: false,
+      event: signal,
+      attributionStatus: "blocked_missing_order_marketing_refs",
+      stats: this.snapshot()
+    };
+  }
+
+  snapshot(): OrdersLifecycleStats {
+    return {
+      sourceOwner: "orders-microservice",
+      consumerOwner: "marketing-microservice",
+      exchange: ORDERS_EVENTS_EXCHANGE,
+      processedEventIds: Array.from(this.processedEventIds).sort(),
+      orderRefs: Array.from(this.orderStates.keys()).map((orderId) => `orders:order:${orderId}`).sort(),
+      totals: { ...this.totals },
+      byEventType: sortedRecord(this.byEventType),
+      byChannel: sortedRecord(this.byChannel),
+      byStatus: sortedRecord(this.byStatus),
+      blockers: [
+        ORDER_EVENTS_TRANSPORT_BLOCKER,
+        ORDER_STATUS_CHANGED_ROUTING_KEY_BLOCKER,
+        ORDER_CAMPAIGN_ATTRIBUTION_BLOCKER
+      ]
+    };
+  }
+}
+
+function reject(reason: string, blocker?: string): RejectedEvent {
+  return { ok: false, reason, blocker };
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readString(source: Record<string, unknown>, key: string): string {
+  const value = source[key];
+  return typeof value === "string" ? value : "";
+}
+
+function isIsoTimestamp(value: string): boolean {
+  if (!value) return false;
+  return !Number.isNaN(Date.parse(value));
+}
+
+function increment(record: Record<string, number>, key: string): void {
+  record[key] = (record[key] ?? 0) + 1;
+}
+
+function sortedRecord(record: Record<string, number>): Record<string, number> {
+  return Object.keys(record)
+    .sort()
+    .reduce<Record<string, number>>((accumulator, key) => {
+      accumulator[key] = record[key];
+      return accumulator;
+    }, {});
+}
+
+function findForbiddenField(value: unknown, path = "payload"): string | null {
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      const found = findForbiddenField(value[index], `${path}.${index}`);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  if (!isObject(value)) return null;
+
+  for (const [key, nested] of Object.entries(value)) {
+    const currentPath = `${path}.${key}`;
+    if (FORBIDDEN_FIELD_PATTERN.test(key)) return currentPath;
+    const found = findForbiddenField(nested, currentPath);
+    if (found) return found;
+  }
+  return null;
+}
+
+function isSafeApprovalObject(value: unknown): boolean {
+  if (!isObject(value)) return false;
+  for (const key of Object.keys(value)) {
+    if (!APPROVAL_PAYLOAD_FIELDS.has(key)) return false;
+  }
+  if (value.approvalType !== undefined && value.approvalType !== "human") return false;
+  if (value.reasonCode !== undefined && typeof value.reasonCode !== "string") return false;
+  if (value.approvedAt !== undefined && !isIsoTimestamp(String(value.approvedAt))) return false;
+  if (value.sideEffectsHandled !== undefined && !isTrueRecord(value.sideEffectsHandled)) return false;
+  return true;
+}
+
+function isTrueRecord(value: unknown): boolean {
+  if (!isObject(value)) return false;
+  return Object.values(value).every((entry) => entry === true);
+}

@@ -3125,3 +3125,77 @@ Blockers and unknowns:
 - `[UNKNOWN: current deployed version versus source]`; no deploy or live runtime parity check was permitted.
 - `[MISSING: live admin callback/session smoke with safe token]`; no secrets, token values, or live DB/runtime data were read.
 - `[MISSING: production Auth role grant evidence]`; Auth role assignments were outside this verification scope.
+
+## 2026-07-01 - Orders Production Rollout Goal 7.4 Marketing Orders Events Integration
+
+Current focus: Goal 7.4 Marketing Orders-events integration for the Orders production rollout.
+
+Intent Preservation Chain:
+
+- Vision: Statex applications can use canonical Orders lifecycle facts while Marketing remains the campaign and segmentation control plane.
+- Goal Impact: Marketing now has a narrow, transport-independent Orders lifecycle event consumer core and contract tests, while runtime broker consumption remains explicitly blocked until queue/config contracts are approved.
+- System: Orders owns order records, order items, order status lifecycle, and lifecycle event publication. Marketing owns campaign definitions, segment definitions, execution runs, delivery decisions, campaign attribution evidence, and aggregate Marketing-owned statistics. Notifications remains outbound provider owner. Auth/leads remain contact, preference, consent, and unsubscribe owners.
+- Feature: Read-only consumption contract for `orders.events` lifecycle signals.
+- Task: Verify Orders producer source, add a bounded Marketing-side event handler/contract surface, prove idempotency/stat aggregation behavior, and document runtime blockers.
+- Execution Plan: Marketing repo only; do not edit Orders or add a large broker transport layer without existing Marketing infrastructure; keep order events from triggering campaign execution.
+- Coding Prompt: Validate event envelopes, reject sensitive/non-contract payload fields, deduplicate by event ID, aggregate order signal statistics, preserve Orders as source of truth, and mark missing broker/status-key/attribution facts as `[MISSING: ...]`.
+- Code: `src/order-lifecycle-events.ts`, `test/order-lifecycle-events.test.ts`, `docs/agents/contracts/orders-events-integration-contract.md`, and `docs/agents/contracts/integration-api-matrix.md`.
+- Validation: focused Orders event tests passed; `npm run build` passed; `npm test` passed with 77 tests; `git diff --check` passed.
+
+Preflight and source verification:
+
+- Remote Marketing repository path: `/home/ssf/Documents/Github/marketing-microservice`.
+- Starting Marketing status: `## main...origin/main` at `d46acbe Merge remote-tracking branch 'origin/main'`, clean before this lane.
+- Orders source repository: `/home/ssf/Documents/Github/orders-microservice` at `d1c5a48 feat: plan production order integration`.
+- Verified Orders producer exchange: `orders.events`.
+- Verified Orders created routing key: `orders.order.created.v1`.
+- Verified Orders status-change routing key: `orders.order.updated.v1`.
+- Requested `orders.order.status_changed.v1` was not found in Orders docs/source: `[MISSING: Orders producer routing key orders.order.status_changed.v1; current source publishes orders.order.updated.v1 for status changes]`.
+- Marketing runtime config key scan printed names only: `.env.example` has `ORDERS_SERVICE_URL`, `ORDERS_SERVICE_TOKEN`, `ORDER_SIGNAL_PATH`, and `ORDER_SIGNAL_LIMIT`; `.env` has `ORDERS_SERVICE_URL`; `k8s/configmap.yaml` has no Orders/broker event keys.
+- No Marketing RabbitMQ/AMQP/Kafka/NATS consumer infrastructure or dependency was found in the current source/package surface.
+
+Implementation evidence:
+
+- Added `src/order-lifecycle-events.ts` with bounded validation for `orders.order.created.v1` and current Orders status-change events through `orders.order.updated.v1`.
+- Added explicit rejection for requested but unproduced `orders.order.status_changed.v1`, returning the documented `[MISSING: ...]` blocker.
+- Added idempotency guard by `eventId`.
+- Added aggregate order signal statistics by event type, channel, and status.
+- Added forbidden sensitive-field rejection for customer/contact/address/payment/tracking/token-like payload keys.
+- Added campaign attribution status as blocked instead of inventing attribution from current Orders payloads, because the verified event contract has no campaign/run/correlation references.
+- Added `docs/agents/contracts/orders-events-integration-contract.md` documenting producer evidence, Marketing consumer core behavior, runtime blockers, proposed queue adapter contract, and ownership boundaries.
+- Updated `docs/agents/contracts/integration-api-matrix.md` so Orders events are documented as read-only lifecycle signal inputs and not campaign execution triggers.
+- Did not add a RabbitMQ listener, deployment switch, env secret, DB migration, queue declaration, or deploy step in this chunk.
+
+Validation evidence:
+
+- `npx tsx --test --test-concurrency=1 test/order-lifecycle-events.test.ts` passed: 4 tests, 4 passing.
+- `npm run build` passed.
+- `npm test` passed: 77 tests, 77 passing.
+- `git diff --check` passed.
+
+Runtime blockers:
+
+- `[MISSING: Marketing RabbitMQ consumer transport and queue binding configuration for orders.events]`.
+- `[MISSING: approved Marketing queue name, dead-letter behavior, replay/backfill policy, and consumer deployment switch]`.
+- `[MISSING: Orders producer routing key orders.order.status_changed.v1; current source publishes orders.order.updated.v1 for status changes]`.
+- `[MISSING: Orders event payload campaignId/runId/correlationId or approved attribution join contract for campaign-level attribution]`.
+
+Intent Compliance Report:
+
+- Marketing did not edit Orders, Leads, Notifications, marketplace services, Warehouse, or Catalog.
+- Marketing did not become the source of truth for order records, order items, order status, customer data, payment data, address data, tracking data, or source-owned event publication.
+- Orders lifecycle events do not approve, schedule, dry-run, execute, or deliver campaigns.
+- Notifications remains the only outbound provider execution owner.
+- Auth/leads remain contact, preference, consent, and unsubscribe owners.
+- No real campaign execution, irreversible DB operation, deployment, or secret value exposure occurred.
+
+Parallel execution section:
+
+- Ready now: runtime consumer adapter design can start after owner approves broker env names, queue name, replay/backfill, and status routing-key decision.
+- Dependency-gated: persisted order attribution/stat read model is blocked by approved storage contract and campaign attribution join keys.
+- Blocked: consuming `orders.order.status_changed.v1` is blocked until Orders publishes that routing key or the rollout accepts `orders.order.updated.v1` as the canonical status-change event.
+- Final integration: deploy only after runtime config is confirmed and full validation passes.
+
+Next unfinished step:
+
+- Decide whether Marketing should bind to current `orders.order.updated.v1` or wait for Orders to publish `orders.order.status_changed.v1`, then approve the Marketing queue/runtime config contract before implementing a live RabbitMQ consumer.
