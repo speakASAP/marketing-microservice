@@ -3362,3 +3362,37 @@ Attribution contract applied:
 Remaining blocker:
 
 - `[MISSING: Orders event payload runId/correlationId or approved attribution join contract for run-level attribution]`.
+
+## 2026-07-01 - Orders Events Campaign Attribution Deploy Evidence
+
+Current focus: Deploy and verify the campaign attribution join implementation.
+
+Intent Preservation Chain:
+
+- Vision: Marketing consumes canonical Orders lifecycle facts while preserving Orders as source of truth.
+- Goal Impact: Campaign-level attribution join is now live for Orders created events that include explicit `payload.leadAttribution.campaignId`.
+- System: Marketing persists bounded campaign attribution evidence only; it does not store lead identity from Orders attribution metadata and does not execute campaigns from order events.
+- Feature: Production deployment of Orders campaign attribution join.
+- Task: Deploy commit `8fd8d64`, ensure migration `0012` applies, verify health and consumer startup.
+- Execution Plan: Run deploy, detect whether Kubernetes restarted, pin deployment to immutable image if needed, verify schema by column names only, and inspect sanitized startup logs.
+- Coding Prompt: Confirm `campaign_id` exists and the live Orders consumer remains bound to `orders.order.created.v1` and `orders.order.updated.v1`.
+- Code: deployed image `localhost:5000/marketing-microservice:8fd8d64`.
+- Validation: rollout succeeded; health returned `status=ok`; schema check returned `campaign_id` and `event_id`; selected running pod logs show `orders_events_consumer_started` at `2026-07-01T15:24:33.847Z`.
+
+Deployment evidence:
+
+- `./scripts/deploy.sh` built and pushed image `localhost:5000/marketing-microservice:8fd8d64` and completed successfully in 2.75s.
+- The deploy script initially left the Deployment image as `latest`, so Kubernetes did not restart the pod and the first schema check only returned `event_id`.
+- `kubectl -n statex-apps set image deployment/marketing-microservice app=localhost:5000/marketing-microservice:8fd8d64` forced an immutable image rollout.
+- New pod `marketing-microservice-d9888bbbc-9vfjn` reached `1/1 Running` with zero restarts.
+- Read-only schema check from the pod returned column names `campaign_id` and `event_id`; no DB secret values or rows were printed.
+- Health returned `{"status":"ok","service":"marketing-microservice"}`.
+- Consumer startup log shows exchange `orders.events`, queue `marketing.orders.lifecycle`, routing keys `orders.order.created.v1` and `orders.order.updated.v1`, dead-letter exchange `marketing.orders.lifecycle.dlx`, and prefetch `10`.
+
+Known residual evidence:
+
+- Post-start audit log forwarding still reports status 404. This predates the attribution join and does not block Orders event consumption; it remains unrelated follow-up debt.
+
+Remaining blocker:
+
+- `[MISSING: Orders event payload runId/correlationId or approved attribution join contract for run-level attribution]`.
