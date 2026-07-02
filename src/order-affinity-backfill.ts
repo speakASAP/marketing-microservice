@@ -228,12 +228,9 @@ async function readOrdersReplayInput(options: CliOptions): Promise<unknown[]> {
   if (options.channel) url.searchParams.set("channel", options.channel);
   if (options.from) url.searchParams.set("from", options.from);
   if (options.to) url.searchParams.set("to", options.to);
-  const token = (process.env.ORDERS_SERVICE_TOKEN || process.env.ORDERS_INTERNAL_SERVICE_TOKEN || "").trim();
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
   const response = await axios.get(url.toString(), {
     timeout: positiveInteger(process.env.ORDER_AFFINITY_ORDERS_TIMEOUT_MS, 10000),
-    headers: Object.keys(headers).length ? headers : undefined
+    headers: orderAffinityOrdersReplayHeaders()
   });
   const events = response.data?.data?.events;
   if (!response.data?.success || !Array.isArray(events)) {
@@ -245,6 +242,15 @@ async function readOrdersReplayInput(options: CliOptions): Promise<unknown[]> {
 function positiveInteger(value: unknown, fallback: number): number {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function orderAffinityOrdersReplayHeaders(env: NodeJS.ProcessEnv = process.env): Record<string, string> | undefined {
+  const token = (env.ORDERS_SERVICE_TOKEN || env.ORDERS_INTERNAL_SERVICE_TOKEN || "").trim();
+  if (!token) return undefined;
+  return {
+    "x-service-name": "marketing-microservice",
+    "x-internal-service-token": token.replace(/^Bearer\s+/i, "")
+  };
 }
 
 function normalizeRunId(value: string): string {

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ORDERS_ORDER_CREATED_V1 } from "../src/order-lifecycle-events";
-import { buildOrderAffinityBackfill } from "../src/order-affinity-backfill";
+import { buildOrderAffinityBackfill, orderAffinityOrdersReplayHeaders } from "../src/order-affinity-backfill";
 
 function created(eventId: string, productIds: string[], channel = "flipflop") {
   return {
@@ -64,4 +64,17 @@ test("order affinity backfill accepts outbox row wrappers", () => {
 
   assert.equal(summary.acceptedCreatedEvents, 1);
   assert.equal(summary.aggregatePairs, 2);
+});
+
+
+test("order affinity Orders replay headers use internal service auth", () => {
+  assert.deepEqual(orderAffinityOrdersReplayHeaders({ ORDERS_SERVICE_TOKEN: "orders-token" }), {
+    "x-service-name": "marketing-microservice",
+    "x-internal-service-token": "orders-token",
+  });
+  assert.deepEqual(orderAffinityOrdersReplayHeaders({ ORDERS_INTERNAL_SERVICE_TOKEN: "Bearer wrapped-token" }), {
+    "x-service-name": "marketing-microservice",
+    "x-internal-service-token": "wrapped-token",
+  });
+  assert.equal(orderAffinityOrdersReplayHeaders({}), undefined);
 });
