@@ -126,6 +126,32 @@ Initial default blueprints:
 | `runlayer.crm-upsell.default` | `runlayer` | `upsell` | `upsell` | `runlayer.crm-upsell.default` |
 | `runlayer.crm-winback.default` | `runlayer` | `winback` | `winback` | `runlayer.crm-winback.default` |
 
+
+## BPCP Holiday Discount Content Refs
+
+Marketing owns the additive BPCP Holiday Discount content-ref lane for `processId=holiday-discount-2026`, `processVersion=1`, `policyRef=holiday-10-percent-selected-categories`, and campaign ref `holiday-2026-main`. This is a read-only contract for downstream services to consume later; it does not approve, schedule, dry-run, execute, deliver, price, discount, cart, or checkout anything.
+
+Read-only endpoint:
+
+- `GET /campaign-catalog/bpcp/holiday-discount-2026/content-contract` returns the validated Marketing-owned content contract.
+
+Content slots:
+
+| Slot | Content ref | Template ref |
+| --- | --- | --- |
+| `product_badge` | `marketing:holiday-2026-main:product-badge` | `holiday-2026-main.product-badge` |
+| `cart_banner` | `marketing:holiday-2026-main:cart-banner` | `holiday-2026-main.cart-banner` |
+| `upsell_block` | `marketing:holiday-2026-main:upsell-block` | `holiday-2026-main.upsell-block` |
+| `post_purchase_message` | `marketing:holiday-2026-main:post-purchase-message` | `holiday-2026-main.post-purchase-message` |
+
+Validation must fail closed for unsupported slot names, duplicate or missing required slots, missing/changed process references, and content-ref metadata that attempts to include execution, delivery/provider, pricing/discount, cart, or checkout fields.
+
+Remaining unresolved facts:
+
+- [MISSING: canonical BPCP campaign content API path and response envelope]
+- [MISSING: notification template provider contract for Holiday Discount template refs]
+- [MISSING: localized copy approval and template asset source of truth]
+
 ## Segment Model
 
 Required fields:

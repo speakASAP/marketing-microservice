@@ -3560,3 +3560,26 @@ Smoke input:
 Rollback:
 
 - Set `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=false` and redeploy Marketing if ongoing live publishing needs to be paused.
+
+
+## 2026-07-03 - BPCP Holiday Discount Marketing Content Refs
+
+Current focus: Add the Marketing-owned Holiday Discount campaign/content refs lane without delivery, pricing, cart, checkout, deployment, or production data changes.
+
+Intent Preservation Chain:
+
+- Vision: BPCP can coordinate a Holiday Discount pilot while each service keeps its own domain ownership.
+- Goal Impact: Downstream services can read Marketing-owned content refs for `holiday-discount-2026` later without treating Marketing as the discount calculator, cart owner, checkout owner, or notification delivery provider.
+- System: BPCP owns process orchestration, Marketing owns campaign/content references, Notifications owns delivery/provider execution, and pricing/cart/checkout services own monetary behavior.
+- Feature: Holiday Discount Marketing content-ref contract.
+- Task: Add typed slots, process refs, read-only contract endpoint, fail-closed validation, tests, and adoption documentation for `holiday-2026-main`.
+- Execution Plan: Edit only Marketing-owned source/tests/docs; avoid BPCP/Catalog/Notifications/pricing/cart/checkout/Kubernetes/deploy/secrets/production data.
+- Coding Prompt: Preserve `processId=holiday-discount-2026`, `processVersion=1`, `policyRef=holiday-10-percent-selected-categories`, `campaignRef=holiday-2026-main`, expose refs for `product_badge`, `cart_banner`, `upsell_block`, and `post_purchase_message`, and reject execution/delivery fields in content metadata.
+- Code: `src/types.ts`, `src/campaign-blueprints.ts`, `src/api-contracts.ts`, `src/main.ts`, `test/campaign-blueprints.test.ts`, `test/api-contracts.test.ts`, `docs/business-process-control-plane/HOLIDAY_DISCOUNT_ADOPTION.md`, `docs/agents/contracts/marketing-campaign-contract.md`, and `docs/orchestrator/GOALS.md`.
+- Validation: pending current session commands.
+
+Remaining blockers:
+
+- `[MISSING: canonical BPCP campaign content API path and response envelope]`.
+- `[MISSING: notification template provider contract for Holiday Discount template refs]`.
+- `[MISSING: localized copy approval and template asset source of truth]`.

@@ -425,3 +425,24 @@ Documentation closeout evidence:
 - `docs/agents/contracts/production-governance-readiness-contract.md` defines Goal 20.1-20.3 risk, approval, quiet-hour, and tenant/app guardrail policy drafts.
 - `docs/operations/production-readiness-playbook.md` defines Goal 20.4-20.5 deploy, rollback, incident, unsubscribe escalation, and readiness checklist drafts.
 - Enforcement implemented in src/production-governance.ts and src/executor.ts; metadata contract is accepted through catalogMetadata.governance and documented in the production governance contract.
+
+
+## Goal 21 - BPCP Holiday Discount Marketing Content Refs
+
+Status: done
+
+Intent: Marketing can provide Holiday Discount campaign/content references to BPCP without owning delivery, pricing, cart, checkout, or process execution.
+
+Chunks:
+
+- [x] 21.1 Add typed Holiday Discount content slots and process refs.
+- [x] 21.2 Add Marketing-owned `holiday-2026-main` blueprint/content contract.
+- [x] 21.3 Expose a read-only content contract endpoint for downstream readers.
+- [x] 21.4 Add fail-closed validation for unsupported slots, missing process refs, and execution/delivery/pricing metadata.
+- [x] 21.5 Document unresolved BPCP/template facts with `[MISSING: ...]`.
+
+Acceptance criteria:
+
+- Content refs exist for `product_badge`, `cart_banner`, `upsell_block`, and `post_purchase_message`.
+- Process refs remain `processId=holiday-discount-2026`, `processVersion=1`, `policyRef=holiday-10-percent-selected-categories`, and `campaignRef=holiday-2026-main`.
+- No notification delivery, pricing, cart, checkout, Kubernetes, deploy, or production-data changes are included.

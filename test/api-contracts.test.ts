@@ -3,6 +3,8 @@ import http from "node:http";
 import assert from "node:assert/strict";
 import { AddressInfo } from "node:net";
 import { app } from "../src/main";
+import { getHolidayDiscountCampaignContentContract } from "../src/campaign-blueprints";
+import { validateHolidayDiscountCampaignContentContract } from "../src/api-contracts";
 import { setRegistryFixtureProviderForTest } from "../src/registry";
 import { getStore, resetInMemoryState } from "../src/store";
 import { setTestRecipientFixtureProviderForTest } from "../src/sources";
@@ -1014,6 +1016,51 @@ test("campaign catalog blueprint APIs expose read-only filtered defaults", async
     assert.equal(missing.status, 404);
     assert.equal(missing.body.error, "blueprint_not_found");
   });
+});
+
+
+
+test("holiday discount BPCP content contract endpoint is read-only metadata", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await request(baseUrl, "/campaign-catalog/bpcp/holiday-discount-2026/content-contract");
+    assert.equal(response.status, 200);
+    assert.equal(response.body.processId, "holiday-discount-2026");
+    assert.equal(response.body.processVersion, 1);
+    assert.equal(response.body.policyRef, "holiday-10-percent-selected-categories");
+    assert.equal(response.body.campaignRef, "holiday-2026-main");
+    assert.equal(response.body.blueprintId, "holiday-2026-main");
+    assert.deepEqual((response.body.contentRefs as Json[]).map((item) => item.slot), ["product_badge", "cart_banner", "upsell_block", "post_purchase_message"]);
+    assert.equal(JSON.stringify(response.body).includes("contract-test-token"), false);
+    for (const field of ["execute", "deliveryProvider", "providerCredentials", "price", "discount", "cart", "checkout"]) {
+      assert.equal(Object.prototype.hasOwnProperty.call(response.body, field), false);
+    }
+  });
+});
+
+test("holiday discount content contract validation fails closed", () => {
+  const invalid = JSON.parse(JSON.stringify(getHolidayDiscountCampaignContentContract())) as Json;
+  invalid.processId = "holiday-discount-2025";
+  invalid.processVersion = 2;
+  delete invalid.policyRef;
+  invalid.execute = true;
+  const refs = invalid.contentRefs as Json[];
+  refs[0].slot = "product_tile";
+  refs[0].metadata = { delivery: "notifications", processId: "holiday-discount-2026" };
+  refs[1].send = true;
+
+  const validation = validateHolidayDiscountCampaignContentContract(invalid);
+  assert.equal(validation.ok, false);
+  if (!validation.ok) {
+    assert.equal(validation.error.error, "invalid_holiday_discount_content_contract");
+    assert.equal(validation.error.fields?.processId, "unsupported_value");
+    assert.equal(validation.error.fields?.processVersion, "unsupported_value");
+    assert.equal(validation.error.fields?.policyRef, "unsupported_value");
+    assert.equal(validation.error.fields?.execute, "not_content_contract");
+    assert.equal(validation.error.fields?.["contentRefs.0.slot"], "unsupported_value:product_tile");
+    assert.equal(validation.error.fields?.["contentRefs.product_badge"], "required_slot");
+    assert.equal(validation.error.fields?.["contentRefs.0.metadata.delivery"], "not_content_contract_metadata");
+    assert.equal(validation.error.fields?.["contentRefs.1.send"], "not_content_ref");
+  }
 });
 
 test("public preference and unsubscribe endpoints preserve source ownership", async () => {

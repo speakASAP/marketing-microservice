@@ -41,8 +41,11 @@ Campaign provider for Holiday Discount content, slots, upsell copy, and notifica
 
 ## Blockers and unknowns
 
-- [MISSING: canonical campaign content API for BPCP]
+- Read-only local content contract: `GET /campaign-catalog/bpcp/holiday-discount-2026/content-contract`.
+- Campaign ref: `holiday-2026-main`.
+- [MISSING: canonical cross-service BPCP campaign content API path and response envelope]
 - [MISSING: runtime queue contract for order lifecycle event consumption]
+- [MISSING: notification template provider contract for Holiday Discount template refs]
 
 ## Validation evidence required before implementation is accepted
 
@@ -56,3 +59,10 @@ This adoption doc is safe for a focused service owner to implement in parallel
 after the central BPCP schemas are accepted. The service owner must not edit
 shared BPCP schemas directly; schema changes go through the BPCP integration
 owner.
+
+
+## Marketing content refs lane
+
+Marketing now owns an additive, read-only Holiday Discount content-ref contract for `processId=holiday-discount-2026`, `processVersion=1`, `policyRef=holiday-10-percent-selected-categories`, and campaign ref `holiday-2026-main`. The contract includes only content/template references for `product_badge`, `cart_banner`, `upsell_block`, and `post_purchase_message`. It does not calculate discounts, alter carts, own checkout totals, send notifications, or execute a campaign.
+
+Fail-closed validation rejects unsupported slot names, missing or changed process refs, duplicate/missing required slots, and execution/delivery/pricing/cart/checkout fields in the content contract or slot metadata.
