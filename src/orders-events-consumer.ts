@@ -3,8 +3,13 @@ import {
   APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY,
   ORDERS_EVENTS_EXCHANGE,
   ORDERS_ORDER_CREATED_V1,
+  OrdersLifecycleSignal,
   parseOrdersLifecycleEvent
 } from "./order-lifecycle-events";
+import {
+  OrderAffinityCatalogPublishResult,
+  publishOrderAffinitySignalToCatalog
+} from "./order-affinity-catalog-publisher";
 import { logDecision } from "./logger";
 import { getStore, MarketingStore } from "./store";
 
@@ -26,6 +31,8 @@ export interface OrdersEventsConsumerController {
   close(): Promise<void>;
 }
 
+export type OrderAffinityCatalogPublisher = (signal: OrdersLifecycleSignal) => Promise<OrderAffinityCatalogPublishResult>;
+
 export interface OrdersEventMessageResult {
   accepted: boolean;
   duplicate: boolean;
@@ -34,6 +41,8 @@ export interface OrdersEventMessageResult {
   eventId?: string;
   eventType?: string;
   orderId?: string;
+  catalogAffinityPublishStatus?: OrderAffinityCatalogPublishResult["status"];
+  catalogAffinityCandidateCount?: number;
 }
 
 export function ordersEventsConsumerOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): OrdersEventsConsumerOptions {
@@ -52,7 +61,8 @@ export function ordersEventsConsumerOptionsFromEnv(env: NodeJS.ProcessEnv = proc
 export async function processOrdersEventMessage(
   content: Buffer | string,
   store: MarketingStore,
-  receivedAt = new Date().toISOString()
+  receivedAt = new Date().toISOString(),
+  publishOrderAffinity: OrderAffinityCatalogPublisher = publishOrderAffinitySignalToCatalog
 ): Promise<OrdersEventMessageResult> {
   let parsedJson: unknown;
   try {
@@ -67,13 +77,18 @@ export async function processOrdersEventMessage(
   }
 
   const stored = await store.recordOrdersLifecycleEvent(parsed.signal, receivedAt);
+  const catalogAffinityPublish = stored.accepted && !stored.duplicate
+    ? await publishOrderAffinity(parsed.signal)
+    : undefined;
   return {
     accepted: stored.accepted,
     duplicate: stored.duplicate,
     rejected: false,
     eventId: parsed.signal.eventId,
     eventType: parsed.signal.eventType,
-    orderId: parsed.signal.orderId
+    orderId: parsed.signal.orderId,
+    catalogAffinityPublishStatus: catalogAffinityPublish?.status,
+    catalogAffinityCandidateCount: catalogAffinityPublish?.candidateCount
   };
 }
 
@@ -129,6 +144,8 @@ export async function startOrdersEventsConsumer(
         accepted: result.accepted,
         duplicate: result.duplicate,
         reason: result.reason ?? null,
+        catalogAffinityPublishStatus: result.catalogAffinityPublishStatus ?? null,
+        catalogAffinityCandidateCount: result.catalogAffinityCandidateCount ?? null,
         duration_ms: 0
       });
       channel.ack(message);
