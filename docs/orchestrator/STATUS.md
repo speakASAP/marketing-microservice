@@ -3583,3 +3583,33 @@ Remaining blockers:
 - `[MISSING: canonical BPCP campaign content API path and response envelope]`.
 - `[MISSING: notification template provider contract for Holiday Discount template refs]`.
 - `[MISSING: localized copy approval and template asset source of truth]`.
+
+
+## 2026-07-03 - Order Affinity Historical Backfill CLI
+
+Current focus: Marketing-owned historical order-affinity aggregation from the Orders replay export.
+
+Intent Preservation Chain:
+
+- Vision: Real customer purchase history can feed related-product and future bundle surfaces across storefronts.
+- Goal Impact: Marketing can aggregate historical co-purchase evidence and publish Catalog relation candidates through the existing guarded Catalog writer.
+- System: Orders owns replay source data; Marketing owns aggregation/idempotency/publish orchestration; Catalog owns product-relation persistence.
+- Feature: `backfill:order-affinity` dry-run/publish command with Orders replay input.
+- Task: Add a CLI that reads the bounded Orders replay endpoint or JSON input, aggregates directed product pairs, strips raw order IDs from public output, and uses internal-service auth for Orders.
+- Execution Plan: Keep publish disabled unless `--publish` is explicit and existing Catalog publish env is enabled; validate with tests/build; deploy immutable image; start with dry-run.
+- Coding Prompt: Reuse the existing Orders lifecycle parser and Catalog candidate shape; do not expose customer/address/payment details; do not write Catalog relations during dry-run.
+- Code: `src/order-affinity-backfill.ts`, `test/order-affinity-backfill.test.ts`, `k8s/external-secret.yaml`, `k8s/secret.yaml.example`, and `package.json`.
+- Validation: `npm run test -- --test-name-pattern="order affinity backfill"` passed with 93 tests; `npm run build` and `git diff --check` passed.
+
+Deployment and runtime evidence:
+
+- Commits pushed: `e04d155` added the backfill CLI; `d293415` switched Orders fetches to internal-service auth and mapped `ORDERS_SERVICE_TOKEN`.
+- Current deployed image: `localhost:5000/marketing-microservice:d293415`.
+- ExternalSecret `marketing-microservice-secret` is `Ready=True`; pod environment includes `ORDERS_SERVICE_TOKEN` and `CATALOG_INTERNAL_SERVICE_TOKEN` key names only.
+- Live command succeeded: `node dist/order-affinity-backfill.js --orders-url http://orders-microservice.statex-apps.svc.cluster.local:3203 --limit=50 --dry-run --pretty`.
+- Dry-run result: `inputRecords=0`, `acceptedCreatedEvents=0`, `aggregatePairs=0`, `candidates=[]`; no Catalog publish was attempted.
+
+Remaining blockers:
+
+- `[MISSING: qualifying historical paid multi-product Orders rows for non-empty replay evidence]`.
+- `[MISSING: owner-reviewed publish window before running a future non-empty `--publish` backfill]`.
