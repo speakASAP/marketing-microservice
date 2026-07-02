@@ -3462,3 +3462,33 @@ Remaining blockers:
 
 - `[MISSING: runtime Catalog internal service token secret mapping for Marketing-to-Catalog relation writes]`.
 - `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`.
+
+
+## 2026-07-02 - Order Affinity Catalog Publisher Deploy Evidence
+
+Current focus: Deploy the guarded Marketing order-affinity publisher with live Catalog writes disabled.
+
+Intent Preservation Chain:
+
+- Vision: Purchase-derived product relationships can feed related products and future bundles without bypassing Catalog ownership.
+- Goal Impact: The Marketing publisher code is now live, but cannot mutate Catalog relations until the explicit runtime switch and internal token are configured.
+- System: Marketing derives bounded co-purchase candidates from Orders events; Catalog remains the only owner of product relation persistence.
+- Feature: Production deployment of guarded order-affinity publisher.
+- Task: Deploy commit `f40e417`, pin the Deployment to the immutable image, verify health, startup logs, and disabled publisher env.
+- Execution Plan: Run the repo deploy script, then pin the Kubernetes Deployment to `localhost:5000/marketing-microservice:f40e417` because the script sets `latest`; verify without printing secret values.
+- Coding Prompt: Confirm the Orders consumer still starts and the Catalog relation publisher remains disabled by default.
+- Code: deployed image `localhost:5000/marketing-microservice:f40e417`.
+- Validation: deploy completed; rollout succeeded; pod `marketing-microservice-6fcdc7d79b-64z75` reached `1/1 Running`; health returned `200` with `status=ok`; runtime env showed `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=false`; startup logs showed `orders_events_consumer_started` for `orders.order.created.v1` and `orders.order.updated.v1`.
+
+Deployment evidence:
+
+- `./scripts/deploy.sh f40e417` built and pushed image digest `sha256:faccc9975043fbf7d88b0d587146c598a7fbe2053cddf03dcaf20fa82f94b326`.
+- The deploy script applied ConfigMap changes and completed successfully.
+- `kubectl -n statex-apps set image deployment/marketing-microservice app=localhost:5000/marketing-microservice:f40e417` forced the immutable rollout.
+- Health probe via in-pod Node fetch returned `200` and `{"status":"ok","service":"marketing-microservice"}`.
+- Runtime env names/values checked for non-secret publisher keys only: `CATALOG_SERVICE_URL`, `CATALOG_ORDER_AFFINITY_BATCH_ENDPOINT`, `CATALOG_ORDER_AFFINITY_TIMEOUT_MS`, `CATALOG_ORDER_AFFINITY_BATCH_SIZE`, and disabled switch `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=false`.
+
+Remaining blockers:
+
+- `[MISSING: runtime Catalog internal service token secret mapping for Marketing-to-Catalog relation writes]`.
+- `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`.
