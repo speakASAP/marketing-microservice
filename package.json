@@ -10,7 +10,8 @@
     "dev": "tsx src/main.ts",
     "check": "tsc --noEmit",
     "test": "tsx --test --test-concurrency=1 test/**/*.test.ts",
-    "check:auth-static": "node scripts/check-hosted-auth-static.mjs"
+    "check:auth-static": "node scripts/check-hosted-auth-static.mjs",
+    "backfill:order-affinity": "tsx src/order-affinity-backfill.ts"
   },
   "dependencies": {
     "@types/amqplib": "^0.10.8",
