@@ -4,7 +4,7 @@ import path from "node:path";
 import express from "express";
 import { buildMarketingAnalyticsCsv, buildMarketingAnalyticsReadModel, AnalyticsBuildOptions, AnalyticsFactType, ExternalAttributionFact } from "./analytics";
 import { renderAdminAnalyticsDashboard } from "./admin-analytics-dashboard";
-import { getDefaultCampaignBlueprint, listDefaultCampaignBlueprints, CampaignBlueprintFilter } from "./campaign-blueprints";
+import { getDefaultCampaignBlueprint, getHolidayDiscountCampaignContentContract, listDefaultCampaignBlueprints, CampaignBlueprintFilter } from "./campaign-blueprints";
 import { AdminUserSession, adminSessionResponse, requireAdminAuth } from "./admin-auth";
 import { renderAdminCampaignsConsole, renderAdminSegmentsConsole } from "./admin-campaign-segment-console";
 import {
@@ -32,6 +32,7 @@ import {
   sourceOwnerService,
   validateCampaignBody,
   validateExecutionBody,
+  validateHolidayDiscountCampaignContentContract,
   validatePreferenceOwner,
   validatePreferenceRequest,
   validateJourneyBody,
@@ -698,6 +699,15 @@ app.get("/campaign-catalog/blueprints/:blueprintId", (req, res) => {
     return res.status(404).json({ error: "blueprint_not_found" });
   }
   return res.json(blueprint);
+});
+
+
+app.get("/campaign-catalog/bpcp/holiday-discount-2026/content-contract", (_req, res) => {
+  const validation = validateHolidayDiscountCampaignContentContract(getHolidayDiscountCampaignContentContract());
+  if (!validation.ok) {
+    return sendContractError(res, 500, validation.error);
+  }
+  return res.json(validation.value);
 });
 
 app.get("/campaign-catalog/campaigns", async (req, res) => {

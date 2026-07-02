@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { Campaign, CampaignFamily, CampaignLifecycleStage, CampaignStatus, Channel, ContactOwner, Journey, JourneyExitRuleType, JourneyStatus, JourneySuppressionRuleType, JourneyTriggerType, Purpose, ProductionRiskClass, RegistryEnvironment, Segment, SegmentSource } from "./types";
+import { Campaign, CampaignFamily, CampaignLifecycleStage, CampaignStatus, Channel, ContactOwner, HolidayDiscountCampaignContentContract, HolidayDiscountContentSlot, Journey, JourneyExitRuleType, JourneyStatus, JourneySuppressionRuleType, JourneyTriggerType, Purpose, ProductionRiskClass, RegistryEnvironment, Segment, SegmentSource } from "./types";
 
 const CHANNELS: Channel[] = ["email", "telegram", "whatsapp"];
 const PURPOSES: Purpose[] = ["marketing", "retention", "transactional-not-marketing"];
@@ -46,6 +46,13 @@ const READ_ONLY_APPROVAL_FIELDS = ["approvalStatus", "approvedBy", "approvedAt",
 const REGISTRY_ENVIRONMENTS: RegistryEnvironment[] = ["production", "staging", "development", "test"];
 const REQUIRED_SCOPE_FIELDS = ["tenantId", "appId", "brandId"] as const;
 const OPTIONAL_SCOPE_FIELDS = ["businessId", "defaultLocale", "timezone", "productLine", "lifecycleScope", "legalSenderIdentity", "policyRef"] as const;
+
+const HOLIDAY_DISCOUNT_PROCESS_ID = "holiday-discount-2026";
+const HOLIDAY_DISCOUNT_PROCESS_VERSION = 1;
+const HOLIDAY_DISCOUNT_POLICY_REF = "holiday-10-percent-selected-categories";
+const HOLIDAY_DISCOUNT_CAMPAIGN_REF = "holiday-2026-main";
+const HOLIDAY_DISCOUNT_CONTENT_SLOTS: HolidayDiscountContentSlot[] = ["product_badge", "cart_banner", "upsell_block", "post_purchase_message"];
+const FORBIDDEN_CONTENT_CONTRACT_FIELDS = ["execute", "execution", "delivery", "deliveryProvider", "provider", "providerCredentials", "send", "scheduleAt", "status", "approvalStatus", "dryRun", "price", "discount", "cart", "checkout"] as const;
 
 export type ContractError = {
   error: string;
@@ -252,6 +259,112 @@ function validateProductionGovernanceMetadata(value: unknown, fields: Record<str
   const dryRunRecipientCount = validateOptionalNonNegativeInteger(value.dryRunRecipientCount, "catalogMetadata.governance.dryRunRecipientCount", fields);
   if (dryRunRecipientCount !== undefined) governance.dryRunRecipientCount = dryRunRecipientCount;
   return governance;
+}
+
+
+function validateContentRefMetadata(value: unknown, field: string, fields: Record<string, string>): Record<string, string | number | boolean | null> | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    fields[field] = "must_be_object";
+    return undefined;
+  }
+  const metadata: Record<string, string | number | boolean | null> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (FORBIDDEN_CONTENT_CONTRACT_FIELDS.includes(key as typeof FORBIDDEN_CONTENT_CONTRACT_FIELDS[number])) {
+      fields[`${field}.${key}`] = "not_content_contract_metadata";
+      continue;
+    }
+    if (item !== null && !["string", "number", "boolean"].includes(typeof item)) {
+      fields[`${field}.${key}`] = "must_be_scalar_or_null";
+      continue;
+    }
+    metadata[key] = item as string | number | boolean | null;
+  }
+  return metadata;
+}
+
+export function validateHolidayDiscountCampaignContentContract(value: unknown): ValidationResult<HolidayDiscountCampaignContentContract> {
+  if (!isRecord(value)) {
+    return { ok: false, error: contractError("invalid_content_contract", "Holiday Discount content contract must be a JSON object.") };
+  }
+  const fields: Record<string, string> = {};
+  if (value.processId !== HOLIDAY_DISCOUNT_PROCESS_ID) fields.processId = "unsupported_value";
+  if (value.processVersion !== HOLIDAY_DISCOUNT_PROCESS_VERSION) fields.processVersion = "unsupported_value";
+  if (value.policyRef !== HOLIDAY_DISCOUNT_POLICY_REF) fields.policyRef = "unsupported_value";
+  if (value.campaignRef !== HOLIDAY_DISCOUNT_CAMPAIGN_REF) fields.campaignRef = "unsupported_value";
+  if (value.ownerService !== "marketing-microservice") fields.ownerService = "unsupported_value";
+  if (!isNonEmptyString(value.blueprintId)) fields.blueprintId = "required_non_empty_string";
+
+  for (const field of FORBIDDEN_CONTENT_CONTRACT_FIELDS) {
+    if (value[field] !== undefined) fields[field] = "not_content_contract";
+  }
+
+  const contentRefs: HolidayDiscountCampaignContentContract["contentRefs"] = [];
+  const seenSlots = new Set<string>();
+  if (!Array.isArray(value.contentRefs) || value.contentRefs.length === 0) {
+    fields.contentRefs = "required_non_empty_array";
+  } else {
+    value.contentRefs.forEach((item, index) => {
+      const prefix = `contentRefs.${index}`;
+      if (!isRecord(item)) {
+        fields[prefix] = "must_be_object";
+        return;
+      }
+      const slot = item.slot;
+      if (!HOLIDAY_DISCOUNT_CONTENT_SLOTS.includes(slot as HolidayDiscountContentSlot)) {
+        fields[`${prefix}.slot`] = `unsupported_value:${String(slot)}`;
+      } else if (seenSlots.has(String(slot))) {
+        fields[`${prefix}.slot`] = "duplicate_slot";
+      } else {
+        seenSlots.add(String(slot));
+      }
+      if (!isNonEmptyString(item.contentRef)) fields[`${prefix}.contentRef`] = "required_non_empty_string";
+      if (item.templateRef !== undefined && item.templateRef !== null && !isNonEmptyString(item.templateRef)) fields[`${prefix}.templateRef`] = "must_be_non_empty_string_or_null";
+      if (item.locale !== undefined && item.locale !== null && !isNonEmptyString(item.locale)) fields[`${prefix}.locale`] = "must_be_non_empty_string_or_null";
+      for (const field of FORBIDDEN_CONTENT_CONTRACT_FIELDS) {
+        if (item[field] !== undefined) fields[`${prefix}.${field}`] = "not_content_ref";
+      }
+      const metadata = validateContentRefMetadata(item.metadata, `${prefix}.metadata`, fields);
+      if (HOLIDAY_DISCOUNT_CONTENT_SLOTS.includes(slot as HolidayDiscountContentSlot) && isNonEmptyString(item.contentRef)) {
+        contentRefs.push({
+          slot: slot as HolidayDiscountContentSlot,
+          contentRef: item.contentRef.trim(),
+          templateRef: item.templateRef === undefined ? undefined : item.templateRef === null ? null : String(item.templateRef).trim(),
+          locale: item.locale === undefined ? undefined : item.locale === null ? null : String(item.locale).trim(),
+          ...(metadata !== undefined ? { metadata } : {})
+        });
+      }
+    });
+  }
+
+  for (const slot of HOLIDAY_DISCOUNT_CONTENT_SLOTS) {
+    if (!seenSlots.has(slot)) fields[`contentRefs.${slot}`] = "required_slot";
+  }
+
+  let unresolved: string[] = [];
+  if (!Array.isArray(value.unresolved) || value.unresolved.some((item) => !isNonEmptyString(item))) {
+    fields.unresolved = "required_string_array";
+  } else {
+    unresolved = value.unresolved.map((item) => item.trim());
+  }
+
+  if (Object.keys(fields).length > 0) {
+    return { ok: false, error: contractError("invalid_holiday_discount_content_contract", "Holiday Discount content contract failed validation.", fields) };
+  }
+
+  return {
+    ok: true,
+    value: {
+      processId: HOLIDAY_DISCOUNT_PROCESS_ID,
+      processVersion: HOLIDAY_DISCOUNT_PROCESS_VERSION,
+      policyRef: HOLIDAY_DISCOUNT_POLICY_REF,
+      campaignRef: HOLIDAY_DISCOUNT_CAMPAIGN_REF,
+      blueprintId: String(value.blueprintId).trim(),
+      ownerService: "marketing-microservice",
+      contentRefs,
+      unresolved
+    }
+  };
 }
 
 export function validateSegmentBody(body: unknown, partial = false): ValidationResult<Partial<Segment>> {

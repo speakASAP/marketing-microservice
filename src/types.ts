@@ -50,6 +50,27 @@ export type JourneyTriggerType = "manual" | "segment_entry" | "app_signal";
 export type JourneyExitRuleType = "segment_match" | "app_signal" | "campaign_engagement" | "manual";
 export type JourneySuppressionRuleType = "recently_sent" | "frequency_cap" | "unsubscribed" | "segment_match";
 
+export type HolidayDiscountContentSlot = "product_badge" | "cart_banner" | "upsell_block" | "post_purchase_message";
+
+export interface HolidayDiscountContentRef {
+  slot: HolidayDiscountContentSlot;
+  contentRef: string;
+  templateRef?: string | null;
+  locale?: string | null;
+  metadata?: Record<string, string | number | boolean | null>;
+}
+
+export interface HolidayDiscountCampaignContentContract {
+  processId: "holiday-discount-2026";
+  processVersion: 1;
+  policyRef: "holiday-10-percent-selected-categories";
+  campaignRef: "holiday-2026-main";
+  blueprintId: string;
+  ownerService: "marketing-microservice";
+  contentRefs: HolidayDiscountContentRef[];
+  unresolved: string[];
+}
+
 export interface RegistryScope {
   tenantId: string;
   appId: string;

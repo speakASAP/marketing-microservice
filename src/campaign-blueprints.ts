@@ -1,6 +1,38 @@
-import { CampaignBlueprint } from "./types";
+import { CampaignBlueprint, HolidayDiscountCampaignContentContract, HolidayDiscountContentSlot } from "./types";
 
 const DEFAULT_CAMPAIGN_BLUEPRINTS: CampaignBlueprint[] = [
+  {
+    blueprintId: "holiday-2026-main",
+    appId: "shop-assistant",
+    productLine: "commerce-assistant",
+    name: "Holiday Discount 2026 content refs",
+    description: "Marketing-owned content references for the BPCP Holiday Discount pilot without pricing, cart, checkout, or delivery ownership.",
+    campaignFamily: "upsell",
+    lifecycleStage: "upsell",
+    audienceKey: "holiday-discount-2026-selected-category-shoppers",
+    audienceLabel: "Holiday Discount 2026 selected-category shoppers",
+    catalogCategory: "holiday_discount",
+    catalogTags: ["bpcp", "holiday-discount-2026", "holiday", "content_refs"],
+    purpose: "marketing",
+    primaryChannel: "email",
+    fallbackChannels: ["telegram", "whatsapp"],
+    templateRef: "holiday-2026-main",
+    segment: {
+      name: "Holiday Discount 2026 selected-category shoppers",
+      sourceTypes: ["app_signals", "orders", "auth_users"],
+      rules: { processId: "holiday-discount-2026", processVersion: 1, policyRef: "holiday-10-percent-selected-categories", sourceService: "bpcp" },
+      isDynamic: true
+    },
+    catalogMetadata: {
+      campaignFamily: "upsell",
+      lifecycleStage: "upsell",
+      audienceKey: "holiday-discount-2026-selected-category-shoppers",
+      audienceLabel: "Holiday Discount 2026 selected-category shoppers",
+      catalogCategory: "holiday_discount",
+      catalogTags: ["bpcp", "holiday-discount-2026", "holiday", "content_refs"],
+      sourceBlueprintId: "holiday-2026-main"
+    }
+  },
   {
     blueprintId: "flipflop.abandoned-intent.default",
     appId: "flipflop",
@@ -401,4 +433,54 @@ export function listDefaultCampaignBlueprints(filters: CampaignBlueprintFilter =
 
 export function getDefaultCampaignBlueprint(blueprintId: string): CampaignBlueprint | undefined {
   return DEFAULT_CAMPAIGN_BLUEPRINTS.find((blueprint) => blueprint.blueprintId === blueprintId);
+}
+
+export const HOLIDAY_DISCOUNT_CONTENT_SLOTS: HolidayDiscountContentSlot[] = ["product_badge", "cart_banner", "upsell_block", "post_purchase_message"];
+
+export const HOLIDAY_DISCOUNT_CAMPAIGN_CONTENT_CONTRACT: HolidayDiscountCampaignContentContract = {
+  processId: "holiday-discount-2026",
+  processVersion: 1,
+  policyRef: "holiday-10-percent-selected-categories",
+  campaignRef: "holiday-2026-main",
+  blueprintId: "holiday-2026-main",
+  ownerService: "marketing-microservice",
+  contentRefs: [
+    {
+      slot: "product_badge",
+      contentRef: "marketing:holiday-2026-main:product-badge",
+      templateRef: "holiday-2026-main.product-badge",
+      locale: null,
+      metadata: { processId: "holiday-discount-2026", processVersion: 1, policyRef: "holiday-10-percent-selected-categories" }
+    },
+    {
+      slot: "cart_banner",
+      contentRef: "marketing:holiday-2026-main:cart-banner",
+      templateRef: "holiday-2026-main.cart-banner",
+      locale: null,
+      metadata: { processId: "holiday-discount-2026", processVersion: 1, policyRef: "holiday-10-percent-selected-categories" }
+    },
+    {
+      slot: "upsell_block",
+      contentRef: "marketing:holiday-2026-main:upsell-block",
+      templateRef: "holiday-2026-main.upsell-block",
+      locale: null,
+      metadata: { processId: "holiday-discount-2026", processVersion: 1, policyRef: "holiday-10-percent-selected-categories" }
+    },
+    {
+      slot: "post_purchase_message",
+      contentRef: "marketing:holiday-2026-main:post-purchase-message",
+      templateRef: "holiday-2026-main.post-purchase-message",
+      locale: null,
+      metadata: { processId: "holiday-discount-2026", processVersion: 1, policyRef: "holiday-10-percent-selected-categories" }
+    }
+  ],
+  unresolved: [
+    "[MISSING: canonical BPCP campaign content API path and response envelope]",
+    "[MISSING: notification template provider contract for Holiday Discount template refs]",
+    "[MISSING: localized copy approval and template asset source of truth]"
+  ]
+};
+
+export function getHolidayDiscountCampaignContentContract(): HolidayDiscountCampaignContentContract {
+  return HOLIDAY_DISCOUNT_CAMPAIGN_CONTENT_CONTRACT;
 }
