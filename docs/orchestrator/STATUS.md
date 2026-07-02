@@ -3538,7 +3538,18 @@ Intent Preservation Chain:
 - Execution Plan: Change only Marketing ConfigMap and status docs; do not print secrets; validate build/diff; deploy immutable image; publish one event through RabbitMQ using runtime `RABBITMQ_URL`; verify only relation IDs/status/summary.
 - Coding Prompt: Enable the existing guarded publisher without changing payload shape or broadening evidence; keep the smoke event bounded to product IDs and safe metadata.
 - Code: `k8s/configmap.yaml` and this status entry.
-- Validation: pending controlled write evidence.
+- Validation: `npm run build` passed; `git diff --check` passed; server-side dry-run for `k8s/configmap.yaml` passed; deploy completed; Deployment pinned to `localhost:5000/marketing-microservice:eeeed8c`; health returned `200` with `status=ok`; runtime switch returned `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=true`; one synthetic Orders created event was published through RabbitMQ; Catalog readback returned both directed `order_affinity` relations with `source=marketing_order_affinity`, `score=1`, and `confidence=0.5`.
+
+Controlled write evidence:
+
+- Event ID: `11111111-2222-4333-8444-000000000001`.
+- Order ID: `codex-affinity-smoke-20260702-001`.
+- RabbitMQ publish result: `published=true`.
+- Source-to-target readback: `ebbdd4fa-5c73-481a-9d07-dbab3d20a150 -> 2d6e4b4c-02a4-4b1c-98c8-afa4ad46a32e`, `relationType=order_affinity`, `source=marketing_order_affinity`.
+- Target-to-source readback: `2d6e4b4c-02a4-4b1c-98c8-afa4ad46a32e -> ebbdd4fa-5c73-481a-9d07-dbab3d20a150`, `relationType=order_affinity`, `source=marketing_order_affinity`.
+- Readback intentionally omitted raw evidence payload and secret values.
+- Recent Marketing error scan showed only pre-existing `audit_log_forward_failed` 404; no Catalog publish failure lines were found.
+- Catalog had an unrelated concurrent rollout to image `localhost:5000/catalog-microservice:50e3c0c`; relation readback was rechecked successfully after that rollout settled.
 
 Smoke input:
 
@@ -3548,4 +3559,4 @@ Smoke input:
 
 Rollback:
 
-- Set `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=false` and redeploy Marketing if the first write fails or produces unexpected side effects.
+- Set `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=false` and redeploy Marketing if ongoing live publishing needs to be paused.
