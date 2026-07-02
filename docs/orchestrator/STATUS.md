@@ -3522,3 +3522,30 @@ Remaining blockers:
 
 - `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`.
 - `[MISSING: live publisher enablement evidence with ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=true]`.
+
+
+## 2026-07-02 - Order Affinity Publisher Controlled Write Window
+
+Current focus: Enable Marketing-to-Catalog order-affinity publishing for a controlled first-write smoke.
+
+Intent Preservation Chain:
+
+- Vision: Real Orders co-purchase events can create Catalog-owned product relations for related-product and future bundle surfaces.
+- Goal Impact: The guarded publisher moves from ready-but-disabled to enabled for a bounded validation using one synthetic Orders created event with valid Catalog product IDs.
+- System: Orders event contract supplies bounded product IDs; Marketing consumes and derives co-purchase relation candidates; Catalog authenticates the service call and owns relation persistence.
+- Feature: Live Marketing-to-Catalog order-affinity relation write.
+- Task: Set `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=true`, deploy, publish one controlled Orders event, verify Catalog relation readback, and inspect logs.
+- Execution Plan: Change only Marketing ConfigMap and status docs; do not print secrets; validate build/diff; deploy immutable image; publish one event through RabbitMQ using runtime `RABBITMQ_URL`; verify only relation IDs/status/summary.
+- Coding Prompt: Enable the existing guarded publisher without changing payload shape or broadening evidence; keep the smoke event bounded to product IDs and safe metadata.
+- Code: `k8s/configmap.yaml` and this status entry.
+- Validation: pending controlled write evidence.
+
+Smoke input:
+
+- Source product: `ebbdd4fa-5c73-481a-9d07-dbab3d20a150`.
+- Target product: `2d6e4b4c-02a4-4b1c-98c8-afa4ad46a32e`.
+- Synthetic event source: `codex-controlled-smoke`.
+
+Rollback:
+
+- Set `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=false` and redeploy Marketing if the first write fails or produces unexpected side effects.
