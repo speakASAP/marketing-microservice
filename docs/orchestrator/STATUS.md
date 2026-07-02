@@ -3492,3 +3492,25 @@ Remaining blockers:
 
 - `[MISSING: runtime Catalog internal service token secret mapping for Marketing-to-Catalog relation writes]`.
 - `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`.
+
+
+## 2026-07-02 - Marketing Catalog Internal Token Secret Mapping
+
+Current focus: Remove the runtime secret-mapping blocker without enabling live Catalog relation writes.
+
+Intent Preservation Chain:
+
+- Vision: Purchase-derived related products can be enabled through controlled service-to-service writes while keeping Catalog as relation owner.
+- Goal Impact: Marketing can receive the same internal Catalog service token key name used by Catalog's protected internal API guard, but the writer remains disabled until the explicit publish switch and mutation window are approved.
+- System: Auth/Vault owns the shared internal token material, Kubernetes ExternalSecret maps it by key name only, Marketing consumes it only when `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=true`, and Catalog validates it.
+- Feature: Runtime secret readiness for guarded order-affinity publisher.
+- Task: Map `CATALOG_INTERNAL_SERVICE_TOKEN` into `marketing-microservice-secret` from the existing Vault property used by Catalog, with no secret value printed and no writer enablement.
+- Execution Plan: Inspect secret key names only, update `k8s/external-secret.yaml`, keep ConfigMap publish switch false, validate source, deploy manifest, and verify the key name exists in Kubernetes without exposing the value.
+- Coding Prompt: Do not enable live relation writes; only make the protected token available for a later controlled rollout.
+- Code: `k8s/external-secret.yaml` and this status entry.
+- Validation: pending deploy evidence.
+
+Remaining blockers:
+
+- `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`.
+- `[MISSING: live publisher enablement evidence with ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=true]`.
