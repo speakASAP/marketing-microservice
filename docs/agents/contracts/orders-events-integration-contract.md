@@ -146,8 +146,8 @@ First version semantics:
 
 ## Current Blockers
 
-- `[MISSING: approved Catalog service role for Marketing-to-Catalog relation writes]`
-- `[MISSING: approved idempotency and replay policy for batch candidate delivery]`
+- `[MISSING: runtime Catalog internal service token secret mapping for Marketing-to-Catalog relation writes]`
+- Idempotency is source-implemented as `marketing_order_affinity:<eventId>:<batchIndex>`; live replay evidence is still required after enabling the publisher.
 - `[MISSING: pruning/replacement semantics for stale affinity rows]`
 - `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`
 
@@ -162,4 +162,4 @@ npm test
 git diff --check
 ```
 
-Catalog runtime ingestion validation is not part of this Marketing source contract and must be validated in `catalog-microservice` before Marketing enables a live caller.
+Catalog runtime ingestion validation exists in `catalog-microservice`; Marketing source now includes a guarded caller that remains disabled unless `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=true` and `CATALOG_INTERNAL_SERVICE_TOKEN` are configured.

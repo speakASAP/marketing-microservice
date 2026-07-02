@@ -30,9 +30,8 @@ Boundary decision:
 
 Remaining blockers:
 
-- `[MISSING: approved Catalog service role for Marketing-to-Catalog relation writes]`.
-- `[MISSING: approved idempotency and replay policy for batch candidate delivery]`.
-- `[MISSING: Catalog batch ingestion endpoint implementation and deployment switch]`.
+- `[MISSING: runtime Catalog internal service token secret mapping for Marketing-to-Catalog relation writes]`.
+- `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`.
 
 # Marketing Orchestrator Status
 
@@ -3432,3 +3431,34 @@ Known residual evidence:
 Remaining blocker:
 
 - `[MISSING: Orders event payload runId/correlationId or approved attribution join contract for run-level attribution]`.
+
+
+## 2026-07-02 - Order Affinity Catalog Publisher Source
+
+Current focus: Connect Marketing's bounded Orders co-purchase candidates to Catalog's protected relation batch endpoint without enabling live writes by default.
+
+Intent Preservation Chain:
+
+- Vision: Real customer purchase behavior can inform related products and future bundles across marketplaces while Catalog remains product relation truth.
+- Goal Impact: Marketing now has a source-implemented, replay-safe publisher for order-affinity candidates; deployment can carry the code safely with writes disabled until the Catalog internal token and mutation window are approved.
+- System: Orders owns order events, Marketing derives bounded co-purchase signals, Catalog owns product relation persistence and validation, marketplaces read Catalog relations.
+- Feature: Guarded Marketing-to-Catalog order affinity publisher.
+- Task: Add publisher env contract, service-auth POST payload, consumer integration, disabled-by-default Kubernetes config, and unit coverage for disabled/missing-config/published paths.
+- Execution Plan: Marketing repo only; do not mutate Catalog data; do not print secret values; keep `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=false` in runtime config; require `CATALOG_INTERNAL_SERVICE_TOKEN` before enabling live writes.
+- Coding Prompt: Build directed order-affinity candidates from accepted `orders.order.created.v1` signals, POST bounded batches to `/api/internal/product-relations/order-affinity/batch` with `x-internal-service-token`, and skip safely when disabled or missing config.
+- Code: `src/order-affinity-catalog-publisher.ts`, `src/orders-events-consumer.ts`, `test/order-lifecycle-events.test.ts`, `.env.example`, `k8s/configmap.yaml`, `docs/agents/contracts/orders-events-integration-contract.md`, and this status entry.
+- Validation: `npm test` passed with 87 tests; `npm run build` passed; `git diff --check` passed.
+
+Runtime contract:
+
+- Default publish switch: `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=false`.
+- Catalog URL key: `CATALOG_SERVICE_URL`.
+- Secret token key: `CATALOG_INTERNAL_SERVICE_TOKEN`; value must come from secret management and must not be logged.
+- Batch endpoint key: `CATALOG_ORDER_AFFINITY_BATCH_ENDPOINT`, default `/api/internal/product-relations/order-affinity/batch`.
+- Timeout and batch sizing keys: `CATALOG_ORDER_AFFINITY_TIMEOUT_MS`, `CATALOG_ORDER_AFFINITY_BATCH_SIZE`.
+- Idempotency key: `marketing_order_affinity:<ordersEventId>:<batchIndex>`.
+
+Remaining blockers:
+
+- `[MISSING: runtime Catalog internal service token secret mapping for Marketing-to-Catalog relation writes]`.
+- `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`.
