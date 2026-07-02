@@ -3508,7 +3508,15 @@ Intent Preservation Chain:
 - Execution Plan: Inspect secret key names only, update `k8s/external-secret.yaml`, keep ConfigMap publish switch false, validate source, deploy manifest, and verify the key name exists in Kubernetes without exposing the value.
 - Coding Prompt: Do not enable live relation writes; only make the protected token available for a later controlled rollout.
 - Code: `k8s/external-secret.yaml` and this status entry.
-- Validation: pending deploy evidence.
+- Validation: `npm run build` passed; `git diff --check` passed; server-side dry-run for `k8s/external-secret.yaml` passed; deploy completed; ExternalSecret reported `Ready=True:SecretSynced`; `marketing-microservice-secret` contains key name `CATALOG_INTERNAL_SERVICE_TOKEN`; pod env contains key name `CATALOG_INTERNAL_SERVICE_TOKEN`; health returned `200` with `status=ok`; publisher switch remains `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=false`.
+
+Deployment evidence:
+
+- Commit `f3f9344` was pushed to GitHub.
+- `./scripts/deploy.sh f3f9344` applied the updated ExternalSecret and completed successfully.
+- The Deployment was pinned to immutable image `localhost:5000/marketing-microservice:f3f9344`.
+- New pod `marketing-microservice-7f8948cb48-snrb6` reached ready state with zero restarts.
+- Secret and environment verification listed key names only; no secret values were printed.
 
 Remaining blockers:
 
