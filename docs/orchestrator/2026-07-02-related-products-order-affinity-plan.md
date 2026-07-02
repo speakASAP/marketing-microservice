@@ -105,7 +105,7 @@ Rules:
 - `source_product_id != target_product_id`.
 - Store directional rows even when evidence is symmetric, so storefronts can ask for `sourceProductId`.
 - `score` is ranking strength; `confidence` is evidence quality.
-- `source` examples: `manual`, `orders_copurchase`, `same_buyer`, `category_fallback`, `marketplace_operator`.
+- `source` examples: `manual`, `marketing_order_affinity`, `same_buyer`, `category_fallback`, `marketplace_operator`.
 - `evidence` must be aggregate and non-sensitive; no order IDs if avoidable, no customer data, no addresses, no payment refs.
 
 ### Catalog Bundles
@@ -135,7 +135,7 @@ Bundle selling remains blocked until Warehouse reservation, Orders create-order,
 | Workstream | Status | Owner | Scope | Allowed files | Forbidden files | Validation | Handoff |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | W1 Orders event evidence | implementation-started | Orders producer owner | Add bounded `items[]` to `orders.order.created.v1` | `src/orders/*`, event fixtures, `scripts/verify-event-contracts.js`, Orders docs | DB schema, secrets, customer/payment/address/tracking fields | `npm run build`, `npm run verify:event-contracts`, `git diff --check` | Deploy only after Marketing compatibility is present. |
-| W2 Marketing compatibility | implementation-started | Marketing consumer owner | Accept bounded product refs without persisting raw item truth | `src/order-lifecycle-events.ts`, tests, Marketing contract docs | Campaign execution changes, raw order/customer/payment persistence | focused node test, `npm run build`, `git diff --check` | Enables safe Orders deploy. |
+| W2 Marketing compatibility | source-validated | Marketing consumer owner | Accept bounded product refs and build bounded in-memory order-affinity candidates without persisting raw item truth | `src/order-lifecycle-events.ts`, tests, Marketing contract docs | Campaign execution changes, raw order/customer/payment persistence | focused node test, `npm run build`, `git diff --check` | Enables safe Orders deploy. |
 | W3 Catalog product relations | ready now | Catalog product metadata owner | Add relation score storage/API/docs | Catalog relation module, migration, docs, focused tests | Orders/Marketing/channel repos, live DB/deploy | focused Jest, `npm run build`, frontend build if touched | Integration owner maps Orders-derived future scorer into Catalog. |
 | W4 Catalog bundles | dependency-gated | Catalog commerce owner | Add bundle definition model/API | Catalog bundle module/docs/migration | Checkout/payment/warehouse mutations | build + focused tests | Wait for W3 API and bundle ownership decision. |
 | W5 FlipFlop storefront | dependency-gated/partially active | Storefront owner | Product detail related UI and display-only buy-together set | Existing GOAL-12 files | Checkout totals/payment/discount mutation | product-service build, frontend build, smoke | Reconcile existing dirty GOAL-12 lane first. |
@@ -163,9 +163,15 @@ Bundle selling remains blocked until Warehouse reservation, Orders create-order,
 ## Current Implementation Evidence
 
 - Orders producer contract update is started in `/home/ssf/Documents/Github/orders-microservice`.
-- Marketing compatibility update is started in `/home/ssf/Documents/Github/marketing-microservice`.
+- Marketing compatibility update is source-validated in `/home/ssf/Documents/Github/marketing-microservice`; it accepts bounded product refs and builds deterministic in-memory Catalog `order_affinity` candidates with `source=marketing_order_affinity` without persisting raw order-item truth or calling Catalog.
 - Catalog implementation is delegated as an independent Catalog-only product-relations lane.
 - FlipFlop already has dirty GOAL-12 backend upsell work; frontend integration remains unresolved.
+
+## Marketing product-affinity candidate scorer source validation
+
+- `buildOrderAffinityRelationCandidates` emits deterministic directed `order_affinity` candidates from accepted Orders created signals with at least two Catalog product refs.
+- It emits bounded evidence only: source system/type, deterministic candidate id, optional channel/currency, product count, and reason.
+- It does not call Catalog, persist relation rows, execute campaigns, mutate Orders/Warehouse/Payments, or publish marketplace offers.
 
 ## Blockers
 

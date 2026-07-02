@@ -21,6 +21,29 @@ export interface OrdersLifecycleEventEnvelope {
   payload: Record<string, unknown>;
 }
 
+export type CatalogRelationType = "order_affinity";
+export const CATALOG_ORDER_AFFINITY_SOURCE = "marketing_order_affinity";
+export const CATALOG_ORDER_AFFINITY_BATCH_ENDPOINT = "/api/internal/product-relations/order-affinity/batch";
+export type CatalogRelationSource = typeof CATALOG_ORDER_AFFINITY_SOURCE;
+
+export interface CatalogProductRelationUpsertCandidate {
+  sourceProductId: string;
+  targetProductId: string;
+  relationType: CatalogRelationType;
+  score: number;
+  confidence: number;
+  source: CatalogRelationSource;
+  evidence: {
+    sourceSystem: "marketing-microservice";
+    sourceEventType: typeof ORDERS_ORDER_CREATED_V1;
+    candidateId: string;
+    channel?: string;
+    currency?: string;
+    productCount: number;
+    reason: "single_order_copurchase";
+  };
+}
+
 export interface OrdersLifecycleSignal {
   eventType: SupportedOrdersLifecycleEventType;
   eventVersion: 1;
@@ -166,6 +189,37 @@ export function parseOrdersLifecycleEvent(input: unknown): ParsedEvent | Rejecte
     ok: true,
     signal: { eventType: type, eventVersion: 1, eventId, occurredAt, orderId, status, previousStatus }
   };
+}
+
+export function buildOrderAffinityRelationCandidates(signal: OrdersLifecycleSignal): CatalogProductRelationUpsertCandidate[] {
+  if (signal.eventType !== ORDERS_ORDER_CREATED_V1) return [];
+  const productIds = uniqueCatalogProductIds(signal.productRefs);
+  if (productIds.length < 2) return [];
+
+  const candidates: CatalogProductRelationUpsertCandidate[] = [];
+  for (const sourceProductId of productIds) {
+    for (const targetProductId of productIds) {
+      if (sourceProductId === targetProductId) continue;
+      candidates.push({
+        sourceProductId,
+        targetProductId,
+        relationType: "order_affinity",
+        score: 1,
+        confidence: 0.5,
+        source: CATALOG_ORDER_AFFINITY_SOURCE,
+        evidence: {
+          sourceSystem: "marketing-microservice",
+          sourceEventType: ORDERS_ORDER_CREATED_V1,
+          candidateId: `${ORDERS_ORDER_CREATED_V1}:${signal.eventId}:${sourceProductId}:${targetProductId}`,
+          ...(signal.channel ? { channel: signal.channel } : {}),
+          ...(signal.currency ? { currency: signal.currency } : {}),
+          productCount: productIds.length,
+          reason: "single_order_copurchase"
+        }
+      });
+    }
+  }
+  return candidates;
 }
 
 export class OrdersLifecycleAttributionAccumulator {
@@ -356,6 +410,14 @@ function readProductRefs(value: unknown): string[] | undefined | null {
     refs.push(`catalog:product:${productId}`);
   }
   return Array.from(new Set(refs)).sort();
+}
+
+function uniqueCatalogProductIds(productRefs: string[] | undefined): string[] {
+  if (!Array.isArray(productRefs)) return [];
+  return Array.from(new Set(productRefs.map((ref) => {
+    const prefix = "catalog:product:";
+    return ref.startsWith(prefix) ? ref.slice(prefix.length).trim() : "";
+  }).filter(Boolean))).sort();
 }
 
 function readOptionalCurrency(value: unknown): string | undefined | null {

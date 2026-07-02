@@ -7,6 +7,9 @@ import {
   ORDERS_ORDER_CREATED_V1,
   ORDERS_ORDER_UPDATED_V1,
   OrdersLifecycleAttributionAccumulator,
+  CATALOG_ORDER_AFFINITY_BATCH_ENDPOINT,
+  CATALOG_ORDER_AFFINITY_SOURCE,
+  buildOrderAffinityRelationCandidates,
   parseOrdersLifecycleEvent,
   REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1
 } from "../src/order-lifecycle-events";
@@ -98,6 +101,88 @@ test("unapproved orders.order.status_changed.v1 alias is rejected while updated.
   assert.equal(result.blocker, undefined);
   assert.equal(result.stats.totals.rejectedEvents, 1);
   assert.equal(result.stats.bindings.orderStatusChanged, ORDERS_ORDER_UPDATED_V1);
+});
+
+test("order affinity relation candidates are deterministic and bounded", () => {
+  const parsed = parseOrdersLifecycleEvent(orderCreatedEvent({
+    payload: {
+      orderId: "order-1001",
+      channel: "flipflop",
+      items: [
+        { productId: "catalog-product-2002", quantity: 2 },
+        { productId: "catalog-product-1001", quantity: 1 },
+        { productId: "catalog-product-1001", quantity: 1 }
+      ],
+      currency: "CZK"
+    }
+  }));
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+
+  const candidates = buildOrderAffinityRelationCandidates(parsed.signal);
+
+  assert.equal(CATALOG_ORDER_AFFINITY_BATCH_ENDPOINT, "/api/internal/product-relations/order-affinity/batch");
+  assert.equal(CATALOG_ORDER_AFFINITY_SOURCE, "marketing_order_affinity");
+
+  assert.deepEqual(candidates.map((candidate) => [candidate.sourceProductId, candidate.targetProductId]), [
+    ["catalog-product-1001", "catalog-product-2002"],
+    ["catalog-product-2002", "catalog-product-1001"]
+  ]);
+  assert.deepEqual(candidates.map((candidate) => ({
+    relationType: candidate.relationType,
+    score: candidate.score,
+    confidence: candidate.confidence,
+    source: candidate.source,
+    evidence: candidate.evidence
+  })), [
+    {
+      relationType: "order_affinity",
+      score: 1,
+      confidence: 0.5,
+      source: CATALOG_ORDER_AFFINITY_SOURCE,
+      evidence: {
+        sourceSystem: "marketing-microservice",
+        sourceEventType: ORDERS_ORDER_CREATED_V1,
+        candidateId: "orders.order.created.v1:00000000-0000-4000-8000-000000000001:catalog-product-1001:catalog-product-2002",
+        channel: "flipflop",
+        currency: "CZK",
+        productCount: 2,
+        reason: "single_order_copurchase"
+      }
+    },
+    {
+      relationType: "order_affinity",
+      score: 1,
+      confidence: 0.5,
+      source: CATALOG_ORDER_AFFINITY_SOURCE,
+      evidence: {
+        sourceSystem: "marketing-microservice",
+        sourceEventType: ORDERS_ORDER_CREATED_V1,
+        candidateId: "orders.order.created.v1:00000000-0000-4000-8000-000000000001:catalog-product-2002:catalog-product-1001",
+        channel: "flipflop",
+        currency: "CZK",
+        productCount: 2,
+        reason: "single_order_copurchase"
+      }
+    }
+  ]);
+});
+
+test("order affinity relation candidates require at least two products", () => {
+  const created = parseOrdersLifecycleEvent(orderCreatedEvent({
+    payload: {
+      orderId: "order-1001",
+      channel: "flipflop",
+      items: [{ productId: "catalog-product-1001", quantity: 1 }]
+    }
+  }));
+  const updated = parseOrdersLifecycleEvent(orderUpdatedEvent());
+
+  assert.equal(created.ok, true);
+  assert.equal(updated.ok, true);
+  if (created.ok) assert.deepEqual(buildOrderAffinityRelationCandidates(created.signal), []);
+  if (updated.ok) assert.deepEqual(buildOrderAffinityRelationCandidates(updated.signal), []);
 });
 
 test("order lifecycle parser accepts bounded product item refs from Orders created events", () => {

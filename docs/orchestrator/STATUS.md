@@ -1,3 +1,39 @@
+
+## 2026-07-02 - Related Products Marketing Affinity Candidate Scorer
+
+Current focus: continue the related-products/order-affinity implementation after Catalog relation runtime smoke passed.
+
+Intent Preservation Chain:
+
+- Vision: Marketing can transform bounded Orders product refs into relation candidates while Catalog remains durable product relation owner.
+- Goal Impact: the ecosystem now has a deterministic source-validated bridge between `orders.order.created.v1` product evidence and future Catalog relation ingestion.
+- System: Orders owns order events and order items; Marketing owns only bounded campaign/signal processing; Catalog owns persisted relation rows; Warehouse/Payments/channel services remain unchanged.
+- Feature: in-memory order-affinity candidate construction.
+- Task: build directed Catalog relation upsert candidates from accepted Orders created signals with at least two product refs.
+- Execution Plan: Marketing repo only; no Catalog HTTP caller, DB migration, live queue/deploy change, campaign execution, or marketplace mutation.
+- Coding Prompt: keep evidence bounded, deterministic, non-sensitive, and side-effect free; mark Catalog ingestion as missing.
+- Code: `src/order-lifecycle-events.ts`, `test/order-lifecycle-events.test.ts`, `docs/agents/contracts/orders-events-integration-contract.md`, and `docs/orchestrator/2026-07-02-related-products-order-affinity-plan.md`.
+- Validation: focused `npx tsx --test --test-concurrency=1 test/order-lifecycle-events.test.ts` passed with 11/11 tests; `npm run build -- --pretty false` passed; full `npm test` passed with 84/84 tests; `git diff --check` passed.
+
+Implementation evidence:
+
+- Added `buildOrderAffinityRelationCandidates` for accepted `orders.order.created.v1` signals.
+- Emits deterministic directed pairs after deduplicating and sorting `catalog:product:<id>` refs.
+- Candidate fields match the future Catalog batch contract: `relationType=order_affinity`, `source=marketing_order_affinity`, `score=1`, `confidence=0.5`.
+- Evidence is bounded to source system/type, deterministic candidate id, optional channel/currency, product count, and reason `single_order_copurchase`.
+- One-product and non-created signals emit no candidates.
+
+Boundary decision:
+
+- No Catalog call, no DB write, no queue binding change, no campaign execution, no deployment, no Orders/Warehouse/Payments mutation, and no marketplace publication was run.
+- No customer/contact/address/payment/tracking/provider/product-title/token fields are copied into relation evidence.
+
+Remaining blockers:
+
+- `[MISSING: approved Catalog service role for Marketing-to-Catalog relation writes]`.
+- `[MISSING: approved idempotency and replay policy for batch candidate delivery]`.
+- `[MISSING: Catalog batch ingestion endpoint implementation and deployment switch]`.
+
 # Marketing Orchestrator Status
 
 ## 2026-06-12

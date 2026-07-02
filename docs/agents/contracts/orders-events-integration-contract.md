@@ -1,246 +1,165 @@
-import test from "node:test";
-import assert from "node:assert/strict";
-import {
-  APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY,
-  ORDER_RUN_ATTRIBUTION_BLOCKER,
-  ORDER_STATUS_CHANGED_ROUTING_KEY_DECISION,
-  ORDERS_ORDER_CREATED_V1,
-  ORDERS_ORDER_UPDATED_V1,
-  OrdersLifecycleAttributionAccumulator,
-  parseOrdersLifecycleEvent,
-  REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1
-} from "../src/order-lifecycle-events";
-import { ordersEventsConsumerOptionsFromEnv, processOrdersEventMessage } from "../src/orders-events-consumer";
-import { InMemoryMarketingStore } from "../src/store";
+# Orders Events Integration Contract
 
-process.env.NODE_ENV = "test";
+## Intent
 
-function orderCreatedEvent(overrides: Record<string, unknown> = {}) {
-  return {
-    type: ORDERS_ORDER_CREATED_V1,
-    eventVersion: 1,
-    eventId: "00000000-0000-4000-8000-000000000001",
-    occurredAt: "2026-06-13T08:00:00.000Z",
-    source: "orders-microservice",
-    payload: {
-      orderId: "order-1001",
-      channel: "flipflop"
-    },
-    ...overrides
-  };
+Orders owns order lifecycle events and bounded order-item signal facts. Marketing consumes those signals for attribution and product-affinity candidate generation. Catalog remains the durable owner of product relation rows.
+
+This contract preserves the boundary between order truth, marketing signal processing, and catalog product relation storage.
+
+## Event Source
+
+- Exchange: `orders.events`
+- Producer owner: `orders-microservice`
+- Consumer owner: `marketing-microservice`
+- Accepted event version: `eventVersion = 1`
+- Accepted source: `source = orders-microservice`
+
+Accepted routing keys:
+
+- `orders.order.created.v1`
+- `orders.order.updated.v1`
+
+Rejected routing key:
+
+- `orders.order.status_changed.v1` is not accepted for the current producer contract; Marketing binds `orders.order.updated.v1` instead.
+
+## Created Event Payload
+
+Allowed fields for `orders.order.created.v1`:
+
+- `orderId`
+- `channel`
+- `leadAttribution`
+- `items`
+- `currency`
+
+Allowed `leadAttribution` fields:
+
+- `leadId`
+- `source`
+- `campaignId`
+
+Allowed `items[]` fields:
+
+- `productId`
+- `sku`
+- `quantity`
+- `unitPrice`
+- `totalPrice`
+
+Marketing converts valid item product IDs to refs in this format:
+
+```text
+catalog:product:<productId>
+```
+
+Created events without `items[]` remain valid for backwards compatibility. They cannot produce product-affinity candidates.
+
+## Updated Event Payload
+
+Allowed fields for `orders.order.updated.v1`:
+
+- `orderId`
+- `status`
+- `previousStatus`
+- `approval`
+
+Allowed `approval` fields:
+
+- `approvalType`
+- `reasonCode`
+- `sideEffectsHandled`
+- `approvedAt`
+
+## Forbidden Data
+
+Marketing must reject event payloads that include customer, address, billing, payment method, provider secret, bearer token, JWT, password, credential, tracking number, tracking URL, operator email, approver email, email, or phone fields.
+
+Marketing must not copy full order payloads, raw order-item product truth, customer identity, address, payment, tracking, provider, credential, or product-title data into product-affinity artifacts.
+
+## Product Affinity Candidate Contract
+
+Marketing may derive in-memory Catalog relation candidates only from accepted `orders.order.created.v1` signals with at least two unique `catalog:product:<id>` refs.
+
+Candidate generation rules:
+
+- Deduplicate product IDs.
+- Sort product IDs deterministically.
+- Emit directed pairs for every `sourceProductId != targetProductId`.
+- Use `relationType = order_affinity`.
+- Use `source = marketing_order_affinity`.
+- Use initial `score = 1` and `confidence = 0.5` for single-order co-purchase evidence.
+- Keep evidence bounded and non-sensitive.
+
+Candidate item shape:
+
+```json
+{
+  "sourceProductId": "catalog-product-1001",
+  "targetProductId": "catalog-product-2002",
+  "relationType": "order_affinity",
+  "score": 1,
+  "confidence": 0.5,
+  "source": "marketing_order_affinity",
+  "evidence": {
+    "sourceSystem": "marketing-microservice",
+    "sourceEventType": "orders.order.created.v1",
+    "candidateId": "orders.order.created.v1:<eventId>:<sourceProductId>:<targetProductId>",
+    "channel": "flipflop",
+    "currency": "CZK",
+    "productCount": 2,
+    "reason": "single_order_copurchase"
+  }
 }
+```
 
-function orderUpdatedEvent(overrides: Record<string, unknown> = {}) {
-  return {
-    type: ORDERS_ORDER_UPDATED_V1,
-    eventVersion: 1,
-    eventId: "00000000-0000-4000-8000-000000000002",
-    occurredAt: "2026-06-13T08:01:00.000Z",
-    source: "orders-microservice",
-    payload: {
-      orderId: "order-1001",
-      status: "processing",
-      previousStatus: "confirmed"
-    },
-    ...overrides
-  };
+`candidateId` is an idempotency-friendly signal identifier. It must not contain customer IDs, raw order IDs, emails, tokens, payment data, addresses, tracking data, or full order payload fragments.
+
+## Future Catalog Batch Ingestion Contract
+
+Marketing must not write directly to Catalog tables. The future write path is a protected Catalog-owned endpoint:
+
+```text
+POST /api/internal/product-relations/order-affinity/batch
+```
+
+Recommended batch payload:
+
+```json
+{
+  "source": "marketing_order_affinity",
+  "idempotencyKey": "marketing_order_affinity:2026-07-02T10:00:00Z:batch-001",
+  "generatedAt": "2026-07-02T10:00:00.000Z",
+  "items": []
 }
+```
 
-test("orders lifecycle accumulator handles created and current status update events idempotently", () => {
-  const accumulator = new OrdersLifecycleAttributionAccumulator();
+Catalog must force `relationType = order_affinity` and `source = marketing_order_affinity` server-side, validate product visibility and relation constraints, upsert idempotently on the Catalog relation unique key, and return per-item results.
 
-  const created = accumulator.process(orderCreatedEvent());
-  const updated = accumulator.process(orderUpdatedEvent());
-  const duplicate = accumulator.process(orderUpdatedEvent());
+First version semantics:
 
-  assert.equal(created.accepted, true);
-  assert.equal(created.duplicate, false);
-  assert.equal(created.attributionStatus, "blocked_missing_order_marketing_refs");
-  assert.equal(updated.accepted, true);
-  assert.equal(updated.duplicate, false);
-  assert.equal(duplicate.accepted, true);
-  assert.equal(duplicate.duplicate, true);
+- Upsert only.
+- No delete/prune of missing rows.
+- No marketplace publication.
+- No bundle SKU creation.
+- No checkout, warehouse, payment, or free-shipping mutation.
 
-  assert.deepEqual(updated.stats.totals, {
-    acceptedEvents: 2,
-    duplicateEvents: 0,
-    rejectedEvents: 0,
-    orderCreated: 1,
-    orderStatusChanged: 1,
-    unattributedOrderSignals: 2,
-    campaignAttributionUpdates: 0
-  });
-  assert.equal(duplicate.stats.totals.duplicateEvents, 1);
-  assert.deepEqual(updated.stats.byEventType, {
-    [ORDERS_ORDER_CREATED_V1]: 1,
-    [ORDERS_ORDER_UPDATED_V1]: 1
-  });
-  assert.deepEqual(updated.stats.byChannel, { flipflop: 1 });
-  assert.deepEqual(updated.stats.byStatus, { processing: 1 });
-  assert.deepEqual(updated.stats.orderRefs, ["orders:order:order-1001"]);
-  assert.equal(updated.stats.bindings.orderStatusChanged, APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY);
-  assert.ok(updated.stats.blockers.includes(ORDER_RUN_ATTRIBUTION_BLOCKER));
-  assert.equal(updated.stats.blockers.some((blocker) => blocker.includes("campaign-level")), false);
-  assert.equal(updated.stats.blockers.some((blocker) => blocker.includes("status_changed")), false);
-  assert.equal(ORDER_STATUS_CHANGED_ROUTING_KEY_DECISION.includes(ORDERS_ORDER_UPDATED_V1), true);
-});
+## Current Blockers
 
-test("unapproved orders.order.status_changed.v1 alias is rejected while updated.v1 is the binding", () => {
-  const accumulator = new OrdersLifecycleAttributionAccumulator();
-  const result = accumulator.process({
-    ...orderUpdatedEvent(),
-    type: REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1,
-    eventId: "00000000-0000-4000-8000-000000000003"
-  });
+- `[MISSING: approved Catalog service role for Marketing-to-Catalog relation writes]`
+- `[MISSING: approved idempotency and replay policy for batch candidate delivery]`
+- `[MISSING: pruning/replacement semantics for stale affinity rows]`
+- `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`
 
-  assert.equal(result.accepted, false);
-  assert.equal(result.reason, `unsupported_order_event_type:${REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1}`);
-  assert.equal(result.blocker, undefined);
-  assert.equal(result.stats.totals.rejectedEvents, 1);
-  assert.equal(result.stats.bindings.orderStatusChanged, ORDERS_ORDER_UPDATED_V1);
-});
+## Validation
 
-test("order lifecycle parser accepts bounded product item refs from Orders created events", () => {
-  const parsed = parseOrdersLifecycleEvent(orderCreatedEvent({
-    payload: {
-      orderId: "order-1001",
-      channel: "flipflop",
-      items: [
-        { productId: "catalog-product-1001", sku: "SKU-1001", quantity: 1, unitPrice: 490, totalPrice: 490 },
-        { productId: "catalog-product-2002", sku: "SKU-2002", quantity: 2, unitPrice: 150, totalPrice: 300 }
-      ],
-      currency: "CZK"
-    }
-  }));
+Marketing source validation:
 
-  assert.equal(parsed.ok, true);
-  if (parsed.ok) {
-    assert.deepEqual(parsed.signal.productRefs, [
-      "catalog:product:catalog-product-1001",
-      "catalog:product:catalog-product-2002"
-    ]);
-    assert.equal(parsed.signal.currency, "CZK");
-  }
-});
+```bash
+npx tsx --test --test-concurrency=1 test/order-lifecycle-events.test.ts
+npm run build -- --pretty false
+npm test
+git diff --check
+```
 
-test("order lifecycle parser rejects unsafe product item fields", () => {
-  const parsed = parseOrdersLifecycleEvent(orderCreatedEvent({
-    payload: {
-      orderId: "order-1001",
-      channel: "flipflop",
-      items: [
-        { productId: "catalog-product-1001", quantity: 1, productTitle: "must-not-copy-product-truth" }
-      ]
-    }
-  }));
-
-  assert.equal(parsed.ok, false);
-  if (!parsed.ok) {
-    assert.equal(parsed.reason, "order_event_items_invalid");
-  }
-});
-
-test("order lifecycle parser rejects sensitive or non-contract payload fields", () => {
-  const parsed = parseOrdersLifecycleEvent(orderCreatedEvent({
-    payload: {
-      orderId: "order-1001",
-      channel: "flipflop",
-      customerEmail: "buyer@example.com"
-    }
-  }));
-
-  assert.equal(parsed.ok, false);
-  if (!parsed.ok) {
-    assert.equal(parsed.reason, "order_event_forbidden_field:payload.customerEmail");
-  }
-});
-
-test("order lifecycle parser accepts safe approval metadata on status updates", () => {
-  const parsed = parseOrdersLifecycleEvent(orderUpdatedEvent({
-    payload: {
-      orderId: "order-1001",
-      status: "cancelled",
-      previousStatus: "confirmed",
-      approval: {
-        approvalType: "human",
-        reasonCode: "owner_requested",
-        sideEffectsHandled: { warehouseRelease: true },
-        approvedAt: "2026-06-13T08:02:00.000Z"
-      }
-    }
-  }));
-
-  assert.equal(parsed.ok, true);
-  if (parsed.ok) {
-    assert.equal(parsed.signal.status, "cancelled");
-  }
-});
-
-test("orders lifecycle attribution uses explicit leadAttribution campaignId join key", () => {
-  const accumulator = new OrdersLifecycleAttributionAccumulator();
-
-  const created = accumulator.process(orderCreatedEvent({
-    payload: {
-      orderId: "order-1001",
-      channel: "flipflop",
-      leadAttribution: {
-        leadId: "lead-1001",
-        source: "flipflop-checkout",
-        campaignId: "campaign-1001"
-      }
-    }
-  }));
-  const updated = accumulator.process(orderUpdatedEvent());
-
-  assert.equal(created.attributionStatus, "attributed_campaign");
-  assert.equal(updated.attributionStatus, "attributed_campaign");
-  assert.equal(updated.event?.campaignId, "campaign-1001");
-  assert.equal(updated.stats.totals.unattributedOrderSignals, 0);
-  assert.equal(updated.stats.totals.campaignAttributionUpdates, 2);
-  assert.deepEqual(updated.stats.byCampaignId, { "campaign-1001": 2 });
-  assert.deepEqual(updated.stats.campaignRefs, ["marketing:campaign:campaign-1001"]);
-});
-
-test("orders event message processing persists accepted events and deduplicates replays", async () => {
-  const store = new InMemoryMarketingStore();
-  await store.reset();
-
-  const attributedCreated = orderCreatedEvent({
-    payload: {
-      orderId: "order-1001",
-      channel: "flipflop",
-      leadAttribution: {
-        campaignId: "campaign-1001"
-      }
-    }
-  });
-  const first = await processOrdersEventMessage(JSON.stringify(attributedCreated), store, "2026-07-01T10:00:00.000Z");
-  const replay = await processOrdersEventMessage(JSON.stringify(attributedCreated), store, "2026-07-01T10:01:00.000Z");
-  const stats = await store.getOrdersLifecycleStats();
-
-  assert.equal(first.accepted, true);
-  assert.equal(first.duplicate, false);
-  assert.equal(replay.accepted, false);
-  assert.equal(replay.duplicate, true);
-  assert.equal(stats.totals.acceptedEvents, 1);
-  assert.equal(stats.totals.orderCreated, 1);
-  assert.equal(stats.totals.campaignAttributionUpdates, 1);
-  assert.deepEqual(stats.orderRefs, ["orders:order:order-1001"]);
-  assert.deepEqual(stats.campaignRefs, ["marketing:campaign:campaign-1001"]);
-  assert.deepEqual(stats.byCampaignId, { "campaign-1001": 1 });
-});
-
-test("orders event consumer config binds created and approved updated routing keys", () => {
-  const config = ordersEventsConsumerOptionsFromEnv({
-    ORDERS_EVENTS_CONSUMER_ENABLED: "true",
-    RABBITMQ_URL: "amqp://example.invalid",
-    ORDERS_EVENTS_QUEUE: "marketing.orders.lifecycle",
-    ORDERS_EVENTS_PREFETCH: "5"
-  });
-
-  assert.equal(config.enabled, true);
-  assert.equal(config.queue, "marketing.orders.lifecycle");
-  assert.equal(config.prefetch, 5);
-  assert.deepEqual(config.routingKeys, [ORDERS_ORDER_CREATED_V1, ORDERS_ORDER_UPDATED_V1]);
-  assert.equal(config.routingKeys.includes(REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1), false);
-});
+Catalog runtime ingestion validation is not part of this Marketing source contract and must be validated in `catalog-microservice` before Marketing enables a live caller.
