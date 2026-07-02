@@ -3613,3 +3613,34 @@ Remaining blockers:
 
 - `[MISSING: qualifying historical paid multi-product Orders rows for non-empty replay evidence]`.
 - `[MISSING: owner-reviewed publish window before running a future non-empty `--publish` backfill]`.
+
+
+## 2026-07-03 - Allegro Historical Order Affinity Backfill
+
+Current focus: Execute a bounded operational backfill from Allegro paid multi-product orders into Catalog product relations.
+
+Intent Preservation Chain:
+
+- Vision: Marketplace purchase history can improve related-product and future bundle surfaces across the ecosystem.
+- Goal Impact: Allegro paid multi-product orders now contribute real co-purchase evidence to Catalog-owned `order_affinity` relations.
+- System: Allegro owns marketplace order history; Marketing owns aggregation/publish orchestration; Catalog owns relation persistence. This run used a temporary bounded export and does not replace the future Allegro-owned replay API.
+- Feature: One-time Allegro order-affinity backfill through the existing Marketing CLI and Catalog batch writer.
+- Task: Export only paid `READY_FOR_PROCESSING` Allegro orders with at least two distinct Catalog product IDs, dry-run candidates, publish one small batch, and verify Catalog readback.
+- Execution Plan: Use temporary `/tmp` JSON on `alfares`; no customer fields, buyer fields, addresses, raw marketplace payloads, or secret values; publish only after dry-run produces a small deterministic batch.
+- Coding Prompt: Preserve Allegro provenance via `channel=allegro` and `runId=allegro-history-20260703`; use existing Marketing/Catalog guarded writer; do not persist temporary export files in a repo.
+- Code: No Marketing source changes in this step; used deployed `node dist/order-affinity-backfill.js` from image `localhost:5000/marketing-microservice:d293415`.
+- Validation: dry-run accepted 8 records, rejected 0, produced 16 directed candidates; publish returned `status=published`, `candidateCount=16`, `batchCount=1`; Catalog audit logged `upserted=16`, `failed=0`.
+
+Runtime evidence:
+
+- Source aggregate: Allegro DB contained 8 paid `READY_FOR_PROCESSING` orders with two distinct Catalog products each.
+- Dry-run command shape: `node dist/order-affinity-backfill.js --run-id allegro-history-20260703 --limit=50 --dry-run --pretty`.
+- Publish command shape: `node dist/order-affinity-backfill.js --run-id allegro-history-20260703 --limit=50 --publish --pretty`.
+- Catalog idempotency key: `marketing_order_affinity:backfill:allegro-history-20260703:1`.
+- Catalog readback: `product_relations` now has 16 rows where `source=marketing_order_affinity`, `relation_type=order_affinity`, and `evidence.channel=allegro`; all have `score=1` and `confidence=0.5`.
+- Temporary export files were stored under `/tmp` on `alfares` only and are not repository artifacts.
+
+Remaining blockers:
+
+- `[MISSING: Allegro-owned protected replay endpoint so future runs do not require a temporary SQL export]`.
+- `[MISSING: scheduled/idempotent marketplace-wide backfill orchestration across Allegro, Aukro, Bazos, FlipFlop, and central Orders]`.
