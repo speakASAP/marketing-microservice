@@ -31,6 +31,8 @@ export interface OrdersLifecycleSignal {
   status?: string;
   previousStatus?: string;
   campaignId?: string;
+  productRefs?: string[];
+  currency?: string;
 }
 
 export interface OrdersLifecycleStats {
@@ -94,10 +96,11 @@ interface RejectedEvent {
 const FORBIDDEN_FIELD_PATTERN =
   /(customer|address|billing|street|postal|paymentMethod|providerSecret|bearer|token|jwt|password|credential|trackingNumber|trackingUrl|operatorEmail|approverEmail|email|phone)/i;
 
-const CREATED_PAYLOAD_FIELDS = new Set(["orderId", "channel", "leadAttribution"]);
+const CREATED_PAYLOAD_FIELDS = new Set(["orderId", "channel", "leadAttribution", "items", "currency"]);
 const UPDATED_PAYLOAD_FIELDS = new Set(["orderId", "status", "previousStatus", "approval"]);
 const APPROVAL_PAYLOAD_FIELDS = new Set(["approvalType", "reasonCode", "sideEffectsHandled", "approvedAt"]);
 const LEAD_ATTRIBUTION_PAYLOAD_FIELDS = new Set(["leadId", "source", "campaignId"]);
+const ORDER_ITEM_PAYLOAD_FIELDS = new Set(["productId", "sku", "quantity", "unitPrice", "totalPrice"]);
 
 export function parseOrdersLifecycleEvent(input: unknown): ParsedEvent | RejectedEvent {
   if (!isObject(input)) return reject("invalid_order_event_envelope");
@@ -133,9 +136,23 @@ export function parseOrdersLifecycleEvent(input: unknown): ParsedEvent | Rejecte
     if (!channel) return reject("order_created_channel_missing");
     const campaignId = readCampaignAttributionId(input.payload.leadAttribution);
     if (campaignId === null) return reject("order_event_lead_attribution_invalid");
+    const productRefs = readProductRefs(input.payload.items);
+    if (productRefs === null) return reject("order_event_items_invalid");
+    const currency = readOptionalCurrency(input.payload.currency);
+    if (currency === null) return reject("order_event_currency_invalid");
     return {
       ok: true,
-      signal: { eventType: type, eventVersion: 1, eventId, occurredAt, orderId, channel, campaignId: campaignId || undefined }
+      signal: {
+        eventType: type,
+        eventVersion: 1,
+        eventId,
+        occurredAt,
+        orderId,
+        channel,
+        campaignId: campaignId || undefined,
+        productRefs,
+        currency
+      }
     };
   }
 
@@ -318,6 +335,33 @@ function readCampaignAttributionId(value: unknown): string | undefined | null {
   }
   const campaignId = readString(value, "campaignId");
   return campaignId || undefined;
+}
+
+function readProductRefs(value: unknown): string[] | undefined | null {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return null;
+  const refs: string[] = [];
+  for (const item of value) {
+    if (!isObject(item)) return null;
+    for (const key of Object.keys(item)) {
+      if (!ORDER_ITEM_PAYLOAD_FIELDS.has(key)) return null;
+    }
+    const productId = readString(item, "productId");
+    if (!productId) return null;
+    const quantity = item.quantity;
+    if (typeof quantity !== "number" || !Number.isFinite(quantity) || quantity <= 0) return null;
+    if (item.sku !== undefined && typeof item.sku !== "string") return null;
+    if (item.unitPrice !== undefined && (typeof item.unitPrice !== "number" || !Number.isFinite(item.unitPrice))) return null;
+    if (item.totalPrice !== undefined && (typeof item.totalPrice !== "number" || !Number.isFinite(item.totalPrice))) return null;
+    refs.push(`catalog:product:${productId}`);
+  }
+  return Array.from(new Set(refs)).sort();
+}
+
+function readOptionalCurrency(value: unknown): string | undefined | null {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") return null;
+  return /^[A-Z]{3}$/.test(value) ? value : null;
 }
 
 function isSafeApprovalObject(value: unknown): boolean {

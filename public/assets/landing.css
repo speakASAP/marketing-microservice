@@ -144,6 +144,44 @@ h1 {
   font-size: 1.02rem;
 }
 
+.sales-point {
+  display: grid;
+  grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+  gap: 24px;
+  align-items: start;
+  padding: 28px 0 8px;
+}
+
+.sales-point > div:first-child {
+  border-top: 3px solid var(--blue);
+  background: rgba(255, 255, 255, 0.78);
+  padding: 24px;
+}
+
+.sales-point-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.sales-point article {
+  min-height: 190px;
+  border-top: 3px solid var(--green);
+  background: rgba(255, 255, 255, 0.78);
+  padding: 20px;
+}
+
+.sales-point article:nth-child(2) { border-color: var(--gold); }
+.sales-point article:nth-child(3) { border-color: var(--blue); }
+
+.sales-point p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.sales-point > div:first-child p { margin-top: 12px; }
+
 .capabilities {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -198,8 +236,11 @@ h2 {
 
   .signal-grid strong { margin-bottom: 10px; }
 
+  .sales-point,
+  .sales-point-grid,
   .capabilities { grid-template-columns: 1fr; }
 
+  .sales-point article,
   .capabilities article { min-height: 0; }
 }
 

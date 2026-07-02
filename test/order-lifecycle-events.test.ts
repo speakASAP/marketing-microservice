@@ -100,6 +100,46 @@ test("unapproved orders.order.status_changed.v1 alias is rejected while updated.
   assert.equal(result.stats.bindings.orderStatusChanged, ORDERS_ORDER_UPDATED_V1);
 });
 
+test("order lifecycle parser accepts bounded product item refs from Orders created events", () => {
+  const parsed = parseOrdersLifecycleEvent(orderCreatedEvent({
+    payload: {
+      orderId: "order-1001",
+      channel: "flipflop",
+      items: [
+        { productId: "catalog-product-1001", sku: "SKU-1001", quantity: 1, unitPrice: 490, totalPrice: 490 },
+        { productId: "catalog-product-2002", sku: "SKU-2002", quantity: 2, unitPrice: 150, totalPrice: 300 }
+      ],
+      currency: "CZK"
+    }
+  }));
+
+  assert.equal(parsed.ok, true);
+  if (parsed.ok) {
+    assert.deepEqual(parsed.signal.productRefs, [
+      "catalog:product:catalog-product-1001",
+      "catalog:product:catalog-product-2002"
+    ]);
+    assert.equal(parsed.signal.currency, "CZK");
+  }
+});
+
+test("order lifecycle parser rejects unsafe product item fields", () => {
+  const parsed = parseOrdersLifecycleEvent(orderCreatedEvent({
+    payload: {
+      orderId: "order-1001",
+      channel: "flipflop",
+      items: [
+        { productId: "catalog-product-1001", quantity: 1, productTitle: "must-not-copy-product-truth" }
+      ]
+    }
+  }));
+
+  assert.equal(parsed.ok, false);
+  if (!parsed.ok) {
+    assert.equal(parsed.reason, "order_event_items_invalid");
+  }
+});
+
 test("order lifecycle parser rejects sensitive or non-contract payload fields", () => {
   const parsed = parseOrdersLifecycleEvent(orderCreatedEvent({
     payload: {
