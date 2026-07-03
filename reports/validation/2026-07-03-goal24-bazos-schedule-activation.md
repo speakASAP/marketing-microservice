@@ -19,7 +19,7 @@ Scope: Marketing-owned Kubernetes schedule activation for Bazos marketplace orde
 ## Selected Policy
 
 - Activation state: owner-approved active.
-- Schedule: `10 15 * * *` with `Europe/Prague` timezone.
+- Schedule: `50 21 * * *` with `Europe/Prague` timezone after owner request to observe the same-day natural run.
 - Publish mode: batch publish only.
 - Replacement mode: not enabled; the CronJob does not pass `--replace-window`.
 - Ledger: required through `--record-ledger`.
@@ -42,9 +42,15 @@ kubectl -n statex-apps get cronjob marketing-order-affinity-bazos-daily
 
 ## Result
 
-Pending deploy/readback.
+- Source commit `bcc8a59` changed `marketing-order-affinity-bazos-daily` to `50 21 * * *` Europe/Prague and was pushed to `origin/main`.
+- `git diff --check` passed.
+- Kubernetes server-side dry-run passed; applying `k8s/order-affinity-cronjob.yaml` configured the live Bazos CronJob without changing Allegro/Aukro semantics.
+- Live CronJob readback after the natural run: `schedule=50 21 * * *`, `timezone=Europe/Prague`, `suspend=false`, `lastScheduleTime=2026-07-03T19:50:00Z`, `lastSuccessfulTime=2026-07-03T19:50:30Z`.
+- Natural Job `marketing-order-affinity-bazos-daily-29718470` completed successfully as a Kubernetes Job.
+- Aggregate CLI output reported `mode=publish`, `inputRecords=0`, `acceptedCreatedEvents=0`, `aggregatePairs=0`, `totalPairEvidence=0`, `publish.status=skipped_no_candidates`, `candidateCount=0`, `batchCount=0`, and `ledgerRecord.status=recorded`.
+- Ledger row `order-affinity:bazos-service:bazos:daily:20260702T000000Z:20260703T000000Z` remained `status=failed`, `batch_count=0`, `complete_snapshot=false`; no Catalog relation publish occurred.
 
 ## Remaining Gates
 
 - `[MISSING: owner-reviewed future replace-window activation for Bazos]`.
-- `[MISSING: scheduled Bazos CronJob aggregate result after first natural run]`.
+- `[RESOLVED: scheduled Bazos CronJob aggregate result after first natural run observed with zero candidates and no Catalog publish]`.
