@@ -166,7 +166,7 @@ Catalog runtime ingestion validation exists in `catalog-microservice`; Marketing
 
 ## Marketplace Order-Affinity Replay Envelopes
 
-Marketing now accepts marketplace-owned replay envelopes for order-affinity backfill without weakening the canonical Orders lifecycle event parser.
+Marketing now accepts marketplace-owned replay envelopes and FlipFlop protected replay response candidates for order-affinity backfill without weakening the canonical Orders lifecycle event parser.
 
 Accepted producers:
 
@@ -190,7 +190,7 @@ Runtime scheduling now has source support for an opt-in durable run ledger and i
 - Ledger rows store aggregate-safe counts, source/window/cursor metadata, rejection maps, channel maps, and idempotency keys only.
 - Raw events, raw order ids, customer/contact/address/payment/provider payloads, tokens, credentials, and marketplace JSON are forbidden from ledger rows.
 
-Runtime scheduling has an owner-approved central Orders FlipFlop CronJob activation policy in `k8s/order-affinity-backfill-cronjob.yaml`. Marketplace-wide scheduling remains blocked by `[MISSING: owner-approved activation policy for marketplace-wide CronJobs]`.
+Runtime scheduling has an owner-approved central Orders FlipFlop CronJob activation policy in `k8s/order-affinity-backfill-cronjob.yaml`. FlipFlop protected replay parser/path support is source-ready, but runtime use remains blocked by `[MISSING: deployed FlipFlop replay endpoint/runtime smoke]` and `[MISSING: owner-approved FlipFlop marketplace replay activation policy]`. Marketplace-wide scheduling remains blocked by `[MISSING: owner-approved activation policy for marketplace-wide CronJobs]`.
 
 ## Allegro Scheduled Publish Activation
 

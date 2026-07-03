@@ -109,8 +109,8 @@ test("unapproved orders.order.status_changed.v1 alias is rejected while updated.
 });
 
 
-test("marketplace affinity candidate envelopes accept Aukro and Bazos producer sources", () => {
-  for (const source of ["aukro-service", "bazos-service"]) {
+test("marketplace affinity candidate envelopes accept marketplace producer sources", () => {
+  for (const source of ["aukro-service", "bazos-service", "flipflop-service"]) {
     const channel = source.replace("-service", "");
     const parsed = parseOrdersLifecycleEvent({
       type: MARKETPLACE_ORDER_AFFINITY_CANDIDATE_V1,

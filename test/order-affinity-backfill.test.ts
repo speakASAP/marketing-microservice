@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ORDERS_ORDER_CREATED_V1 } from "../src/order-lifecycle-events";
-import { buildOrderAffinityBackfill, buildOrderAffinityBackfillLedgerEntry, chooseOrderAffinityCatalogPublishMode, marketplaceReplayPath, orderAffinityMarketplaceReplayHeaders, orderAffinityMarketplaceReplayHeadersForSource, orderAffinityOrdersReplayHeaders } from "../src/order-affinity-backfill";
+import { buildOrderAffinityBackfill, buildOrderAffinityBackfillLedgerEntry, chooseOrderAffinityCatalogPublishMode, marketplaceReplayPath, normalizeMarketplaceReplayEvents, orderAffinityMarketplaceReplayHeaders, orderAffinityMarketplaceReplayHeadersForSource, orderAffinityOrdersReplayHeaders } from "../src/order-affinity-backfill";
 import { buildCatalogIdempotencyKeys, orderAffinityRunLedgerOptionsFromEnv, recordOrderAffinityRunLedger } from "../src/order-affinity-ledger";
 import { buildOrderAffinitySchedulePolicy } from "../src/order-affinity-schedule-policy";
 
@@ -69,6 +69,38 @@ test("order affinity backfill accepts outbox row wrappers", () => {
 });
 
 
+test("order affinity backfill normalizes FlipFlop protected replay response candidates", () => {
+  const events = normalizeMarketplaceReplayEvents({
+    sourceOwner: "flipflop-service",
+    consumerOwner: "marketing-microservice",
+    contract: "marketplace.order_affinity_replay_candidates.v1",
+    channel: "flipflop",
+    window: { from: "2026-07-02T00:00:00.000Z", to: "2026-07-03T00:00:00.000Z" },
+    events: [
+      {
+        sourceOwner: "flipflop-service",
+        consumerOwner: "marketing-microservice",
+        contract: "marketplace.order_affinity_replay_candidates.v1",
+        channel: "flipflop",
+        replayRef: "flipflop-affinity:abc123",
+        currency: "CZK",
+        items: [
+          { productId: "catalog-a", quantity: 1 },
+          { productId: "catalog-b", quantity: 1 }
+        ]
+      }
+    ]
+  });
+  const summary = buildOrderAffinityBackfill(events, { runId: "flipflop-replay" });
+
+  assert.equal(summary.inputRecords, 1);
+  assert.equal(summary.acceptedCreatedEvents, 1);
+  assert.equal(summary.rejectedRecords, 0);
+  assert.equal(summary.aggregatePairs, 2);
+  assert.deepEqual(summary.byChannel, { flipflop: 1 });
+});
+
+
 test("order affinity Orders replay headers use internal service auth", () => {
   assert.deepEqual(orderAffinityOrdersReplayHeaders({ ORDERS_SERVICE_TOKEN: "orders-token" }), {
     "x-service-name": "marketing-microservice",
@@ -84,6 +116,7 @@ test("order affinity Orders replay headers use internal service auth", () => {
 test("order affinity marketplace replay paths match approved source endpoints", () => {
   assert.equal(marketplaceReplayPath("aukro-service"), "/internal/aukro/order-affinity/replay-candidates");
   assert.equal(marketplaceReplayPath("bazos-service"), "/internal/bazos/order-affinity/replay-candidates");
+  assert.equal(marketplaceReplayPath("flipflop-service"), "/internal/orders/order-affinity/replay-candidates");
   assert.equal(marketplaceReplayPath("allegro-service"), "/internal/allegro/order-affinity/replay-candidates");
 });
 
@@ -103,6 +136,10 @@ test("order affinity marketplace replay headers use internal service auth", () =
   assert.deepEqual(orderAffinityMarketplaceReplayHeadersForSource("bazos-service", { ORDER_AFFINITY_BAZOS_REPLAY_TOKEN: "bazos-token", ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN: "fallback" }), {
     "x-service-name": "marketing-microservice",
     "x-internal-service-token": "bazos-token",
+  });
+  assert.deepEqual(orderAffinityMarketplaceReplayHeadersForSource("flipflop-service", { ORDER_AFFINITY_FLIPFLOP_REPLAY_TOKEN: "flipflop-token", ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN: "fallback" }), {
+    "x-service-name": "marketing-microservice",
+    "x-flipflop-internal-key": "flipflop-token",
   });
   assert.equal(orderAffinityMarketplaceReplayHeaders({}), undefined);
 });

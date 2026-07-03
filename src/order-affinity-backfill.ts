@@ -2,6 +2,7 @@ import fs from "node:fs";
 import axios from "axios";
 import {
   CATALOG_ORDER_AFFINITY_SOURCE,
+  MARKETPLACE_ORDER_AFFINITY_CANDIDATE_V1,
   ORDERS_ORDER_CREATED_V1,
   CatalogProductRelationUpsertCandidate,
   OrdersLifecycleSignal,
@@ -255,6 +256,7 @@ function inferMarketplaceSourceOwner(marketplaceUrl: string): string {
   const host = safeUrlHost(marketplaceUrl);
   if (host.includes("aukro")) return "aukro-service";
   if (host.includes("bazos")) return "bazos-service";
+  if (host.includes("flipflop")) return "flipflop-service";
   if (host.includes("allegro")) return "allegro-service";
   return "allegro-service";
 }
@@ -416,16 +418,65 @@ async function readMarketplaceReplayInput(options: CliOptions): Promise<unknown[
     timeout: positiveInteger(process.env.ORDER_AFFINITY_MARKETPLACE_TIMEOUT_MS, 10000),
     headers: orderAffinityMarketplaceReplayHeadersForSource(sourceOwner)
   });
-  const events = response.data?.data?.events;
+  const replayData = response.data?.data;
+  const events = replayData?.events;
   if (!response.data?.success || !Array.isArray(events)) {
     throw new Error("marketplace_replay_candidates_unavailable");
   }
-  return events;
+  return normalizeMarketplaceReplayEvents(replayData, options.to);
+}
+
+export function normalizeMarketplaceReplayEvents(replayData: unknown, fallbackOccurredAt?: string): unknown[] {
+  if (!replayData || typeof replayData !== "object" || Array.isArray(replayData)) return [];
+  const source = replayData as Record<string, unknown>;
+  const events = source.events;
+  if (!Array.isArray(events)) return [];
+  return events.map((event) => normalizeMarketplaceReplayEvent(event, source, fallbackOccurredAt));
+}
+
+function normalizeMarketplaceReplayEvent(event: unknown, replayData: Record<string, unknown>, fallbackOccurredAt?: string): unknown {
+  if (!event || typeof event !== "object" || Array.isArray(event)) return event;
+  const source = event as Record<string, unknown>;
+  if (typeof source.type === "string") return event;
+  if (source.contract !== "marketplace.order_affinity_replay_candidates.v1") return event;
+  const replayRef = typeof source.replayRef === "string" ? source.replayRef : "";
+  const sourceOwner = typeof source.sourceOwner === "string" ? source.sourceOwner : readReplayString(replayData, "sourceOwner");
+  const channel = typeof source.channel === "string" ? source.channel : readReplayString(replayData, "channel");
+  const occurredAt = readReplayWindowTimestamp(replayData) || fallbackOccurredAt || new Date().toISOString();
+  return {
+    type: MARKETPLACE_ORDER_AFFINITY_CANDIDATE_V1,
+    eventVersion: 1,
+    eventId: replayRef,
+    occurredAt,
+    source: sourceOwner,
+    payload: {
+      orderId: replayRef,
+      channel,
+      ...(typeof source.currency === "string" ? { currency: source.currency } : {}),
+      items: source.items
+    }
+  };
+}
+
+function readReplayString(source: Record<string, unknown>, key: string): string {
+  const value = source[key];
+  return typeof value === "string" ? value : "";
+}
+
+function readReplayWindowTimestamp(source: Record<string, unknown>): string | undefined {
+  for (const containerKey of ["window", "filters"]) {
+    const container = source[containerKey];
+    if (!container || typeof container !== "object" || Array.isArray(container)) continue;
+    const to = (container as Record<string, unknown>).to;
+    if (typeof to === "string" && to) return to;
+  }
+  return undefined;
 }
 
 export function marketplaceReplayPath(sourceOwner: string): string {
   if (sourceOwner === "aukro-service") return "/internal/aukro/order-affinity/replay-candidates";
   if (sourceOwner === "bazos-service") return "/internal/bazos/order-affinity/replay-candidates";
+  if (sourceOwner === "flipflop-service") return "/internal/orders/order-affinity/replay-candidates";
   return "/internal/allegro/order-affinity/replay-candidates";
 }
 
@@ -435,13 +486,21 @@ export function orderAffinityMarketplaceReplayHeadersForSource(sourceOwner: stri
       ? env.ORDER_AFFINITY_AUKRO_REPLAY_TOKEN || env.AUKRO_INTERNAL_SERVICE_TOKEN
       : sourceOwner === "bazos-service"
         ? env.ORDER_AFFINITY_BAZOS_REPLAY_TOKEN || env.BAZOS_INTERNAL_SERVICE_TOKEN
-        : undefined
+        : sourceOwner === "flipflop-service"
+          ? env.ORDER_AFFINITY_FLIPFLOP_REPLAY_TOKEN || env.FLIPFLOP_INTERNAL_SERVICE_SECRET || env.FLIPFLOP_INTERNAL_SERVICE_TOKEN
+          : undefined
   ) || env.ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN || env.ALLEGRO_INTERNAL_SERVICE_TOKEN || env.INTERNAL_SERVICE_TOKEN || "";
-  const cleanToken = token.trim();
+  const cleanToken = token.trim().replace(/^Bearer\s+/i, "");
   if (!cleanToken) return undefined;
+  if (sourceOwner === "flipflop-service") {
+    return {
+      "x-service-name": "marketing-microservice",
+      "x-flipflop-internal-key": cleanToken
+    };
+  }
   return {
     "x-service-name": "marketing-microservice",
-    "x-internal-service-token": cleanToken.replace(/^Bearer\s+/i, "")
+    "x-internal-service-token": cleanToken
   };
 }
 
