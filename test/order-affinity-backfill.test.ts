@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ORDERS_ORDER_CREATED_V1 } from "../src/order-lifecycle-events";
-import { buildOrderAffinityBackfill, buildOrderAffinityBackfillLedgerEntry, chooseOrderAffinityCatalogPublishMode, orderAffinityMarketplaceReplayHeaders, orderAffinityMarketplaceReplayHeadersForSource, orderAffinityOrdersReplayHeaders } from "../src/order-affinity-backfill";
+import { buildOrderAffinityBackfill, buildOrderAffinityBackfillLedgerEntry, chooseOrderAffinityCatalogPublishMode, marketplaceReplayPath, orderAffinityMarketplaceReplayHeaders, orderAffinityMarketplaceReplayHeadersForSource, orderAffinityOrdersReplayHeaders } from "../src/order-affinity-backfill";
 import { buildCatalogIdempotencyKeys, orderAffinityRunLedgerOptionsFromEnv, recordOrderAffinityRunLedger } from "../src/order-affinity-ledger";
 import { buildOrderAffinitySchedulePolicy } from "../src/order-affinity-schedule-policy";
 
@@ -79,6 +79,12 @@ test("order affinity Orders replay headers use internal service auth", () => {
     "x-internal-service-token": "wrapped-token",
   });
   assert.equal(orderAffinityOrdersReplayHeaders({}), undefined);
+});
+
+test("order affinity marketplace replay paths match approved source endpoints", () => {
+  assert.equal(marketplaceReplayPath("aukro-service"), "/internal/aukro/order-affinity/replay-candidates");
+  assert.equal(marketplaceReplayPath("bazos-service"), "/internal/bazos/order-affinity/replay-candidates");
+  assert.equal(marketplaceReplayPath("allegro-service"), "/internal/allegro/order-affinity/replay-candidates");
 });
 
 test("order affinity marketplace replay headers use internal service auth", () => {

@@ -421,8 +421,8 @@ async function readMarketplaceReplayInput(options: CliOptions): Promise<unknown[
   return events;
 }
 
-function marketplaceReplayPath(sourceOwner: string): string {
-  if (sourceOwner === "aukro-service") return "/aukro/internal/aukro/order-affinity/replay-candidates";
+export function marketplaceReplayPath(sourceOwner: string): string {
+  if (sourceOwner === "aukro-service") return "/internal/aukro/order-affinity/replay-candidates";
   if (sourceOwner === "bazos-service") return "/internal/bazos/order-affinity/replay-candidates";
   return "/internal/allegro/order-affinity/replay-candidates";
 }
