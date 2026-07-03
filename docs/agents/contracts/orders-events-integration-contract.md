@@ -147,7 +147,7 @@ First version semantics:
 ## Current Blockers
 
 - `[MISSING: runtime Catalog internal service token secret mapping for Marketing-to-Catalog relation writes]`
-- Idempotency is source-implemented as `marketing_order_affinity:<eventId>:<batchIndex>`; live replay evidence is still required after enabling the publisher.
+- Idempotency is source-implemented for replay batches as `marketing_order_affinity:<sourceOwner>:<channel>:<windowStart>:<windowEnd>:<runId>:<batchIndex>`; live replay evidence is still required after enabling the publisher.
 - `[MISSING: pruning/replacement semantics for stale affinity rows]`
 - `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`
 
@@ -178,4 +178,12 @@ Accepted first producer:
 
 The parser normalizes accepted marketplace envelopes into the existing order-created signal used by `backfill:order-affinity`. Forbidden customer, address, billing, payment provider, token, credential, tracking, email, and phone fields still fail closed.
 
-Runtime scheduling remains blocked by `[MISSING: durable Marketing backfill run ledger and idempotency key registry]`.
+Runtime scheduling now has source support for an opt-in durable run ledger and idempotency registry:
+
+- migration `0013_order_affinity_run_ledger.sql` creates `marketing_order_affinity_runs` and `marketing_order_affinity_idempotency_keys`.
+- `ORDER_AFFINITY_RUN_LEDGER_ENABLED=true` gates DB writes; without it, dry-runs expose the planned ledger and return `ledger_disabled` without mutating storage.
+- Catalog batch idempotency keys use `marketing_order_affinity:<sourceOwner>:<channel>:<windowStart>:<windowEnd>:<runId>:<batchIndex>`.
+- Ledger rows store aggregate-safe counts, source/window/cursor metadata, rejection maps, channel maps, and idempotency keys only.
+- Raw events, raw order ids, customer/contact/address/payment/provider payloads, tokens, credentials, and marketplace JSON are forbidden from ledger rows.
+
+Runtime scheduling remains blocked by `[MISSING: scheduled dry-run matrix across Allegro, Aukro, Bazos, FlipFlop, and central Orders]` and `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`.

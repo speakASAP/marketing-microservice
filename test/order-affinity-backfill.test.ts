@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ORDERS_ORDER_CREATED_V1 } from "../src/order-lifecycle-events";
-import { buildOrderAffinityBackfill, orderAffinityMarketplaceReplayHeaders, orderAffinityOrdersReplayHeaders } from "../src/order-affinity-backfill";
+import { buildOrderAffinityBackfill, buildOrderAffinityBackfillLedgerEntry, orderAffinityMarketplaceReplayHeaders, orderAffinityOrdersReplayHeaders } from "../src/order-affinity-backfill";
+import { buildCatalogIdempotencyKeys, orderAffinityRunLedgerOptionsFromEnv, recordOrderAffinityRunLedger } from "../src/order-affinity-ledger";
 
 function created(eventId: string, productIds: string[], channel = "flipflop") {
   return {
@@ -89,4 +90,92 @@ test("order affinity marketplace replay headers use internal service auth", () =
     "x-internal-service-token": "wrapped-token",
   });
   assert.equal(orderAffinityMarketplaceReplayHeaders({}), undefined);
+});
+
+test("order affinity backfill builds dry-run ledger with window-scoped Catalog idempotency keys", () => {
+  const summary = buildOrderAffinityBackfill([
+    created("00000000-0000-4000-8000-000000000101", ["catalog-a", "catalog-b"], "allegro")
+  ], { runId: "marketplace-affinity:allegro:2026-07-03" });
+
+  const ledger = buildOrderAffinityBackfillLedgerEntry(summary, {
+    sourceOwner: "allegro-service",
+    channel: "allegro",
+    from: "2026-07-01T00:00:00.000Z",
+    to: "2026-07-03T00:00:00.000Z",
+    cursorBefore: "cursor-before",
+    cursorAfter: "cursor-after",
+    batchCount: 2,
+  });
+
+  assert.equal(ledger.mode, "dry-run");
+  assert.equal(ledger.status, "dry_run_passed");
+  assert.equal(ledger.sourceOwner, "allegro-service");
+  assert.equal(ledger.channel, "allegro");
+  assert.equal(ledger.inputRecords, 1);
+  assert.equal(ledger.acceptedCreatedEvents, 1);
+  assert.equal(ledger.aggregatePairs, 2);
+  assert.deepEqual(ledger.catalogIdempotencyKeys, [
+    "marketing_order_affinity:allegro-service:allegro:2026-07-01T00:00:00.000Z:2026-07-03T00:00:00.000Z:marketplace-affinity:allegro:2026-07-03:1",
+    "marketing_order_affinity:allegro-service:allegro:2026-07-01T00:00:00.000Z:2026-07-03T00:00:00.000Z:marketplace-affinity:allegro:2026-07-03:2",
+  ]);
+  const serialized = JSON.stringify(ledger);
+  assert.equal(serialized.includes("buyer@example.invalid"), false);
+  assert.equal(serialized.includes("payment"), false);
+});
+
+test("order affinity ledger env config and disabled recording are fail-closed", async () => {
+  const keys = buildCatalogIdempotencyKeys({
+    runId: "run-1",
+    sourceOwner: "allegro-service",
+    channel: "allegro",
+    windowStart: null,
+    windowEnd: null,
+    batchCount: 1,
+  });
+  assert.deepEqual(keys, ["marketing_order_affinity:allegro-service:allegro:open:open:run-1:1"]);
+
+  const options = orderAffinityRunLedgerOptionsFromEnv({ ORDER_AFFINITY_RUN_LEDGER_ENABLED: "true", DB_HOST: "database-server", DB_NAME: "marketing" });
+  assert.equal(options.enabled, true);
+  assert.equal(options.dbHost, "database-server");
+  assert.equal(options.dbName, "marketing");
+
+  const summary = buildOrderAffinityBackfill([
+    created("00000000-0000-4000-8000-000000000102", ["catalog-a", "catalog-b"], "allegro")
+  ], { runId: "run-disabled" });
+  const ledger = buildOrderAffinityBackfillLedgerEntry(summary, { sourceOwner: "allegro-service", channel: "allegro" });
+  const result = await recordOrderAffinityRunLedger(ledger, { enabled: false });
+  assert.equal(result.status, "disabled");
+  assert.equal(result.reason, "ledger_disabled");
+});
+
+test("order affinity ledger records aggregate-only rows and idempotency registry", async () => {
+  const summary = buildOrderAffinityBackfill([
+    created("00000000-0000-4000-8000-000000000103", ["catalog-a", "catalog-b"], "allegro")
+  ], { runId: "run-record" });
+  const ledger = buildOrderAffinityBackfillLedgerEntry(summary, {
+    sourceOwner: "allegro-service",
+    channel: "allegro",
+    batchCount: 2,
+  });
+  const queries: Array<{ text: string; values?: unknown[] }> = [];
+  const client = {
+    query: async (text: string, values?: unknown[]) => {
+      queries.push({ text, values });
+      return { rows: [], rowCount: 1 };
+    },
+    release: () => undefined,
+  };
+  const pool = { connect: async () => client } as never;
+
+  const result = await recordOrderAffinityRunLedger(ledger, { enabled: true }, pool);
+
+  assert.equal(result.status, "recorded");
+  assert.equal(result.idempotencyKeyCount, 2);
+  assert.ok(queries.some((query) => query.text.includes("insert into marketing_order_affinity_runs")));
+  assert.equal(queries.filter((query) => query.text.includes("insert into marketing_order_affinity_idempotency_keys")).length, 2);
+  const runInsert = queries.find((query) => query.text.includes("insert into marketing_order_affinity_runs"));
+  assert.equal(runInsert?.values?.[0], "run-record");
+  assert.equal(runInsert?.values?.[1], "allegro-service");
+  assert.equal(runInsert?.values?.[2], "allegro");
+  assert.equal(JSON.stringify(runInsert?.values).includes("buyer@example.invalid"), false);
 });
