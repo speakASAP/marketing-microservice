@@ -83,7 +83,14 @@ A read-only Orders aggregate/count check was run through the protected replay en
 
 No customer, address, payment, provider, token value, raw marketplace order id, raw event payload, or raw Catalog relation payload was printed in runtime validation evidence.
 
+
+## Approved Token Mapping Plan
+
+Owner approval received on 2026-07-03 to find or create the replay token in Kubernetes Vault. The existing Vault-backed Allegro service token source was found without printing token values: Orders maps `ALLEGRO_INTERNAL_SERVICE_TOKEN` from `secret/prod/allegro-service` property `JWT_TOKEN`. Marketing now maps the same Vault property into its own secret as `ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN`, preserving an explicit purpose-specific runtime name for the backfill CLI.
+
+No new raw token value was created, printed, copied into code, or committed.
+
 ## Blockers
 
-- `[MISSING: Marketing runtime token mapping for ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN or ALLEGRO_INTERNAL_SERVICE_TOKEN]`.
-- `[MISSING: owner-approved token secret source and Kubernetes mapping for Marketing-to-Allegro replay calls]`.
+- `[MISSING: post-deploy confirmation that ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN is present in the Marketing pod]`.
+- `[MISSING: post-deploy Marketing-to-Allegro marketplace replay dry-run with aggregate-only output]`.
