@@ -8,6 +8,7 @@ import {
   parseOrdersLifecycleEvent
 } from "./order-lifecycle-events";
 import {
+  OrderAffinityCatalogPublishResult,
   orderAffinityCatalogPublisherOptionsFromEnv,
   publishOrderAffinityCandidatesToCatalog
 } from "./order-affinity-catalog-publisher";
@@ -441,19 +442,33 @@ async function main() {
   assertScheduledPublishHasLedger(options);
   const records = await readOrdersReplayInput(options);
   const summary = buildOrderAffinityBackfill(records, options);
-  const publishResult = options.publish ? await publishOrderAffinityBackfill(summary) : undefined;
-  const ledgerEntry = buildOrderAffinityBackfillLedgerEntry(summary, {
-    ...options,
-    status: publishResult ? ledgerStatusFromPublishResult(publishResult) : undefined,
-    batchCount: publishResult?.batchCount,
-  });
+  const plannedLedgerEntry = buildOrderAffinityBackfillLedgerEntry(summary, options);
   const output: Record<string, unknown> = {
     mode: options.publish ? "publish" : "dry-run",
     summary: publicSummary(summary),
-    ledger: publicLedgerSummary(ledgerEntry)
+    ledger: publicLedgerSummary(plannedLedgerEntry)
   };
-  if (publishResult) output.publish = publishResult;
-  output.ledgerRecord = await maybeRecordOrderAffinityBackfillLedger(ledgerEntry, options);
+
+  let ledgerRecord = await maybeRecordOrderAffinityBackfillLedger(plannedLedgerEntry, options);
+  if (options.publish && options.schedule && ledgerRecord.status !== "recorded") {
+    output.ledgerRecord = ledgerRecord;
+    output.publish = blockedPublishResult(summary, plannedLedgerEntry.batchCount, "scheduled_publish_ledger_not_recorded");
+    console.log(JSON.stringify(output, null, options.pretty ? 2 : 0));
+    return;
+  }
+
+  const publishResult = options.publish ? await publishOrderAffinityBackfill(summary) : undefined;
+  if (publishResult) {
+    const finalLedgerEntry = buildOrderAffinityBackfillLedgerEntry(summary, {
+      ...options,
+      status: ledgerStatusFromPublishResult(publishResult),
+      batchCount: publishResult.batchCount,
+    });
+    output.ledger = publicLedgerSummary(finalLedgerEntry);
+    output.publish = publishResult;
+    ledgerRecord = await maybeRecordOrderAffinityBackfillLedger(finalLedgerEntry, options);
+  }
+  output.ledgerRecord = ledgerRecord;
   console.log(JSON.stringify(output, null, options.pretty ? 2 : 0));
 }
 
@@ -463,8 +478,17 @@ function assertScheduledPublishHasLedger(options: CliOptions): void {
   throw new Error("order_affinity_scheduled_publish_requires_ledger");
 }
 
-function ledgerStatusFromPublishResult(result: Awaited<ReturnType<typeof publishOrderAffinityBackfill>>): OrderAffinityRunStatus {
+function ledgerStatusFromPublishResult(result: OrderAffinityCatalogPublishResult): OrderAffinityRunStatus {
   return result.status === "published" ? "published" : "failed";
+}
+
+function blockedPublishResult(summary: OrderAffinityBackfillSummary, batchCount: number, reason: string): OrderAffinityCatalogPublishResult {
+  return {
+    status: "failed",
+    candidateCount: summary.candidates.length,
+    batchCount,
+    reason,
+  };
 }
 
 if (require.main === module) {
