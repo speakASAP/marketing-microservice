@@ -186,7 +186,7 @@ Runtime scheduling now has source support for an opt-in durable run ledger and i
 - `ORDER_AFFINITY_RUN_LEDGER_ENABLED=true` gates DB writes; without it, dry-runs expose the planned ledger and return `ledger_disabled` without mutating storage.
 - Scheduled backfills derive closed UTC windows with `--schedule=daily|hourly`, `--lookback`, and `--window-delay-minutes`; scheduled runs require an explicit `--channel` and deterministic run IDs in the form `order-affinity:<sourceOwner>:<channel>:<cadence>:<windowStart>:<windowEnd>`.
 - Scheduled publishes fail closed unless `--record-ledger` is supplied or `ORDER_AFFINITY_RUN_LEDGER_ENABLED=true` is configured.
-- Catalog batch idempotency keys mirror the publisher event ID: `marketing_order_affinity:backfill:<runId>:<batchIndex>`.
+- Catalog batch idempotency keys use the Goal 24 source/window registry shape: `marketing_order_affinity:<sourceOwner>:<channel>:<windowStart>:<windowEnd>:<runId>:<batchIndex>`.
 - Ledger rows store aggregate-safe counts, source/window/cursor metadata, rejection maps, channel maps, and idempotency keys only.
 - Raw events, raw order ids, customer/contact/address/payment/provider payloads, tokens, credentials, and marketplace JSON are forbidden from ledger rows.
 

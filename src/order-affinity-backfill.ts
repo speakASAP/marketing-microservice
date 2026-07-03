@@ -29,6 +29,15 @@ export interface OrderAffinityBackfillOptions {
   runId?: string;
 }
 
+export interface OrderAffinityPublishWindowOptions {
+  sourceOwner: string;
+  channel: string;
+  windowStart: string;
+  windowEnd: string;
+  completeSnapshot: boolean;
+  ownerRetentionPolicyRef?: string;
+}
+
 export interface OrderAffinityBackfillSummary {
   runId: string;
   inputRecords: number;
@@ -68,6 +77,9 @@ interface CliOptions extends OrderAffinityBackfillOptions {
   windowDelayMinutes?: number;
   recordLedger: boolean;
   publish: boolean;
+  replaceWindow: boolean;
+  completeSnapshot: boolean;
+  ownerRetentionPolicyRef?: string;
   pretty: boolean;
 }
 
@@ -144,7 +156,11 @@ export function buildOrderAffinityBackfill(
   };
 }
 
-export async function publishOrderAffinityBackfill(summary: OrderAffinityBackfillSummary) {
+export async function publishOrderAffinityBackfill(
+  summary: OrderAffinityBackfillSummary,
+  ledger?: OrderAffinityRunLedgerEntry,
+  mode: "batch" | "replace-window" = "batch"
+) {
   const signal: OrdersLifecycleSignal = {
     eventType: ORDERS_ORDER_CREATED_V1,
     eventVersion: 1,
@@ -155,8 +171,34 @@ export async function publishOrderAffinityBackfill(summary: OrderAffinityBackfil
   return publishOrderAffinityCandidatesToCatalog(
     signal,
     summary.candidates,
-    orderAffinityCatalogPublisherOptionsFromEnv()
+    orderAffinityCatalogPublisherOptionsFromEnv(),
+    undefined,
+    ledger ? {
+      idempotencyKeys: ledger.catalogIdempotencyKeys,
+      ...(mode === "replace-window" && ledger.windowStart && ledger.windowEnd ? {
+        replaceWindow: {
+          sourceOwner: ledger.sourceOwner,
+          channel: ledger.channel,
+          windowStart: ledger.windowStart,
+          windowEnd: ledger.windowEnd,
+          runId: ledger.runId,
+        }
+      } : {})
+    } : {}
   );
+}
+
+export function chooseOrderAffinityCatalogPublishMode(
+  summary: OrderAffinityBackfillSummary,
+  ledger: OrderAffinityRunLedgerEntry,
+  options: { replaceWindow?: boolean; completeSnapshot?: boolean; ownerRetentionPolicyRef?: string | null }
+): { mode: "batch" | "replace-window" | "replace-window-blocked"; reason?: string } {
+  if (!options.replaceWindow) return { mode: "batch" };
+  if (summary.rejectedRecords > 0) return { mode: "replace-window-blocked", reason: "replace_window_requires_zero_parser_rejects" };
+  if (!ledger.windowStart || !ledger.windowEnd) return { mode: "replace-window-blocked", reason: "replace_window_requires_source_window" };
+  if (!options.completeSnapshot) return { mode: "replace-window-blocked", reason: "replace_window_requires_complete_snapshot_ledger" };
+  if (!options.ownerRetentionPolicyRef?.trim()) return { mode: "replace-window-blocked", reason: "replace_window_requires_owner_retention_policy" };
+  return { mode: "replace-window" };
 }
 
 export function buildOrderAffinityBackfillLedgerEntry(
@@ -277,11 +319,15 @@ function uniqueCatalogProductIds(productRefs: string[] | undefined): string[] {
 }
 
 function parseCliArgs(argv: string[]): CliOptions {
-  const options: CliOptions = { publish: false, pretty: false, recordLedger: false };
+  const options: CliOptions = { publish: false, pretty: false, recordLedger: false, replaceWindow: false, completeSnapshot: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--publish") options.publish = true;
     else if (arg === "--dry-run") options.publish = false;
+    else if (arg === "--replace-window") options.replaceWindow = true;
+    else if (arg === "--complete-snapshot") options.completeSnapshot = true;
+    else if (arg === "--owner-retention-policy-ref") options.ownerRetentionPolicyRef = argv[++index];
+    else if (arg.startsWith("--owner-retention-policy-ref=")) options.ownerRetentionPolicyRef = arg.slice("--owner-retention-policy-ref=".length);
     else if (arg === "--pretty") options.pretty = true;
     else if (arg === "--file") options.file = argv[++index];
     else if (arg.startsWith("--file=")) options.file = arg.slice("--file=".length);
@@ -478,21 +524,32 @@ async function main() {
   const records = await readOrdersReplayInput(options);
   const summary = buildOrderAffinityBackfill(records, options);
   const plannedLedgerEntry = buildOrderAffinityBackfillLedgerEntry(summary, options);
+  const publishMode = chooseOrderAffinityCatalogPublishMode(summary, plannedLedgerEntry, {
+    replaceWindow: options.replaceWindow,
+    completeSnapshot: options.completeSnapshot,
+    ownerRetentionPolicyRef: options.ownerRetentionPolicyRef,
+  });
   const output: Record<string, unknown> = {
     mode: options.publish ? "publish" : "dry-run",
     summary: publicSummary(summary),
-    ledger: publicLedgerSummary(plannedLedgerEntry)
+    ledger: publicLedgerSummary(plannedLedgerEntry),
+    catalogPublishMode: publishMode
   };
+  if (options.publish && publishMode.mode === "replace-window-blocked") {
+    output.publish = blockedPublishResult(summary, plannedLedgerEntry.batchCount, publishMode.reason || "replace_window_blocked");
+    console.log(JSON.stringify(output, null, options.pretty ? 2 : 0));
+    return;
+  }
 
   let ledgerRecord = await maybeRecordOrderAffinityBackfillLedger(plannedLedgerEntry, options);
-  if (options.publish && options.schedule && ledgerRecord.status !== "recorded") {
+  if (options.publish && (options.schedule || publishMode.mode === "replace-window") && ledgerRecord.status !== "recorded") {
     output.ledgerRecord = ledgerRecord;
     output.publish = blockedPublishResult(summary, plannedLedgerEntry.batchCount, "scheduled_publish_ledger_not_recorded");
     console.log(JSON.stringify(output, null, options.pretty ? 2 : 0));
     return;
   }
 
-  const publishResult = options.publish ? await publishOrderAffinityBackfill(summary) : undefined;
+  const publishResult = options.publish ? await publishOrderAffinityBackfill(summary, plannedLedgerEntry, publishMode.mode === "replace-window" ? "replace-window" : "batch") : undefined;
   if (publishResult) {
     const finalLedgerEntry = buildOrderAffinityBackfillLedgerEntry(summary, {
       ...options,

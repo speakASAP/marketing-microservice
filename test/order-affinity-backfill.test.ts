@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ORDERS_ORDER_CREATED_V1 } from "../src/order-lifecycle-events";
-import { buildOrderAffinityBackfill, buildOrderAffinityBackfillLedgerEntry, orderAffinityMarketplaceReplayHeaders, orderAffinityMarketplaceReplayHeadersForSource, orderAffinityOrdersReplayHeaders } from "../src/order-affinity-backfill";
+import { buildOrderAffinityBackfill, buildOrderAffinityBackfillLedgerEntry, chooseOrderAffinityCatalogPublishMode, orderAffinityMarketplaceReplayHeaders, orderAffinityMarketplaceReplayHeadersForSource, orderAffinityOrdersReplayHeaders } from "../src/order-affinity-backfill";
 import { buildCatalogIdempotencyKeys, orderAffinityRunLedgerOptionsFromEnv, recordOrderAffinityRunLedger } from "../src/order-affinity-ledger";
 import { buildOrderAffinitySchedulePolicy } from "../src/order-affinity-schedule-policy";
 
@@ -124,8 +124,8 @@ test("order affinity backfill builds dry-run ledger with publisher-compatible Ca
   assert.equal(ledger.acceptedCreatedEvents, 1);
   assert.equal(ledger.aggregatePairs, 2);
   assert.deepEqual(ledger.catalogIdempotencyKeys, [
-    "marketing_order_affinity:backfill:marketplace-affinity:allegro:2026-07-03:1",
-    "marketing_order_affinity:backfill:marketplace-affinity:allegro:2026-07-03:2",
+    "marketing_order_affinity:allegro-service:allegro:2026-07-01T00:00:00.000Z:2026-07-03T00:00:00.000Z:marketplace-affinity:allegro:2026-07-03:1",
+    "marketing_order_affinity:allegro-service:allegro:2026-07-01T00:00:00.000Z:2026-07-03T00:00:00.000Z:marketplace-affinity:allegro:2026-07-03:2",
   ]);
   const serialized = JSON.stringify(ledger);
   assert.equal(serialized.includes("buyer@example.invalid"), false);
@@ -155,9 +155,13 @@ test("order affinity schedule policy requires an explicit channel", () => {
 test("order affinity ledger env config and disabled recording are fail-closed", async () => {
   const keys = buildCatalogIdempotencyKeys({
     runId: "run-1",
+    sourceOwner: "allegro-service",
+    channel: "allegro",
+    windowStart: "2026-07-01T00:00:00.000Z",
+    windowEnd: "2026-07-03T00:00:00.000Z",
     batchCount: 1,
   });
-  assert.deepEqual(keys, ["marketing_order_affinity:backfill:run-1:1"]);
+  assert.deepEqual(keys, ["marketing_order_affinity:allegro-service:allegro:2026-07-01T00:00:00.000Z:2026-07-03T00:00:00.000Z:run-1:1"]);
 
   const options = orderAffinityRunLedgerOptionsFromEnv({ ORDER_AFFINITY_RUN_LEDGER_ENABLED: "true", DB_HOST: "database-server", DB_NAME: "marketing" });
   assert.equal(options.enabled, true);
@@ -203,4 +207,89 @@ test("order affinity ledger records aggregate-only rows and idempotency registry
   assert.equal(runInsert?.values?.[1], "allegro-service");
   assert.equal(runInsert?.values?.[2], "allegro");
   assert.equal(JSON.stringify(runInsert?.values).includes("buyer@example.invalid"), false);
+});
+
+
+test("order affinity replace-window publishing fails closed without completeness and retention proof", () => {
+  const summary = buildOrderAffinityBackfill([
+    created("00000000-0000-4000-8000-000000000104", ["catalog-a", "catalog-b"], "allegro")
+  ], { runId: "replace-window-run" });
+  const ledger = buildOrderAffinityBackfillLedgerEntry(summary, {
+    sourceOwner: "allegro-service",
+    channel: "allegro",
+    from: "2026-07-01T00:00:00.000Z",
+    to: "2026-07-03T00:00:00.000Z",
+  });
+
+  assert.deepEqual(chooseOrderAffinityCatalogPublishMode(summary, ledger, { replaceWindow: false }), { mode: "batch" });
+  assert.deepEqual(chooseOrderAffinityCatalogPublishMode(summary, ledger, { replaceWindow: true }), {
+    mode: "replace-window-blocked",
+    reason: "replace_window_requires_complete_snapshot_ledger",
+  });
+  assert.deepEqual(chooseOrderAffinityCatalogPublishMode(summary, ledger, {
+    replaceWindow: true,
+    completeSnapshot: true,
+  }), {
+    mode: "replace-window-blocked",
+    reason: "replace_window_requires_owner_retention_policy",
+  });
+  assert.deepEqual(chooseOrderAffinityCatalogPublishMode(summary, ledger, {
+    replaceWindow: true,
+    completeSnapshot: true,
+    ownerRetentionPolicyRef: "owner-approved-retention-2026-07",
+  }), { mode: "replace-window" });
+});
+
+
+test("order affinity replace-window publish mode sends complete source window payload", async () => {
+  const summary = buildOrderAffinityBackfill([
+    created("00000000-0000-4000-8000-000000000105", ["catalog-a", "catalog-b"], "allegro")
+  ], { runId: "replace-window-publish-run" });
+  const ledger = buildOrderAffinityBackfillLedgerEntry(summary, {
+    sourceOwner: "allegro-service",
+    channel: "allegro",
+    from: "2026-07-01T00:00:00.000Z",
+    to: "2026-07-03T00:00:00.000Z",
+  });
+  const calls: Array<{ url: string; payload: any }> = [];
+  const { publishOrderAffinityCandidatesToCatalog } = await import("../src/order-affinity-catalog-publisher");
+  const signal = {
+    eventType: ORDERS_ORDER_CREATED_V1,
+    eventVersion: 1 as const,
+    eventId: `backfill:${summary.runId}`,
+    occurredAt: "2026-07-03T08:00:00.000Z",
+    orderId: `backfill:${summary.runId}`,
+  };
+
+  const result = await publishOrderAffinityCandidatesToCatalog(signal, summary.candidates, {
+    enabled: true,
+    catalogServiceUrl: "http://catalog-microservice:3200",
+    internalServiceToken: "catalog-write-token",
+    endpoint: "/api/internal/product-relations/order-affinity/batch",
+    replaceWindowEndpoint: "/api/internal/product-relations/order-affinity/replace-window",
+    timeoutMs: 5000,
+    batchSize: 1,
+  }, async (url, payload) => {
+    calls.push({ url, payload });
+  }, {
+    idempotencyKeys: ledger.catalogIdempotencyKeys,
+    replaceWindow: {
+      sourceOwner: ledger.sourceOwner,
+      channel: ledger.channel,
+      windowStart: ledger.windowStart!,
+      windowEnd: ledger.windowEnd!,
+      runId: ledger.runId,
+    }
+  });
+
+  assert.equal(result.status, "published");
+  assert.equal(result.batchCount, 1);
+  assert.equal(calls[0].url, "http://catalog-microservice:3200/api/internal/product-relations/order-affinity/replace-window");
+  assert.equal(calls[0].payload.completeSnapshot, true);
+  assert.equal(calls[0].payload.sourceOwner, "allegro-service");
+  assert.equal(calls[0].payload.channel, "allegro");
+  assert.equal(calls[0].payload.windowStart, "2026-07-01T00:00:00.000Z");
+  assert.equal(calls[0].payload.windowEnd, "2026-07-03T00:00:00.000Z");
+  assert.equal(calls[0].payload.idempotencyKey, ledger.catalogIdempotencyKeys[0]);
+  assert.equal(calls[0].payload.items.length, 2);
 });

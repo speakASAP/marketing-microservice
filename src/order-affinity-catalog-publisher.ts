@@ -14,8 +14,20 @@ export interface OrderAffinityCatalogPublisherOptions {
   catalogServiceUrl?: string;
   internalServiceToken?: string;
   endpoint: string;
+  replaceWindowEndpoint: string;
   timeoutMs: number;
   batchSize: number;
+}
+
+export interface OrderAffinityCatalogPublishContext {
+  idempotencyKeys?: string[];
+  replaceWindow?: {
+    sourceOwner: string;
+    channel: string;
+    windowStart: string;
+    windowEnd: string;
+    runId: string;
+  };
 }
 
 export interface OrderAffinityCatalogPublishResult {
@@ -32,6 +44,7 @@ export function orderAffinityCatalogPublisherOptionsFromEnv(env: NodeJS.ProcessE
     catalogServiceUrl: env.CATALOG_SERVICE_URL,
     internalServiceToken: env.CATALOG_INTERNAL_SERVICE_TOKEN,
     endpoint: env.CATALOG_ORDER_AFFINITY_BATCH_ENDPOINT || CATALOG_ORDER_AFFINITY_BATCH_ENDPOINT,
+    replaceWindowEndpoint: env.CATALOG_ORDER_AFFINITY_REPLACE_WINDOW_ENDPOINT || "/api/internal/product-relations/order-affinity/replace-window",
     timeoutMs: positiveInteger(env.CATALOG_ORDER_AFFINITY_TIMEOUT_MS, 5000),
     batchSize: positiveInteger(env.CATALOG_ORDER_AFFINITY_BATCH_SIZE, 50)
   };
@@ -40,17 +53,19 @@ export function orderAffinityCatalogPublisherOptionsFromEnv(env: NodeJS.ProcessE
 export async function publishOrderAffinitySignalToCatalog(
   signal: OrdersLifecycleSignal,
   options: OrderAffinityCatalogPublisherOptions = orderAffinityCatalogPublisherOptionsFromEnv(),
-  post: CatalogPost = axios.post
+  post: CatalogPost = axios.post,
+  context: OrderAffinityCatalogPublishContext = {}
 ): Promise<OrderAffinityCatalogPublishResult> {
   const candidates = buildOrderAffinityRelationCandidates(signal);
-  return publishOrderAffinityCandidatesToCatalog(signal, candidates, options, post);
+  return publishOrderAffinityCandidatesToCatalog(signal, candidates, options, post, context);
 }
 
 export async function publishOrderAffinityCandidatesToCatalog(
   signal: OrdersLifecycleSignal,
   candidates: CatalogProductRelationUpsertCandidate[],
   options: OrderAffinityCatalogPublisherOptions = orderAffinityCatalogPublisherOptionsFromEnv(),
-  post: CatalogPost = axios.post
+  post: CatalogPost = axios.post,
+  context: OrderAffinityCatalogPublishContext = {}
 ): Promise<OrderAffinityCatalogPublishResult> {
   if (!options.enabled) {
     return { status: "disabled", candidateCount: candidates.length, batchCount: 0, reason: "publisher_disabled" };
@@ -62,14 +77,23 @@ export async function publishOrderAffinityCandidatesToCatalog(
     return { status: "skipped_missing_config", candidateCount: candidates.length, batchCount: 0, reason: "catalog_url_or_internal_token_missing" };
   }
 
-  const endpoint = joinUrl(options.catalogServiceUrl, options.endpoint);
-  const batches = chunk(candidates, options.batchSize);
+  const endpoint = joinUrl(options.catalogServiceUrl, context.replaceWindow ? options.replaceWindowEndpoint : options.endpoint);
+  const batches = context.replaceWindow ? [candidates] : chunk(candidates, options.batchSize);
   try {
     for (let index = 0; index < batches.length; index += 1) {
+      const idempotencyKey = context.idempotencyKeys?.[index] || `marketing_order_affinity:${signal.eventId}:${index + 1}`;
       await post(endpoint, {
         source: CATALOG_ORDER_AFFINITY_SOURCE,
-        idempotencyKey: `marketing_order_affinity:${signal.eventId}:${index + 1}`,
+        idempotencyKey,
         generatedAt: new Date().toISOString(),
+        ...(context.replaceWindow ? {
+          sourceOwner: context.replaceWindow.sourceOwner,
+          channel: context.replaceWindow.channel,
+          windowStart: context.replaceWindow.windowStart,
+          windowEnd: context.replaceWindow.windowEnd,
+          runId: context.replaceWindow.runId,
+          completeSnapshot: true
+        } : {}),
         items: batches[index].map((candidate) => ({
           sourceProductId: candidate.sourceProductId,
           targetProductId: candidate.targetProductId,

@@ -19,6 +19,15 @@ export interface OrderAffinityRunLedgerContext {
   completedAt?: string | null;
 }
 
+export interface OrderAffinityIdempotencyKeyContext {
+  runId: string;
+  sourceOwner: string;
+  channel: string;
+  windowStart?: string | null;
+  windowEnd?: string | null;
+  batchCount: number;
+}
+
 export interface OrderAffinityRunLedgerEntry {
   runId: string;
   sourceOwner: string;
@@ -91,6 +100,10 @@ export function buildOrderAffinityRunLedgerEntry(
     byChannel: summary.byChannel,
     catalogIdempotencyKeys: buildCatalogIdempotencyKeys({
       runId: summary.runId,
+      sourceOwner: normalizeRequired(context.sourceOwner, "sourceOwner"),
+      channel: normalizeRequired(context.channel, "channel"),
+      windowStart: normalizeOptionalIso(context.windowStart),
+      windowEnd: normalizeOptionalIso(context.windowEnd),
       batchCount,
     }),
     createdBy: normalizeOptional(context.createdBy) ?? "marketing-microservice",
@@ -100,14 +113,15 @@ export function buildOrderAffinityRunLedgerEntry(
   };
 }
 
-export function buildCatalogIdempotencyKeys(input: {
-  runId: string;
-  batchCount: number;
-}): string[] {
-  const eventId = `backfill:${normalizeRequired(input.runId, "runId")}`;
+export function buildCatalogIdempotencyKeys(input: OrderAffinityIdempotencyKeyContext): string[] {
+  const runId = normalizeRequired(input.runId, "runId");
+  const sourceOwner = normalizeRequired(input.sourceOwner, "sourceOwner");
+  const channel = normalizeRequired(input.channel, "channel");
+  const windowStart = normalizeWindowComponent(input.windowStart, "window-start-missing");
+  const windowEnd = normalizeWindowComponent(input.windowEnd, "window-end-missing");
   return Array.from(
     { length: Math.max(0, Math.trunc(input.batchCount)) },
-    (_value, index) => `marketing_order_affinity:${eventId}:${index + 1}`
+    (_value, index) => `marketing_order_affinity:${sourceOwner}:${channel}:${windowStart}:${windowEnd}:${runId}:${index + 1}`
   );
 }
 
@@ -260,4 +274,10 @@ function normalizeOptionalIso(value: string | null | undefined): string | null {
   const parsed = new Date(normalized);
   if (Number.isNaN(parsed.getTime())) throw new Error("order_affinity_ledger_window_invalid");
   return parsed.toISOString();
+}
+
+
+function normalizeWindowComponent(value: string | null | undefined, fallback: string): string {
+  const normalized = normalizeOptionalIso(value);
+  return normalized ? normalizeRequired(normalized, "window") : fallback;
 }
