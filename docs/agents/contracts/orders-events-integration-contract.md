@@ -189,3 +189,9 @@ Runtime scheduling now has source support for an opt-in durable run ledger and i
 - Raw events, raw order ids, customer/contact/address/payment/provider payloads, tokens, credentials, and marketplace JSON are forbidden from ledger rows.
 
 Runtime scheduling has an owner-approved central Orders FlipFlop CronJob activation policy in `k8s/order-affinity-backfill-cronjob.yaml`. Marketplace-wide scheduling remains blocked by `[MISSING: owner-approved activation policy for marketplace-wide CronJobs]` and `[MISSING: pruning/replacement semantics for stale affinity rows]`.
+
+## Allegro Scheduled Publish Activation
+
+The active marketplace schedule is Allegro-only: `marketing-order-affinity-allegro-daily` runs at `02:23 UTC` with a 120 minute delay, `sourceOwner=allegro-service`, `channel=allegro`, and `--record-ledger`. It uses the protected Allegro replay endpoint and remains subject to the scheduled publish ledger guard.
+
+Aukro and Bazos recurring schedules remain blocked until each service exposes a replay endpoint compatible with `marketplace.order_affinity_candidate.v1`.

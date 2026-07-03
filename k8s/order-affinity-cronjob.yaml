@@ -1,0 +1,67 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: marketing-order-affinity-allegro-daily
+  namespace: statex-apps
+  labels:
+    app: marketing-microservice
+    managed-by: k8s-migration
+    workflow: order-affinity
+spec:
+  schedule: "23 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: marketing-microservice
+            workflow: order-affinity
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+          containers:
+            - name: order-affinity-allegro-daily
+              image: localhost:5000/marketing-microservice:latest
+              imagePullPolicy: Always
+              command:
+                - node
+                - dist/order-affinity-backfill.js
+              args:
+                - --marketplace-url
+                - http://allegro-service.statex-apps.svc.cluster.local:3000
+                - --limit
+                - "200"
+                - --publish
+                - --record-ledger
+                - --schedule
+                - daily
+                - --window-delay-minutes
+                - "120"
+                - --source-owner
+                - allegro-service
+                - --channel
+                - allegro
+                - --created-by
+                - marketing-order-affinity-cron
+              envFrom:
+                - configMapRef:
+                    name: marketing-microservice-config
+                - secretRef:
+                    name: marketing-microservice-secret
+              env:
+                - name: HOME
+                  value: /home/ssf
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "50m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "500m"
