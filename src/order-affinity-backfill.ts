@@ -11,6 +11,12 @@ import {
   orderAffinityCatalogPublisherOptionsFromEnv,
   publishOrderAffinityCandidatesToCatalog
 } from "./order-affinity-catalog-publisher";
+import {
+  OrderAffinityRunLedgerEntry,
+  OrderAffinityRunLedgerRecordResult,
+  buildOrderAffinityRunLedgerEntry,
+  recordOrderAffinityRunLedger
+} from "./order-affinity-ledger";
 
 export interface OrderAffinityBackfillOptions {
   limit?: number;
@@ -43,9 +49,14 @@ interface CliOptions extends OrderAffinityBackfillOptions {
   file?: string;
   ordersUrl?: string;
   marketplaceUrl?: string;
+  sourceOwner?: string;
   channel?: string;
   from?: string;
   to?: string;
+  cursorBefore?: string;
+  cursorAfter?: string;
+  createdBy?: string;
+  recordLedger: boolean;
   publish: boolean;
   pretty: boolean;
 }
@@ -138,6 +149,57 @@ export async function publishOrderAffinityBackfill(summary: OrderAffinityBackfil
   );
 }
 
+export function buildOrderAffinityBackfillLedgerEntry(
+  summary: OrderAffinityBackfillSummary,
+  options: OrderAffinityBackfillOptions & {
+    sourceOwner?: string;
+    channel?: string;
+    from?: string;
+    to?: string;
+    cursorBefore?: string;
+    cursorAfter?: string;
+    publish?: boolean;
+    createdBy?: string;
+    batchCount?: number;
+    marketplaceUrl?: string;
+    ordersUrl?: string;
+  } = {}
+): OrderAffinityRunLedgerEntry {
+  return buildOrderAffinityRunLedgerEntry(summary, {
+    sourceOwner: options.sourceOwner || inferSourceOwner(options),
+    channel: options.channel || inferChannel(summary),
+    windowStart: options.from || null,
+    windowEnd: options.to || null,
+    cursorBefore: options.cursorBefore || null,
+    cursorAfter: options.cursorAfter || null,
+    mode: options.publish ? "publish" : "dry-run",
+    status: options.publish ? "planned" : "dry_run_passed",
+    batchCount: options.batchCount ?? (summary.candidates.length > 0 ? 1 : 0),
+    createdBy: options.createdBy || "marketing-microservice",
+  });
+}
+
+async function maybeRecordOrderAffinityBackfillLedger(
+  entry: OrderAffinityRunLedgerEntry,
+  options: CliOptions
+): Promise<OrderAffinityRunLedgerRecordResult> {
+  if (!options.recordLedger && process.env.ORDER_AFFINITY_RUN_LEDGER_ENABLED !== "true") {
+    return { status: "disabled", runId: entry.runId, idempotencyKeyCount: entry.catalogIdempotencyKeys.length, reason: "ledger_disabled" };
+  }
+  return recordOrderAffinityRunLedger(entry);
+}
+
+function inferSourceOwner(options: { marketplaceUrl?: string; ordersUrl?: string }): string {
+  if (options.marketplaceUrl) return "allegro-service";
+  if (options.ordersUrl) return "orders-microservice";
+  return "manual-file";
+}
+
+function inferChannel(summary: OrderAffinityBackfillSummary): string {
+  const channels = Object.keys(summary.byChannel);
+  return channels.length === 1 ? channels[0] : "mixed";
+}
+
 function extractEventEnvelope(record: unknown): unknown {
   if (record && typeof record === "object" && !Array.isArray(record)) {
     const source = record as Record<string, unknown>;
@@ -187,7 +249,7 @@ function uniqueCatalogProductIds(productRefs: string[] | undefined): string[] {
 }
 
 function parseCliArgs(argv: string[]): CliOptions {
-  const options: CliOptions = { publish: false, pretty: false };
+  const options: CliOptions = { publish: false, pretty: false, recordLedger: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--publish") options.publish = true;
@@ -203,8 +265,17 @@ function parseCliArgs(argv: string[]): CliOptions {
     else if (arg.startsWith("--orders-url=")) options.ordersUrl = arg.slice("--orders-url=".length);
     else if (arg === "--marketplace-url") options.marketplaceUrl = argv[++index];
     else if (arg.startsWith("--marketplace-url=")) options.marketplaceUrl = arg.slice("--marketplace-url=".length);
+    else if (arg === "--source-owner") options.sourceOwner = argv[++index];
+    else if (arg.startsWith("--source-owner=")) options.sourceOwner = arg.slice("--source-owner=".length);
     else if (arg === "--channel") options.channel = argv[++index];
     else if (arg.startsWith("--channel=")) options.channel = arg.slice("--channel=".length);
+    else if (arg === "--cursor-before") options.cursorBefore = argv[++index];
+    else if (arg.startsWith("--cursor-before=")) options.cursorBefore = arg.slice("--cursor-before=".length);
+    else if (arg === "--cursor-after") options.cursorAfter = argv[++index];
+    else if (arg.startsWith("--cursor-after=")) options.cursorAfter = arg.slice("--cursor-after=".length);
+    else if (arg === "--created-by") options.createdBy = argv[++index];
+    else if (arg.startsWith("--created-by=")) options.createdBy = arg.slice("--created-by=".length);
+    else if (arg === "--record-ledger") options.recordLedger = true;
     else if (arg === "--from") options.from = argv[++index];
     else if (arg.startsWith("--from=")) options.from = arg.slice("--from=".length);
     else if (arg === "--to") options.to = argv[++index];
@@ -302,6 +373,30 @@ function sortedRecord(record: Record<string, number>): Record<string, number> {
   }, {});
 }
 
+function publicLedgerSummary(entry: OrderAffinityRunLedgerEntry) {
+  return {
+    runId: entry.runId,
+    sourceOwner: entry.sourceOwner,
+    channel: entry.channel,
+    windowStart: entry.windowStart,
+    windowEnd: entry.windowEnd,
+    cursorBefore: entry.cursorBefore,
+    cursorAfter: entry.cursorAfter,
+    mode: entry.mode,
+    status: entry.status,
+    inputRecords: entry.inputRecords,
+    acceptedCreatedEvents: entry.acceptedCreatedEvents,
+    rejectedRecords: entry.rejectedRecords,
+    skippedEvents: entry.skippedEvents,
+    aggregatePairs: entry.aggregatePairs,
+    totalPairEvidence: entry.totalPairEvidence,
+    batchCount: entry.batchCount,
+    catalogIdempotencyKeys: entry.catalogIdempotencyKeys,
+    byChannel: entry.byChannel,
+    rejectionReasons: entry.rejectionReasons
+  };
+}
+
 function publicSummary(summary: OrderAffinityBackfillSummary) {
   return {
     runId: summary.runId,
@@ -327,10 +422,13 @@ async function main() {
   const options = parseCliArgs(process.argv.slice(2));
   const records = await readOrdersReplayInput(options);
   const summary = buildOrderAffinityBackfill(records, options);
+  const ledgerEntry = buildOrderAffinityBackfillLedgerEntry(summary, options);
   const output: Record<string, unknown> = {
     mode: options.publish ? "publish" : "dry-run",
-    summary: publicSummary(summary)
+    summary: publicSummary(summary),
+    ledger: publicLedgerSummary(ledgerEntry)
   };
+  output.ledgerRecord = await maybeRecordOrderAffinityBackfillLedger(ledgerEntry, options);
   if (options.publish) {
     output.publish = await publishOrderAffinityBackfill(summary);
   }
