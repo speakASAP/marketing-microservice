@@ -3620,6 +3620,38 @@ Remaining blockers:
 - `[MISSING: owner-reviewed publish window before running a future non-empty `--publish` central Orders backfill]`.
 
 
+## 2026-07-03 - Central Orders FlipFlop Order Affinity Publish Window
+
+Current focus: Owner-approved publish window for the non-empty central Orders FlipFlop replay candidates.
+
+Intent Preservation Chain:
+
+- Vision: Central Orders paid multi-product history can safely improve Catalog-owned related-product and future bundle surfaces.
+- Goal Impact: The previously dry-run-only FlipFlop central Orders evidence is now published to Catalog as durable `order_affinity` relations.
+- System: Orders owns paid order replay source data; Marketing owns aggregation/idempotency/publish orchestration; Catalog owns product-relation persistence and readback.
+- Feature: Central Orders FlipFlop order-affinity publish window.
+- Task: rerun dry-run, run `--publish` with an explicit run id, verify Catalog audit/readback, and record evidence without exposing customer/payment/secret data.
+- Execution Plan: Use deployed Marketing CLI from the running pod, filter `--channel=flipflop`, keep output bounded to product IDs and aggregate counts, and verify Catalog by authenticated relation reads.
+- Coding Prompt: Do not print secrets, customer data, addresses, payment payloads, or raw order rows; do not broaden publish scope beyond the owner-reviewed non-empty FlipFlop replay.
+- Code: no Marketing source code change; runtime operation used deployed image `localhost:5000/marketing-microservice:latest` and this status entry records evidence.
+- Validation: dry-run, publish result, Catalog audit log, and Catalog relation readback passed.
+
+Runtime evidence:
+
+- Dry-run command: `node dist/order-affinity-backfill.js --orders-url http://orders-microservice.statex-apps.svc.cluster.local:3203 --channel=flipflop --limit=20 --dry-run --pretty`.
+- Dry-run result: `inputRecords=2`, `acceptedCreatedEvents=2`, `rejectedRecords=0`, `aggregatePairs=2`, `totalPairEvidence=4`, `byChannel.flipflop=2`.
+- Publish command: `node dist/order-affinity-backfill.js --orders-url http://orders-microservice.statex-apps.svc.cluster.local:3203 --channel=flipflop --limit=20 --run-id central-orders-flipflop-paid-20260703 --publish --pretty`.
+- Publish result: `status=published`, `candidateCount=2`, `batchCount=1`, endpoint `/api/internal/product-relations/order-affinity/batch`.
+- Catalog audit: idempotency key `marketing_order_affinity:backfill:central-orders-flipflop-paid-20260703:1`, `total=2`, `upserted=0`, `updated=2`, `failed=0`.
+- Catalog readback: `ce4a51aa-2d12-4ab7-a965-7a36609d01fc -> dbc51dde-fc66-4511-b178-f929183f4647` and reciprocal relation both returned `relationType=order_affinity`, `source=marketing_order_affinity`, `score=2`, `confidence=0.65`, `evidenceChannel=flipflop`.
+
+Boundary decision: no broad historical publish, customer/address/payment/provider payload output, direct database write, secret output, source code change, deployment, migration, or marketplace action was performed.
+
+Remaining blockers:
+
+- `[MISSING: scheduled/idempotent central Orders backfill policy for future runs beyond this owner-reviewed window]`.
+
+
 ## 2026-07-03 - Allegro Historical Order Affinity Backfill
 
 Current focus: Execute a bounded operational backfill from Allegro paid multi-product orders into Catalog product relations.
