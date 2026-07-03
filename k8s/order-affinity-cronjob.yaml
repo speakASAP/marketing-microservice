@@ -148,3 +148,82 @@ spec:
                 limits:
                   memory: "512Mi"
                   cpu: "500m"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: marketing-order-affinity-bazos-daily
+  namespace: statex-apps
+  labels:
+    app: marketing-microservice
+    managed-by: k8s-migration
+    workload: order-affinity-backfill
+    activation-state: owner-approved-active
+  annotations:
+    marketing.statex/activation-state: "owner-approved-active"
+    marketing.statex/activation-approved-at: "2026-07-03"
+    marketing.statex/activation-evidence-run-id: "goal24-bazos-budget-paid-source-20260703-001"
+    marketing.statex/activation-boundary: "batch-publish-only-no-replace-window"
+spec:
+  schedule: "10 15 * * *"
+  timeZone: "Europe/Prague"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 1800
+  suspend: false
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 900
+      template:
+        metadata:
+          labels:
+            app: marketing-microservice
+            workload: order-affinity-backfill
+            source-owner: bazos-service
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+          containers:
+            - name: order-affinity-bazos-daily
+              image: localhost:5000/marketing-microservice:latest
+              imagePullPolicy: Always
+              command:
+                - node
+                - dist/order-affinity-backfill.js
+              args:
+                - --marketplace-url
+                - http://bazos-service.statex-apps.svc.cluster.local:3900
+                - --limit
+                - "200"
+                - --publish
+                - --record-ledger
+                - --schedule
+                - daily
+                - --window-delay-minutes
+                - "120"
+                - --source-owner
+                - bazos-service
+                - --channel
+                - bazos
+                - --created-by
+                - marketing-order-affinity-cron
+              envFrom:
+                - configMapRef:
+                    name: marketing-microservice-config
+                - secretRef:
+                    name: marketing-microservice-secret
+              env:
+                - name: HOME
+                  value: /home/ssf
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "50m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "500m"
