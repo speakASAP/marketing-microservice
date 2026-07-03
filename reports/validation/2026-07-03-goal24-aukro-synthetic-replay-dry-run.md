@@ -41,8 +41,12 @@ The inserted Aukro local order uses stable synthetic identifiers only:
 
 No live `--publish`, Catalog write, schedule unsuspend, DB migration, secret value output, raw replay payload output, customer/contact/address/payment/provider output, or marketplace mutation was run.
 
+## Owner Decision
+
+The owner approved keeping `synthetic-order-affinity-20260703-001` in the Aukro local order projection as a stable, non-sensitive replay fixture for repeatable Marketing/Aukro validation. It must remain excluded from live publish decisions unless a future owner-approved cleanup or fixture-retention policy changes this decision.
+
 ## Remaining Blockers
 
-- `[MISSING: owner decision whether to keep or clean up synthetic Aukro fixture synthetic-order-affinity-20260703-001]`
+- `[RESOLVED: owner approved keeping synthetic Aukro fixture synthetic-order-affinity-20260703-001 for repeatable validation]`
 - `[MISSING: real non-synthetic Aukro multi-Catalog-product replay evidence]`
 - `[MISSING: owner-approved Aukro source/window recurring schedule activation policy]`
