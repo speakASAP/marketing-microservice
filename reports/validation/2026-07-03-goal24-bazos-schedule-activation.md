@@ -92,3 +92,26 @@ State update:
 
 - `[RESOLVED: owner-requested non-morning Bazos scheduled run completed with published aggregate batch]`.
 - `[MISSING: owner-reviewed future replace-window activation for Bazos]` remains future-gated.
+
+
+## Owner-Requested 23:00 CronJob Verification
+
+Date: 2026-07-03
+
+The owner requested another immediate non-morning schedule verification at 23:00 Europe/Prague.
+
+Evidence:
+
+- Commit `1130591` changed `marketing-order-affinity-bazos-daily` to `0 23 * * *` with `Europe/Prague` timezone.
+- Kubernetes server-side dry-run passed before apply.
+- Live CronJob readback after completion: `schedule=0 23 * * *`, `timezone=Europe/Prague`, `suspend=false`, `lastScheduleTime=2026-07-03T21:00:00Z`, `lastSuccessfulTime=2026-07-03T21:00:44Z`, and `active=<none>`.
+- CronJob-owned Job `marketing-order-affinity-bazos-daily-29718540` completed successfully.
+- Aggregate CLI output reported `inputRecords=1`, `acceptedCreatedEvents=1`, `rejectedRecords=0`, `skippedEvents=0`, `aggregatePairs=2`, `totalPairEvidence=2`, `publish.status=published`, `candidateCount=2`, `batchCount=1`, and `ledgerRecord.status=recorded`.
+- Post-run PostgreSQL aggregate count was `max_connections=200`, `active=1`, `idle=42`.
+
+No manual Job was created, no replace-window path was used, and no raw replay payload, raw order ID, customer/address/payment/provider data, token value, or raw Catalog relation payload was recorded in this report.
+
+State update:
+
+- `[RESOLVED: Bazos CronJob works at owner-requested 23:00 non-morning schedule]`.
+- `[MISSING: owner-reviewed future replace-window activation for Bazos]` remains future-gated.
