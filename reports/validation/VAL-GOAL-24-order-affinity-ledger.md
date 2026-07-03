@@ -94,6 +94,176 @@ Result: PASS, no whitespace errors.
 
 Remaining blockers:
 
-- `[MISSING: deploy/apply updated Marketing ledger migration containing complete_snapshot]`
+- `[RESOLVED: deploy/apply updated Marketing ledger migration containing complete_snapshot]`
 - `[MISSING: producer completeness guarantees for Aukro/Bazos replay endpoints]`
 - `[MISSING: owner-approved source/window for any future replace-window publish]`
+
+## 2026-07-03 Runtime Complete Snapshot Deployment And Smoke
+
+Intent Preservation Chain: Vision -> Goal Impact -> System -> Feature -> Task -> Execution Plan -> Coding Prompt -> Code -> Validation -> State Update.
+
+- Vision: recurring product-relation replacement needs durable complete source/window proof without exposing buyer, address, payment, provider, token, raw replay payload, or raw Catalog relation data.
+- Goal Impact: the runtime blocker for deploying/applying `complete_snapshot` on `marketing_order_affinity_runs` is resolved.
+- System: Marketing owns aggregate ledger evidence and publish-mode gates; Catalog remains the only durable product-relation writer.
+- Feature: deployed completeSnapshot ledger proof and replace-window publish guard.
+- Task: validate source, deploy current `main`, confirm live schema, record aggregate-only completeSnapshot dry-run ledger evidence, and prove replace-window publish remains fail-closed without owner retention policy.
+- Execution Plan: use owner approval from W2 worker thread `019f268e-bf2c-7171-a545-bc810c99111d`; no raw replay payloads, raw order ids, customer/address/payment/provider data, token values, or Catalog relation payloads; no Catalog publish.
+- Coding Prompt: print aggregate counts and key presence only.
+- Code: deployed existing Marketing `main` commit `0aa47ed`; documentation/status update only after runtime smoke.
+- Validation: focused tests/build/diff/deploy/schema/runtime smoke passed.
+- State Update: `[RESOLVED: deploy/apply updated Marketing ledger migration containing complete_snapshot]`.
+
+Validation evidence:
+
+```bash
+npx tsx --test --test-concurrency=1 test/order-affinity-backfill.test.ts test/order-lifecycle-events.test.ts
+```
+
+Result: PASS, 30/30 tests.
+
+```bash
+npm run build
+```
+
+Result: PASS, `tsc -p tsconfig.json && node scripts/copy-public.mjs`.
+
+```bash
+git diff --check
+```
+
+Result: PASS.
+
+```bash
+./scripts/deploy.sh
+```
+
+Result: PASS, deployed image `localhost:5000/marketing-microservice:0aa47ed`; rollout completed successfully; total deployment time 60.46s.
+
+Live schema check from `deployment/marketing-microservice`:
+
+```json
+{
+  "columns": [
+    {
+      "column_name": "complete_snapshot",
+      "data_type": "boolean",
+      "column_default": "false",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "run_id",
+      "data_type": "text",
+      "column_default": null,
+      "is_nullable": "NO"
+    }
+  ],
+  "counts": {
+    "run_count": 9,
+    "key_count": 7
+  }
+}
+```
+
+Aggregate-only completeSnapshot dry-run ledger smoke:
+
+```json
+{
+  "runId": "goal24-complete-snapshot-smoke-20260703123503",
+  "mode": "dry-run",
+  "summary": {
+    "inputRecords": 0,
+    "acceptedCreatedEvents": 0,
+    "rejectedRecords": 0,
+    "skippedEvents": 0,
+    "aggregatePairs": 0,
+    "totalPairEvidence": 0
+  },
+  "ledger": {
+    "sourceOwner": "allegro-service",
+    "channel": "allegro",
+    "windowStart": "2026-07-01T00:00:00.000Z",
+    "windowEnd": "2026-07-03T00:00:00.000Z",
+    "mode": "dry-run",
+    "status": "dry_run_passed",
+    "completeSnapshot": true,
+    "batchCount": 0,
+    "catalogIdempotencyKeyCount": 0
+  },
+  "ledgerRecord": {
+    "status": "recorded",
+    "runId": "goal24-complete-snapshot-smoke-20260703123503",
+    "idempotencyKeyCount": 0
+  },
+  "publish": null
+}
+```
+
+Persisted aggregate-only row verification:
+
+```json
+{
+  "found": true,
+  "row": {
+    "run_id": "goal24-complete-snapshot-smoke-20260703123503",
+    "source_owner": "allegro-service",
+    "channel": "allegro",
+    "mode": "dry-run",
+    "status": "dry_run_passed",
+    "input_records": 0,
+    "accepted_created_events": 0,
+    "rejected_records": 0,
+    "skipped_events": 0,
+    "aggregate_pairs": 0,
+    "total_pair_evidence": 0,
+    "batch_count": 0,
+    "complete_snapshot": true,
+    "idempotency_key_count": 0
+  },
+  "keyRows": 0
+}
+```
+
+Replace-window publish guard smoke without owner retention policy:
+
+```json
+{
+  "runId": "goal24-replace-window-blocked-20260703123529",
+  "mode": "publish",
+  "catalogPublishMode": {
+    "mode": "replace-window-blocked",
+    "reason": "replace_window_requires_owner_retention_policy"
+  },
+  "summary": {
+    "inputRecords": 0,
+    "acceptedCreatedEvents": 0,
+    "rejectedRecords": 0,
+    "skippedEvents": 0,
+    "aggregatePairs": 0,
+    "totalPairEvidence": 0
+  },
+  "publish": {
+    "status": "failed",
+    "reason": "replace_window_requires_owner_retention_policy",
+    "candidateCount": 0,
+    "batchCount": 0
+  },
+  "ledgerRecordPresent": false
+}
+```
+
+Safety boundary:
+
+- No Catalog publish or replace-window mutation was run.
+- No raw replay payload, raw marketplace order id, raw Catalog relation payload, customer, address, payment, provider, token value, DSN, or password was printed.
+- The Allegro bounded window used for the smoke returned zero current records; the purpose of this smoke was schema/ledger completeSnapshot proof, not non-empty source evidence.
+
+Remaining blockers:
+
+- `[MISSING: owner-approved source/window for any future replace-window publish]`
+- `[MISSING: non-empty real Aukro multi-Catalog-product replay evidence]`
+- `[MISSING: owner-approved Aukro source/window recurring schedule activation policy]`
+- `[MISSING: Bazos paid order history source]`
+- `[MISSING: Bazos persisted order item replay source]`
+- `[MISSING: Bazos order item ingestion contract]`
+- `[MISSING: deployed FlipFlop replay endpoint/runtime smoke]`
+- `[MISSING: owner-approved FlipFlop marketplace replay activation policy]`

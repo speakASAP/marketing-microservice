@@ -248,3 +248,53 @@ No new raw token value was created, printed, copied into code, or committed.
 ## Blockers
 
 - `[MISSING: recurring affinity publish schedule/policy with ledger-required guard]`.
+
+## Complete Snapshot Runtime Deployment And Smoke
+
+Owner approval source: W2 Marketing affinity ledger worker thread `019f268e-bf2c-7171-a545-bc810c99111d` explicitly approved the runtime/integration owner to run the Marketing deploy/migration/runtime smoke for Goal 24.
+
+Runtime action:
+
+- Deployed current Marketing `main` at `0aa47ed` with `./scripts/deploy.sh`.
+- Deployment completed successfully in 60.46s and reported image `localhost:5000/marketing-microservice:0aa47ed`.
+- Live deployment remained ready `1/1`.
+- `DB_AUTO_CREATE=true` caused sorted SQL migrations to be applied on startup.
+
+Runtime schema proof:
+
+```json
+{
+  "column_name": "complete_snapshot",
+  "data_type": "boolean",
+  "column_default": "false",
+  "is_nullable": "NO"
+}
+```
+
+Aggregate-only runtime smoke:
+
+- Dry-run run id: `goal24-complete-snapshot-smoke-20260703123503`.
+- `ledgerRecord.status=recorded`.
+- Persisted `complete_snapshot=true`.
+- `inputRecords=0`, `aggregatePairs=0`, `idempotencyKeyCount=0`.
+- No Catalog publish was run.
+
+Guard proof:
+
+- Replace-window publish attempt without owner retention policy returned `publish.status=failed` and `publish.reason=replace_window_requires_owner_retention_policy`.
+- `ledgerRecordPresent=false`, so the blocked publish did not create a ledger record or call Catalog.
+
+Resolved blocker:
+
+- `[RESOLVED: deploy/apply updated Marketing ledger migration containing complete_snapshot]`
+
+Remaining blockers:
+
+- `[MISSING: owner-approved source/window for any future replace-window publish]`
+- `[MISSING: non-empty real Aukro multi-Catalog-product replay evidence]`
+- `[MISSING: owner-approved Aukro source/window recurring schedule activation policy]`
+- `[MISSING: Bazos paid order history source]`
+- `[MISSING: Bazos persisted order item replay source]`
+- `[MISSING: Bazos order item ingestion contract]`
+- `[MISSING: deployed FlipFlop replay endpoint/runtime smoke]`
+- `[MISSING: owner-approved FlipFlop marketplace replay activation policy]`
