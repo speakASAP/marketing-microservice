@@ -122,7 +122,7 @@ const FORBIDDEN_FIELD_PATTERN =
 
 const CREATED_PAYLOAD_FIELDS = new Set(["orderId", "channel", "leadAttribution", "items", "currency"]);
 const MARKETPLACE_AFFINITY_PAYLOAD_FIELDS = new Set(["orderId", "channel", "items", "currency"]);
-const MARKETPLACE_AFFINITY_SOURCES = new Set(["allegro-service"]);
+const MARKETPLACE_AFFINITY_SOURCES = new Set(["allegro-service", "aukro-service", "bazos-service"]);
 const UPDATED_PAYLOAD_FIELDS = new Set(["orderId", "status", "previousStatus", "approval"]);
 const APPROVAL_PAYLOAD_FIELDS = new Set(["approvalType", "reasonCode", "sideEffectsHandled", "approvedAt"]);
 const LEAD_ATTRIBUTION_PAYLOAD_FIELDS = new Set(["leadId", "source", "campaignId"]);

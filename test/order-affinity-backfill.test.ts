@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ORDERS_ORDER_CREATED_V1 } from "../src/order-lifecycle-events";
-import { buildOrderAffinityBackfill, buildOrderAffinityBackfillLedgerEntry, orderAffinityMarketplaceReplayHeaders, orderAffinityOrdersReplayHeaders } from "../src/order-affinity-backfill";
+import { buildOrderAffinityBackfill, buildOrderAffinityBackfillLedgerEntry, orderAffinityMarketplaceReplayHeaders, orderAffinityMarketplaceReplayHeadersForSource, orderAffinityOrdersReplayHeaders } from "../src/order-affinity-backfill";
 import { buildCatalogIdempotencyKeys, orderAffinityRunLedgerOptionsFromEnv, recordOrderAffinityRunLedger } from "../src/order-affinity-ledger";
 import { buildOrderAffinitySchedulePolicy } from "../src/order-affinity-schedule-policy";
 
@@ -89,6 +89,14 @@ test("order affinity marketplace replay headers use internal service auth", () =
   assert.deepEqual(orderAffinityMarketplaceReplayHeaders({ ALLEGRO_INTERNAL_SERVICE_TOKEN: "Bearer wrapped-token" }), {
     "x-service-name": "marketing-microservice",
     "x-internal-service-token": "wrapped-token",
+  });
+  assert.deepEqual(orderAffinityMarketplaceReplayHeadersForSource("aukro-service", { ORDER_AFFINITY_AUKRO_REPLAY_TOKEN: "aukro-token", ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN: "fallback" }), {
+    "x-service-name": "marketing-microservice",
+    "x-internal-service-token": "aukro-token",
+  });
+  assert.deepEqual(orderAffinityMarketplaceReplayHeadersForSource("bazos-service", { ORDER_AFFINITY_BAZOS_REPLAY_TOKEN: "bazos-token", ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN: "fallback" }), {
+    "x-service-name": "marketing-microservice",
+    "x-internal-service-token": "bazos-token",
   });
   assert.equal(orderAffinityMarketplaceReplayHeaders({}), undefined);
 });

@@ -200,10 +200,27 @@ async function maybeRecordOrderAffinityBackfillLedger(
   return recordOrderAffinityRunLedger(entry);
 }
 
-function inferSourceOwner(options: { marketplaceUrl?: string; ordersUrl?: string }): string {
-  if (options.marketplaceUrl) return "allegro-service";
+function inferSourceOwner(options: { marketplaceUrl?: string; ordersUrl?: string; sourceOwner?: string }): string {
+  if (options.sourceOwner) return options.sourceOwner;
+  if (options.marketplaceUrl) return inferMarketplaceSourceOwner(options.marketplaceUrl);
   if (options.ordersUrl) return "orders-microservice";
   return "manual-file";
+}
+
+function inferMarketplaceSourceOwner(marketplaceUrl: string): string {
+  const host = safeUrlHost(marketplaceUrl);
+  if (host.includes("aukro")) return "aukro-service";
+  if (host.includes("bazos")) return "bazos-service";
+  if (host.includes("allegro")) return "allegro-service";
+  return "allegro-service";
+}
+
+function safeUrlHost(value: string): string {
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
 }
 
 function inferChannel(summary: OrderAffinityBackfillSummary): string {
@@ -342,13 +359,14 @@ function positiveInteger(value: unknown, fallback: number): number {
 }
 
 async function readMarketplaceReplayInput(options: CliOptions): Promise<unknown[]> {
-  const url = new URL("/internal/allegro/order-affinity/replay-candidates", options.marketplaceUrl);
+  const sourceOwner = inferSourceOwner(options);
+  const url = new URL(marketplaceReplayPath(sourceOwner), options.marketplaceUrl);
   if (options.limit) url.searchParams.set("limit", String(options.limit));
   if (options.from) url.searchParams.set("from", options.from);
   if (options.to) url.searchParams.set("to", options.to);
   const response = await axios.get(url.toString(), {
     timeout: positiveInteger(process.env.ORDER_AFFINITY_MARKETPLACE_TIMEOUT_MS, 10000),
-    headers: orderAffinityMarketplaceReplayHeaders()
+    headers: orderAffinityMarketplaceReplayHeadersForSource(sourceOwner)
   });
   const events = response.data?.data?.events;
   if (!response.data?.success || !Array.isArray(events)) {
@@ -357,13 +375,30 @@ async function readMarketplaceReplayInput(options: CliOptions): Promise<unknown[
   return events;
 }
 
-export function orderAffinityMarketplaceReplayHeaders(env: NodeJS.ProcessEnv = process.env): Record<string, string> | undefined {
-  const token = (env.ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN || env.ALLEGRO_INTERNAL_SERVICE_TOKEN || env.INTERNAL_SERVICE_TOKEN || "").trim();
-  if (!token) return undefined;
+function marketplaceReplayPath(sourceOwner: string): string {
+  if (sourceOwner === "aukro-service") return "/aukro/internal/aukro/order-affinity/replay-candidates";
+  if (sourceOwner === "bazos-service") return "/internal/bazos/order-affinity/replay-candidates";
+  return "/internal/allegro/order-affinity/replay-candidates";
+}
+
+export function orderAffinityMarketplaceReplayHeadersForSource(sourceOwner: string, env: NodeJS.ProcessEnv = process.env): Record<string, string> | undefined {
+  const token = (
+    sourceOwner === "aukro-service"
+      ? env.ORDER_AFFINITY_AUKRO_REPLAY_TOKEN || env.AUKRO_INTERNAL_SERVICE_TOKEN
+      : sourceOwner === "bazos-service"
+        ? env.ORDER_AFFINITY_BAZOS_REPLAY_TOKEN || env.BAZOS_INTERNAL_SERVICE_TOKEN
+        : undefined
+  ) || env.ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN || env.ALLEGRO_INTERNAL_SERVICE_TOKEN || env.INTERNAL_SERVICE_TOKEN || "";
+  const cleanToken = token.trim();
+  if (!cleanToken) return undefined;
   return {
     "x-service-name": "marketing-microservice",
-    "x-internal-service-token": token.replace(/^Bearer\s+/i, "")
+    "x-internal-service-token": cleanToken.replace(/^Bearer\s+/i, "")
   };
+}
+
+export function orderAffinityMarketplaceReplayHeaders(env: NodeJS.ProcessEnv = process.env): Record<string, string> | undefined {
+  return orderAffinityMarketplaceReplayHeadersForSource("allegro-service", env);
 }
 
 export function orderAffinityOrdersReplayHeaders(env: NodeJS.ProcessEnv = process.env): Record<string, string> | undefined {

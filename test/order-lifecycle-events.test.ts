@@ -109,6 +109,31 @@ test("unapproved orders.order.status_changed.v1 alias is rejected while updated.
 });
 
 
+test("marketplace affinity candidate envelopes accept Aukro and Bazos producer sources", () => {
+  for (const source of ["aukro-service", "bazos-service"]) {
+    const channel = source.replace("-service", "");
+    const parsed = parseOrdersLifecycleEvent({
+      type: MARKETPLACE_ORDER_AFFINITY_CANDIDATE_V1,
+      eventVersion: 1,
+      eventId: `${channel}.order-affinity:abc123`,
+      occurredAt: "2026-07-03T09:00:00.000Z",
+      source,
+      payload: {
+        orderId: `${channel}-replay:abc123`,
+        channel,
+        currency: "CZK",
+        items: [
+          { productId: "catalog-product-1001", quantity: 1 },
+          { productId: "catalog-product-2002", quantity: 1 }
+        ]
+      }
+    });
+
+    assert.equal(parsed.ok, true);
+    if (parsed.ok) assert.equal(parsed.signal.channel, channel);
+  }
+});
+
 test("marketplace affinity candidate envelopes normalize into bounded order-created signals", () => {
   const parsed = parseOrdersLifecycleEvent({
     type: MARKETPLACE_ORDER_AFFINITY_CANDIDATE_V1,

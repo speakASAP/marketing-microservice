@@ -168,9 +168,11 @@ Catalog runtime ingestion validation exists in `catalog-microservice`; Marketing
 
 Marketing now accepts marketplace-owned replay envelopes for order-affinity backfill without weakening the canonical Orders lifecycle event parser.
 
-Accepted first producer:
+Accepted producers:
 
 - `source=allegro-service`
+- `source=aukro-service`
+- `source=bazos-service`
 - `type=marketplace.order_affinity_candidate.v1`
 - `eventVersion=1`
 - payload fields: `orderId`, `channel`, `currency`, `items[]`
@@ -194,4 +196,4 @@ Runtime scheduling has an owner-approved central Orders FlipFlop CronJob activat
 
 The active marketplace schedule is Allegro-only: `marketing-order-affinity-allegro-daily` runs at `02:23 UTC` with a 120 minute delay, `sourceOwner=allegro-service`, `channel=allegro`, and `--record-ledger`. It uses the protected Allegro replay endpoint and remains subject to the scheduled publish ledger guard.
 
-Aukro and Bazos recurring schedules remain blocked until each service exposes a replay endpoint compatible with `marketplace.order_affinity_candidate.v1`.
+Aukro and Bazos recurring schedules remain blocked until runtime dry-run validation proves their protected replay endpoints and token mappings. Bazos may return a fail-closed zero-event contract until a persisted order-item replay source exists.
