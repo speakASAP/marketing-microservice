@@ -59,3 +59,12 @@ kubectl -n statex-apps get cronjob marketing-order-affinity-bazos-daily
 ## Post-validation steady schedule
 
 After the owner-requested same-day verification run completed, `marketing-order-affinity-bazos-daily` was restored to the morning schedule `15 10 * * *` with `Europe/Prague` timezone. Commit `9fe065e` records the manifest change; Kubernetes server-side dry-run and live apply are recorded in command evidence.
+
+
+## Blocker Closure
+
+- Closed blocker: `[RESOLVED: Bazos order-affinity replay endpoint compatible with Marketing marketplace replay contract]`.
+- Closure basis: Bazos protected replay endpoint returned HTTP 200 with `contract=marketplace.order_affinity_candidate.v1`, `channel=bazos`, `count=1`, `eventCount=1`, `failClosed=false`, and `blockers=[]`.
+- Natural schedule proof: CronJob-owned Job `marketing-order-affinity-bazos-daily-29718487` completed with aggregate-only evidence `inputRecords=1`, `acceptedCreatedEvents=1`, `aggregatePairs=2`, `totalPairEvidence=2`, `publish.status=published`, `batchCount=1`, and `ledgerRecord.status=recorded`.
+- Steady-state schedule after validation: `15 10 * * *` `Europe/Prague`, `suspend=false`.
+- Remaining future gate: `[MISSING: owner-reviewed future replace-window activation for Bazos]`.
