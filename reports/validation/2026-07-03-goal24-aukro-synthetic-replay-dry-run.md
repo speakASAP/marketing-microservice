@@ -37,6 +37,14 @@ The inserted Aukro local order uses stable synthetic identifiers only:
 - Marketing CLI dry-run command: `node dist/order-affinity-backfill.js --marketplace-url http://aukro-service:3700 --source-owner aukro-service --channel aukro --run-id synthetic-aukro-affinity-20260703-001 --limit 50 --dry-run --pretty`.
 - Dry-run result: `inputRecords=1`, `acceptedCreatedEvents=1`, `rejectedRecords=0`, `skippedEvents=0`, `aggregatePairs=2`, `totalPairEvidence=2`, `byChannel.aukro=1`, `ledger.status=dry_run_passed`, `ledgerRecord.status=recorded`, `idempotencyKeyCount=1`.
 
+## Repeatability Check
+
+After the owner approved retaining the synthetic fixture, a second dry-run used `runId=synthetic-aukro-affinity-repeat-20260703-001` and again returned `inputRecords=1`, `acceptedCreatedEvents=1`, `aggregatePairs=2`, `totalPairEvidence=2`, `ledger.status=dry_run_passed`, `ledgerRecord.status=recorded`, and `idempotencyKeyCount=1`.
+
+## Real Aukro Evidence Check
+
+Aggregate-only live DB evidence excluding `synthetic-order-affinity-20260703-001` found `non_synthetic_orders=1`, `eligible_status_orders=0`, `multi_item_orders=0`, and `eligible_multi_item_orders=0`. The only normalized non-synthetic status bucket was `pending=1`. No raw order ids, customer data, item payloads, addresses, payment/provider data, or secrets were printed.
+
 ## Boundary Decisions
 
 No live `--publish`, Catalog write, schedule unsuspend, DB migration, secret value output, raw replay payload output, customer/contact/address/payment/provider output, or marketplace mutation was run.
