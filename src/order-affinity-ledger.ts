@@ -91,10 +91,6 @@ export function buildOrderAffinityRunLedgerEntry(
     byChannel: summary.byChannel,
     catalogIdempotencyKeys: buildCatalogIdempotencyKeys({
       runId: summary.runId,
-      sourceOwner: context.sourceOwner,
-      channel: context.channel,
-      windowStart: context.windowStart,
-      windowEnd: context.windowEnd,
       batchCount,
     }),
     createdBy: normalizeOptional(context.createdBy) ?? "marketing-microservice",
@@ -106,21 +102,13 @@ export function buildOrderAffinityRunLedgerEntry(
 
 export function buildCatalogIdempotencyKeys(input: {
   runId: string;
-  sourceOwner: string;
-  channel: string;
-  windowStart?: string | null;
-  windowEnd?: string | null;
   batchCount: number;
 }): string[] {
-  const prefix = [
-    "marketing_order_affinity",
-    normalizeRequired(input.sourceOwner, "sourceOwner"),
-    normalizeRequired(input.channel, "channel"),
-    normalizeWindowComponent(input.windowStart),
-    normalizeWindowComponent(input.windowEnd),
-    normalizeRequired(input.runId, "runId"),
-  ].join(":");
-  return Array.from({ length: Math.max(0, Math.trunc(input.batchCount)) }, (_value, index) => `${prefix}:${index + 1}`);
+  const eventId = `backfill:${normalizeRequired(input.runId, "runId")}`;
+  return Array.from(
+    { length: Math.max(0, Math.trunc(input.batchCount)) },
+    (_value, index) => `marketing_order_affinity:${eventId}:${index + 1}`
+  );
 }
 
 export function orderAffinityRunLedgerOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): OrderAffinityRunLedgerOptions {
@@ -272,8 +260,4 @@ function normalizeOptionalIso(value: string | null | undefined): string | null {
   const parsed = new Date(normalized);
   if (Number.isNaN(parsed.getTime())) throw new Error("order_affinity_ledger_window_invalid");
   return parsed.toISOString();
-}
-
-function normalizeWindowComponent(value: string | null | undefined): string {
-  return normalizeOptionalIso(value)?.replace(/[^a-zA-Z0-9_.:-]/g, "-") ?? "open";
 }

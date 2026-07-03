@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { ORDERS_ORDER_CREATED_V1 } from "../src/order-lifecycle-events";
 import { buildOrderAffinityBackfill, buildOrderAffinityBackfillLedgerEntry, orderAffinityMarketplaceReplayHeaders, orderAffinityOrdersReplayHeaders } from "../src/order-affinity-backfill";
 import { buildCatalogIdempotencyKeys, orderAffinityRunLedgerOptionsFromEnv, recordOrderAffinityRunLedger } from "../src/order-affinity-ledger";
+import { buildOrderAffinitySchedulePolicy } from "../src/order-affinity-schedule-policy";
 
 function created(eventId: string, productIds: string[], channel = "flipflop") {
   return {
@@ -92,7 +93,7 @@ test("order affinity marketplace replay headers use internal service auth", () =
   assert.equal(orderAffinityMarketplaceReplayHeaders({}), undefined);
 });
 
-test("order affinity backfill builds dry-run ledger with window-scoped Catalog idempotency keys", () => {
+test("order affinity backfill builds dry-run ledger with publisher-compatible Catalog idempotency keys", () => {
   const summary = buildOrderAffinityBackfill([
     created("00000000-0000-4000-8000-000000000101", ["catalog-a", "catalog-b"], "allegro")
   ], { runId: "marketplace-affinity:allegro:2026-07-03" });
@@ -115,24 +116,40 @@ test("order affinity backfill builds dry-run ledger with window-scoped Catalog i
   assert.equal(ledger.acceptedCreatedEvents, 1);
   assert.equal(ledger.aggregatePairs, 2);
   assert.deepEqual(ledger.catalogIdempotencyKeys, [
-    "marketing_order_affinity:allegro-service:allegro:2026-07-01T00:00:00.000Z:2026-07-03T00:00:00.000Z:marketplace-affinity:allegro:2026-07-03:1",
-    "marketing_order_affinity:allegro-service:allegro:2026-07-01T00:00:00.000Z:2026-07-03T00:00:00.000Z:marketplace-affinity:allegro:2026-07-03:2",
+    "marketing_order_affinity:backfill:marketplace-affinity:allegro:2026-07-03:1",
+    "marketing_order_affinity:backfill:marketplace-affinity:allegro:2026-07-03:2",
   ]);
   const serialized = JSON.stringify(ledger);
   assert.equal(serialized.includes("buyer@example.invalid"), false);
   assert.equal(serialized.includes("payment"), false);
 });
 
+
+test("order affinity schedule policy builds closed UTC windows and stable run ids", () => {
+  const policy = buildOrderAffinitySchedulePolicy({
+    schedule: "daily",
+    scheduleAt: "2026-07-03T06:30:00.000Z",
+    channel: "flipflop",
+  });
+
+  assert.equal(policy.schedule, "daily");
+  assert.equal(policy.sourceOwner, "orders-microservice");
+  assert.equal(policy.channel, "flipflop");
+  assert.equal(policy.from, "2026-07-02T00:00:00.000Z");
+  assert.equal(policy.to, "2026-07-03T00:00:00.000Z");
+  assert.equal(policy.runId, "order-affinity:orders-microservice:flipflop:daily:20260702T000000Z:20260703T000000Z");
+});
+
+test("order affinity schedule policy requires an explicit channel", () => {
+  assert.throws(() => buildOrderAffinitySchedulePolicy({ schedule: "daily" }), /order_affinity_schedule_channel_missing/);
+});
+
 test("order affinity ledger env config and disabled recording are fail-closed", async () => {
   const keys = buildCatalogIdempotencyKeys({
     runId: "run-1",
-    sourceOwner: "allegro-service",
-    channel: "allegro",
-    windowStart: null,
-    windowEnd: null,
     batchCount: 1,
   });
-  assert.deepEqual(keys, ["marketing_order_affinity:allegro-service:allegro:open:open:run-1:1"]);
+  assert.deepEqual(keys, ["marketing_order_affinity:backfill:run-1:1"]);
 
   const options = orderAffinityRunLedgerOptionsFromEnv({ ORDER_AFFINITY_RUN_LEDGER_ENABLED: "true", DB_HOST: "database-server", DB_NAME: "marketing" });
   assert.equal(options.enabled, true);
