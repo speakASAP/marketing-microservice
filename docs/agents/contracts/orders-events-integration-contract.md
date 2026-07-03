@@ -182,8 +182,10 @@ Runtime scheduling now has source support for an opt-in durable run ledger and i
 
 - migration `0013_order_affinity_run_ledger.sql` creates `marketing_order_affinity_runs` and `marketing_order_affinity_idempotency_keys`.
 - `ORDER_AFFINITY_RUN_LEDGER_ENABLED=true` gates DB writes; without it, dry-runs expose the planned ledger and return `ledger_disabled` without mutating storage.
-- Catalog batch idempotency keys use `marketing_order_affinity:<sourceOwner>:<channel>:<windowStart>:<windowEnd>:<runId>:<batchIndex>`.
+- Scheduled backfills derive closed UTC windows with `--schedule=daily|hourly`, `--lookback`, and `--window-delay-minutes`; scheduled runs require an explicit `--channel` and deterministic run IDs in the form `order-affinity:<sourceOwner>:<channel>:<cadence>:<windowStart>:<windowEnd>`.
+- Scheduled publishes fail closed unless `--record-ledger` is supplied or `ORDER_AFFINITY_RUN_LEDGER_ENABLED=true` is configured.
+- Catalog batch idempotency keys mirror the publisher event ID: `marketing_order_affinity:backfill:<runId>:<batchIndex>`.
 - Ledger rows store aggregate-safe counts, source/window/cursor metadata, rejection maps, channel maps, and idempotency keys only.
 - Raw events, raw order ids, customer/contact/address/payment/provider payloads, tokens, credentials, and marketplace JSON are forbidden from ledger rows.
 
-Runtime scheduling remains blocked by `[MISSING: scheduled dry-run matrix across Allegro, Aukro, Bazos, FlipFlop, and central Orders]` and `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`.
+Runtime scheduling remains blocked by `[MISSING: owner-approved activation policy for recurring CronJob deployment]` and `[MISSING: pruning/replacement semantics for stale affinity rows]`.

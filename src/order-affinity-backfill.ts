@@ -8,15 +8,21 @@ import {
   parseOrdersLifecycleEvent
 } from "./order-lifecycle-events";
 import {
+  OrderAffinityCatalogPublishResult,
   orderAffinityCatalogPublisherOptionsFromEnv,
   publishOrderAffinityCandidatesToCatalog
 } from "./order-affinity-catalog-publisher";
 import {
   OrderAffinityRunLedgerEntry,
   OrderAffinityRunLedgerRecordResult,
+  OrderAffinityRunStatus,
   buildOrderAffinityRunLedgerEntry,
   recordOrderAffinityRunLedger
 } from "./order-affinity-ledger";
+import {
+  OrderAffinityScheduleCadence,
+  applyOrderAffinitySchedulePolicy
+} from "./order-affinity-schedule-policy";
 
 export interface OrderAffinityBackfillOptions {
   limit?: number;
@@ -56,6 +62,10 @@ interface CliOptions extends OrderAffinityBackfillOptions {
   cursorBefore?: string;
   cursorAfter?: string;
   createdBy?: string;
+  schedule?: OrderAffinityScheduleCadence;
+  scheduleAt?: string;
+  lookback?: number;
+  windowDelayMinutes?: number;
   recordLedger: boolean;
   publish: boolean;
   pretty: boolean;
@@ -159,6 +169,7 @@ export function buildOrderAffinityBackfillLedgerEntry(
     cursorBefore?: string;
     cursorAfter?: string;
     publish?: boolean;
+    status?: OrderAffinityRunStatus;
     createdBy?: string;
     batchCount?: number;
     marketplaceUrl?: string;
@@ -173,7 +184,7 @@ export function buildOrderAffinityBackfillLedgerEntry(
     cursorBefore: options.cursorBefore || null,
     cursorAfter: options.cursorAfter || null,
     mode: options.publish ? "publish" : "dry-run",
-    status: options.publish ? "planned" : "dry_run_passed",
+    status: options.status ?? (options.publish ? "planned" : "dry_run_passed"),
     batchCount: options.batchCount ?? (summary.candidates.length > 0 ? 1 : 0),
     createdBy: options.createdBy || "marketing-microservice",
   });
@@ -275,6 +286,14 @@ function parseCliArgs(argv: string[]): CliOptions {
     else if (arg.startsWith("--cursor-after=")) options.cursorAfter = arg.slice("--cursor-after=".length);
     else if (arg === "--created-by") options.createdBy = argv[++index];
     else if (arg.startsWith("--created-by=")) options.createdBy = arg.slice("--created-by=".length);
+    else if (arg === "--schedule") options.schedule = argv[++index] as OrderAffinityScheduleCadence;
+    else if (arg.startsWith("--schedule=")) options.schedule = arg.slice("--schedule=".length) as OrderAffinityScheduleCadence;
+    else if (arg === "--schedule-at") options.scheduleAt = argv[++index];
+    else if (arg.startsWith("--schedule-at=")) options.scheduleAt = arg.slice("--schedule-at=".length);
+    else if (arg === "--lookback") options.lookback = Number(argv[++index]);
+    else if (arg.startsWith("--lookback=")) options.lookback = Number(arg.slice("--lookback=".length));
+    else if (arg === "--window-delay-minutes") options.windowDelayMinutes = Number(argv[++index]);
+    else if (arg.startsWith("--window-delay-minutes=")) options.windowDelayMinutes = Number(arg.slice("--window-delay-minutes=".length));
     else if (arg === "--record-ledger") options.recordLedger = true;
     else if (arg === "--from") options.from = argv[++index];
     else if (arg.startsWith("--from=")) options.from = arg.slice("--from=".length);
@@ -419,20 +438,57 @@ function publicSummary(summary: OrderAffinityBackfillSummary) {
 }
 
 async function main() {
-  const options = parseCliArgs(process.argv.slice(2));
+  const options: CliOptions = applyOrderAffinitySchedulePolicy(parseCliArgs(process.argv.slice(2)));
+  assertScheduledPublishHasLedger(options);
   const records = await readOrdersReplayInput(options);
   const summary = buildOrderAffinityBackfill(records, options);
-  const ledgerEntry = buildOrderAffinityBackfillLedgerEntry(summary, options);
+  const plannedLedgerEntry = buildOrderAffinityBackfillLedgerEntry(summary, options);
   const output: Record<string, unknown> = {
     mode: options.publish ? "publish" : "dry-run",
     summary: publicSummary(summary),
-    ledger: publicLedgerSummary(ledgerEntry)
+    ledger: publicLedgerSummary(plannedLedgerEntry)
   };
-  output.ledgerRecord = await maybeRecordOrderAffinityBackfillLedger(ledgerEntry, options);
-  if (options.publish) {
-    output.publish = await publishOrderAffinityBackfill(summary);
+
+  let ledgerRecord = await maybeRecordOrderAffinityBackfillLedger(plannedLedgerEntry, options);
+  if (options.publish && options.schedule && ledgerRecord.status !== "recorded") {
+    output.ledgerRecord = ledgerRecord;
+    output.publish = blockedPublishResult(summary, plannedLedgerEntry.batchCount, "scheduled_publish_ledger_not_recorded");
+    console.log(JSON.stringify(output, null, options.pretty ? 2 : 0));
+    return;
   }
+
+  const publishResult = options.publish ? await publishOrderAffinityBackfill(summary) : undefined;
+  if (publishResult) {
+    const finalLedgerEntry = buildOrderAffinityBackfillLedgerEntry(summary, {
+      ...options,
+      status: ledgerStatusFromPublishResult(publishResult),
+      batchCount: publishResult.batchCount,
+    });
+    output.ledger = publicLedgerSummary(finalLedgerEntry);
+    output.publish = publishResult;
+    ledgerRecord = await maybeRecordOrderAffinityBackfillLedger(finalLedgerEntry, options);
+  }
+  output.ledgerRecord = ledgerRecord;
   console.log(JSON.stringify(output, null, options.pretty ? 2 : 0));
+}
+
+function assertScheduledPublishHasLedger(options: CliOptions): void {
+  if (!options.schedule || !options.publish) return;
+  if (options.recordLedger || process.env.ORDER_AFFINITY_RUN_LEDGER_ENABLED === "true") return;
+  throw new Error("order_affinity_scheduled_publish_requires_ledger");
+}
+
+function ledgerStatusFromPublishResult(result: OrderAffinityCatalogPublishResult): OrderAffinityRunStatus {
+  return result.status === "published" ? "published" : "failed";
+}
+
+function blockedPublishResult(summary: OrderAffinityBackfillSummary, batchCount: number, reason: string): OrderAffinityCatalogPublishResult {
+  return {
+    status: "failed",
+    candidateCount: summary.candidates.length,
+    batchCount,
+    reason,
+  };
 }
 
 if (require.main === module) {
