@@ -47,3 +47,8 @@ git diff --check
 ## Safety Boundary
 
 No deploy, live `--publish`, Catalog mutation, secret value output, raw replay data output, Allegro behavior change, or central Orders behavior change was performed. The only runtime mutation was suspending the already-existing active Aukro CronJob to prevent an unintended scheduled publish.
+
+
+## Superseded By Activation
+
+On 2026-07-03 the owner approved unsuspending `marketing-order-affinity-aukro-daily` using validation evidence `owner-approved-aukro-affinity-recheck-20260703-001`. The draft blockers below are retained as historical pre-activation state only; the current activation state is recorded in `reports/validation/2026-07-03-goal24-aukro-schedule-activation.md`.

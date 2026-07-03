@@ -196,12 +196,12 @@ Runtime scheduling has an owner-approved central Orders FlipFlop CronJob activat
 
 The active marketplace schedule is Allegro-only: `marketing-order-affinity-allegro-daily` runs at `02:23 UTC` with a 120 minute delay, `sourceOwner=allegro-service`, `channel=allegro`, and `--record-ledger`. It uses the protected Allegro replay endpoint and remains subject to the scheduled publish ledger guard.
 
-## Aukro Draft Scheduled Publish Activation
+## Aukro Scheduled Publish Activation
 
-Aukro has a source-only suspended draft in `k8s/order-affinity-cronjob.yaml` as `marketing-order-affinity-aukro-daily`. The normal Marketing deploy script applies that manifest, so the draft must remain `suspend: true` until an owner explicitly approves the Aukro source/window activation.
+Aukro has an owner-approved active schedule in `k8s/order-affinity-cronjob.yaml` as `marketing-order-affinity-aukro-daily`. The normal Marketing deploy script applies that manifest. Activation is based on approved runtime evidence `owner-approved-aukro-affinity-recheck-20260703-001` and remains source-specific to `sourceOwner=aukro-service`, `channel=aukro`.
 
-The draft uses `04:23 UTC`, after the active Allegro `02:23 UTC` and central Orders `03:20 UTC` schedules. It runs the same ledger-gated scheduled publish path with `sourceOwner=aukro-service`, `channel=aukro`, `--schedule daily`, `--window-delay-minutes 120`, `--publish`, and mandatory `--record-ledger`.
+The schedule uses `04:23 UTC`, after the active Allegro `02:23 UTC` and central Orders `03:20 UTC` schedules. It runs the same ledger-gated scheduled batch publish path with `sourceOwner=aukro-service`, `channel=aukro`, `--schedule daily`, `--window-delay-minutes 120`, `--publish`, and mandatory `--record-ledger`.
 
-Aukro activation remains blocked by `[MISSING: non-empty Aukro multi-Catalog-product replay evidence]` and `[MISSING: owner-approved Aukro source/window recurring schedule activation policy]`. Unsuspending the draft requires explicit owner approval for the Aukro source/window and fresh validation that the scheduled publish ledger guard still blocks Catalog calls when ledger recording is not successful.
+Aukro activation blockers are resolved for batch scheduled publish: `[RESOLVED: non-empty Aukro multi-Catalog-product replay evidence for activation]` and `[RESOLVED: owner-approved Aukro source/window recurring schedule activation policy]`. Future Aukro source/window replacement remains separate and blocked by `[MISSING: owner-reviewed future replace-window activation for Aukro]` because the active CronJob does not pass `--replace-window`.
 
 Bazos recurring scheduling remains blocked until runtime dry-run validation proves its protected replay endpoint and token mapping. Bazos may return a fail-closed zero-event contract until a persisted order-item replay source exists.

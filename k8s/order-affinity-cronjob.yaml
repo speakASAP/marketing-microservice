@@ -79,11 +79,12 @@ metadata:
     app: marketing-microservice
     managed-by: k8s-migration
     workload: order-affinity-backfill
-    activation-state: draft-suspended
+    activation-state: owner-approved-active
   annotations:
-    marketing.statex/activation-state: "draft-suspended"
-    marketing.statex/activation-blocker-non-empty-evidence: "required"
-    marketing.statex/activation-blocker-owner-source-window-approval: "required"
+    marketing.statex/activation-state: "owner-approved-active"
+    marketing.statex/activation-approved-at: "2026-07-03"
+    marketing.statex/activation-evidence-run-id: "owner-approved-aukro-affinity-recheck-20260703-001"
+    marketing.statex/activation-boundary: "batch-publish-only-no-replace-window"
 spec:
   schedule: "23 4 * * *"
   timeZone: "Etc/UTC"
@@ -91,7 +92,7 @@ spec:
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   startingDeadlineSeconds: 1800
-  suspend: true
+  suspend: false
   jobTemplate:
     spec:
       backoffLimit: 0
