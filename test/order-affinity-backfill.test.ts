@@ -120,6 +120,7 @@ test("order affinity backfill builds dry-run ledger with publisher-compatible Ca
     cursorBefore: "cursor-before",
     cursorAfter: "cursor-after",
     batchCount: 2,
+    completeSnapshot: true,
   });
 
   assert.equal(ledger.mode, "dry-run");
@@ -129,6 +130,7 @@ test("order affinity backfill builds dry-run ledger with publisher-compatible Ca
   assert.equal(ledger.inputRecords, 1);
   assert.equal(ledger.acceptedCreatedEvents, 1);
   assert.equal(ledger.aggregatePairs, 2);
+  assert.equal(ledger.completeSnapshot, true);
   assert.deepEqual(ledger.catalogIdempotencyKeys, [
     "marketing_order_affinity:allegro-service:allegro:2026-07-01T00:00:00.000Z:2026-07-03T00:00:00.000Z:marketplace-affinity:allegro:2026-07-03:1",
     "marketing_order_affinity:allegro-service:allegro:2026-07-01T00:00:00.000Z:2026-07-03T00:00:00.000Z:marketplace-affinity:allegro:2026-07-03:2",
@@ -235,11 +237,28 @@ test("order affinity replace-window publishing fails closed without completeness
   assert.deepEqual(chooseOrderAffinityCatalogPublishMode(summary, ledger, {
     replaceWindow: true,
     completeSnapshot: true,
+    ownerRetentionPolicyRef: "owner-approved-retention-2026-07",
+  }), {
+    mode: "replace-window-blocked",
+    reason: "replace_window_requires_complete_snapshot_ledger",
+  });
+
+  const completeLedger = buildOrderAffinityBackfillLedgerEntry(summary, {
+    sourceOwner: "allegro-service",
+    channel: "allegro",
+    from: "2026-07-01T00:00:00.000Z",
+    to: "2026-07-03T00:00:00.000Z",
+    completeSnapshot: true,
+  });
+
+  assert.deepEqual(chooseOrderAffinityCatalogPublishMode(summary, completeLedger, {
+    replaceWindow: true,
+    completeSnapshot: true,
   }), {
     mode: "replace-window-blocked",
     reason: "replace_window_requires_owner_retention_policy",
   });
-  assert.deepEqual(chooseOrderAffinityCatalogPublishMode(summary, ledger, {
+  assert.deepEqual(chooseOrderAffinityCatalogPublishMode(summary, completeLedger, {
     replaceWindow: true,
     completeSnapshot: true,
     ownerRetentionPolicyRef: "owner-approved-retention-2026-07",
@@ -256,6 +275,7 @@ test("order affinity replace-window publish mode sends complete source window pa
     channel: "allegro",
     from: "2026-07-01T00:00:00.000Z",
     to: "2026-07-03T00:00:00.000Z",
+    completeSnapshot: true,
   });
   const calls: Array<{ url: string; payload: any }> = [];
   const { publishOrderAffinityCandidatesToCatalog } = await import("../src/order-affinity-catalog-publisher");

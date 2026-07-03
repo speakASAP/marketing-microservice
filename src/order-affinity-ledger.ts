@@ -17,6 +17,7 @@ export interface OrderAffinityRunLedgerContext {
   createdBy?: string | null;
   startedAt?: string | null;
   completedAt?: string | null;
+  completeSnapshot?: boolean;
 }
 
 export interface OrderAffinityIdempotencyKeyContext {
@@ -48,6 +49,7 @@ export interface OrderAffinityRunLedgerEntry {
   rejectionReasons: Record<string, number>;
   byChannel: Record<string, number>;
   catalogIdempotencyKeys: string[];
+  completeSnapshot: boolean;
   createdBy: string | null;
   createdAt: string;
   startedAt: string | null;
@@ -106,6 +108,7 @@ export function buildOrderAffinityRunLedgerEntry(
       windowEnd: normalizeOptionalIso(context.windowEnd),
       batchCount,
     }),
+    completeSnapshot: context.completeSnapshot === true,
     createdBy: normalizeOptional(context.createdBy) ?? "marketing-microservice",
     createdAt,
     startedAt: normalizeOptionalIso(context.startedAt),
@@ -158,8 +161,8 @@ export async function recordOrderAffinityRunLedger(
         run_id, source_owner, channel, window_start, window_end, cursor_before, cursor_after,
         mode, status, input_records, accepted_created_events, rejected_records, skipped_events,
         aggregate_pairs, total_pair_evidence, batch_count, rejection_reasons, by_channel,
-        catalog_idempotency_keys, created_by, created_at, started_at, completed_at, updated_at
-      ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb, $19::jsonb, $20, $21, $22, $23, now())
+        catalog_idempotency_keys, complete_snapshot, created_by, created_at, started_at, completed_at, updated_at
+      ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb, $19::jsonb, $20, $21, $22, $23, $24, now())
       on conflict (run_id) do update set
         source_owner = excluded.source_owner,
         channel = excluded.channel,
@@ -179,6 +182,7 @@ export async function recordOrderAffinityRunLedger(
         rejection_reasons = excluded.rejection_reasons,
         by_channel = excluded.by_channel,
         catalog_idempotency_keys = excluded.catalog_idempotency_keys,
+        complete_snapshot = excluded.complete_snapshot,
         created_by = excluded.created_by,
         started_at = excluded.started_at,
         completed_at = excluded.completed_at,
@@ -203,6 +207,7 @@ export async function recordOrderAffinityRunLedger(
         JSON.stringify(entry.rejectionReasons),
         JSON.stringify(entry.byChannel),
         JSON.stringify(entry.catalogIdempotencyKeys),
+        entry.completeSnapshot,
         entry.createdBy,
         entry.createdAt,
         entry.startedAt,

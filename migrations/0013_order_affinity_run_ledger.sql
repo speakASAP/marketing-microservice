@@ -18,6 +18,7 @@ create table if not exists marketing_order_affinity_runs (
   rejection_reasons jsonb not null default '{}'::jsonb,
   by_channel jsonb not null default '{}'::jsonb,
   catalog_idempotency_keys jsonb not null default '[]'::jsonb,
+  complete_snapshot boolean not null default false,
   created_by text,
   created_at timestamptz not null default now(),
   started_at timestamptz,
@@ -47,3 +48,7 @@ create index if not exists marketing_order_affinity_idempotency_run_idx
   on marketing_order_affinity_idempotency_keys(run_id, batch_index);
 create index if not exists marketing_order_affinity_idempotency_source_window_idx
   on marketing_order_affinity_idempotency_keys(source_owner, channel, window_start, window_end);
+
+
+alter table marketing_order_affinity_runs
+  add column if not exists complete_snapshot boolean not null default false;

@@ -56,3 +56,44 @@ Result: PASS, no whitespace errors.
 - `[MISSING: runtime Catalog internal service token secret mapping for Marketing-to-Catalog relation writes]`
 - `[MISSING: scheduled dry-run matrix across Allegro, Aukro, Bazos, FlipFlop, and central Orders]`
 - `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`
+
+## 2026-07-03 Complete Snapshot Proof Amendment
+
+Intent Preservation Chain: Vision -> Goal Impact -> System -> Feature -> Task -> Execution Plan -> Coding Prompt -> Code -> Validation -> State Update.
+
+- Vision: marketplace and order purchase history can refresh Catalog order-affinity relations without exposing buyer, address, payment, provider, token, or raw order payload data.
+- Goal Impact: Catalog `replace-window` calls now require Marketing-owned durable complete source/window proof instead of trusting a transient CLI flag.
+- System: Marketing owns the run ledger, source/window metadata, idempotency keys, and publish-mode gate; Catalog owns relation persistence and exact-window replacement.
+- Feature: `completeSnapshot` proof on `marketing_order_affinity_runs` and replace-window gating from the ledger entry.
+- Task: persist `complete_snapshot`, include `completeSnapshot` in aggregate-only CLI ledger output, block replace-window when ledger proof is absent, and validate tests/build/diff.
+- Execution Plan: source/tests/docs only in Marketing; no deploy, live DB migration, Catalog publish, raw replay output, or secret output.
+- Coding Prompt: dry-run remains non-mutating; replace-window must fail closed without durable complete source/window proof plus owner retention policy reference.
+- Code: `src/order-affinity-ledger.ts`, `src/order-affinity-backfill.ts`, `migrations/0013_order_affinity_run_ledger.sql`, `test/order-affinity-backfill.test.ts`, `docs/agents/contracts/orders-events-integration-contract.md`.
+- Validation: focused affinity tests, build, and diff check passed on `alfares`.
+- State Update: `[RESOLVED: Marketing durable run ledger proving a complete source/window snapshot at source level]`; runtime still needs deployment/migration before live use.
+
+Validation evidence:
+
+```bash
+npx tsx --test --test-concurrency=1 test/order-affinity-backfill.test.ts test/order-lifecycle-events.test.ts
+```
+
+Result: PASS, 29/29 tests.
+
+```bash
+npm run build
+```
+
+Result: PASS, `tsc -p tsconfig.json && node scripts/copy-public.mjs` completed successfully.
+
+```bash
+git diff --check
+```
+
+Result: PASS, no whitespace errors.
+
+Remaining blockers:
+
+- `[MISSING: deploy/apply updated Marketing ledger migration containing complete_snapshot]`
+- `[MISSING: producer completeness guarantees for Aukro/Bazos replay endpoints]`
+- `[MISSING: owner-approved source/window for any future replace-window publish]`

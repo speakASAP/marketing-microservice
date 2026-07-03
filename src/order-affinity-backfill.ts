@@ -196,7 +196,7 @@ export function chooseOrderAffinityCatalogPublishMode(
   if (!options.replaceWindow) return { mode: "batch" };
   if (summary.rejectedRecords > 0) return { mode: "replace-window-blocked", reason: "replace_window_requires_zero_parser_rejects" };
   if (!ledger.windowStart || !ledger.windowEnd) return { mode: "replace-window-blocked", reason: "replace_window_requires_source_window" };
-  if (!options.completeSnapshot) return { mode: "replace-window-blocked", reason: "replace_window_requires_complete_snapshot_ledger" };
+  if (!ledger.completeSnapshot) return { mode: "replace-window-blocked", reason: "replace_window_requires_complete_snapshot_ledger" };
   if (!options.ownerRetentionPolicyRef?.trim()) return { mode: "replace-window-blocked", reason: "replace_window_requires_owner_retention_policy" };
   return { mode: "replace-window" };
 }
@@ -216,6 +216,7 @@ export function buildOrderAffinityBackfillLedgerEntry(
     batchCount?: number;
     marketplaceUrl?: string;
     ordersUrl?: string;
+    completeSnapshot?: boolean;
   } = {}
 ): OrderAffinityRunLedgerEntry {
   return buildOrderAffinityRunLedgerEntry(summary, {
@@ -229,6 +230,7 @@ export function buildOrderAffinityBackfillLedgerEntry(
     status: options.status ?? (options.publish ? "planned" : "dry_run_passed"),
     batchCount: options.batchCount ?? (summary.candidates.length > 0 ? 1 : 0),
     createdBy: options.createdBy || "marketing-microservice",
+    completeSnapshot: options.completeSnapshot === true,
   });
 }
 
@@ -492,6 +494,7 @@ function publicLedgerSummary(entry: OrderAffinityRunLedgerEntry) {
     totalPairEvidence: entry.totalPairEvidence,
     batchCount: entry.batchCount,
     catalogIdempotencyKeys: entry.catalogIdempotencyKeys,
+    completeSnapshot: entry.completeSnapshot,
     byChannel: entry.byChannel,
     rejectionReasons: entry.rejectionReasons
   };
