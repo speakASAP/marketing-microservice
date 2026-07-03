@@ -50,6 +50,35 @@ node dist/order-affinity-backfill.js --marketplace-url http://allegro-service.st
 {"error":"Request failed with status code 401"}
 ```
 
+
+## Orders Aggregate Count Check
+
+A read-only Orders aggregate/count check was run through the protected replay endpoint using `MARKETING_INTERNAL_SERVICE_TOKEN` presence only and `x-service-name: marketing-microservice`. The reducer printed no customer, address, payment provider, token, raw order, or item payload data.
+
+```json
+{
+  "tokenPresent": true,
+  "status": 200,
+  "success": true,
+  "contract": "orders.order_affinity_replay_candidates.v1",
+  "count": 2,
+  "filterLimit": 200,
+  "statuses": [
+    "confirmed",
+    "processing",
+    "shipped",
+    "delivered"
+  ],
+  "paymentStatuses": [
+    "paid"
+  ],
+  "eventSampleCount": 2,
+  "uniqueEventChannels": [
+    "flipflop"
+  ]
+}
+```
+
 ## Privacy Boundary
 
 No customer, address, payment, provider, token value, raw marketplace order id, raw event payload, or raw Catalog relation payload was printed in runtime validation evidence.
