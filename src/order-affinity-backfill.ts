@@ -42,6 +42,7 @@ interface AggregatedPair {
 interface CliOptions extends OrderAffinityBackfillOptions {
   file?: string;
   ordersUrl?: string;
+  marketplaceUrl?: string;
   channel?: string;
   from?: string;
   to?: string;
@@ -200,6 +201,8 @@ function parseCliArgs(argv: string[]): CliOptions {
     else if (arg.startsWith("--run-id=")) options.runId = arg.slice("--run-id=".length);
     else if (arg === "--orders-url") options.ordersUrl = argv[++index];
     else if (arg.startsWith("--orders-url=")) options.ordersUrl = arg.slice("--orders-url=".length);
+    else if (arg === "--marketplace-url") options.marketplaceUrl = argv[++index];
+    else if (arg.startsWith("--marketplace-url=")) options.marketplaceUrl = arg.slice("--marketplace-url=".length);
     else if (arg === "--channel") options.channel = argv[++index];
     else if (arg.startsWith("--channel=")) options.channel = arg.slice("--channel=".length);
     else if (arg === "--from") options.from = argv[++index];
@@ -218,10 +221,14 @@ function readInput(file: string | undefined): unknown[] {
   if (parsed && typeof parsed === "object" && Array.isArray((parsed as { rows?: unknown[] }).rows)) {
     return (parsed as { rows: unknown[] }).rows;
   }
+  if (parsed && typeof parsed === "object" && Array.isArray((parsed as { data?: { events?: unknown[] } }).data?.events)) {
+    return (parsed as { data: { events: unknown[] } }).data.events;
+  }
   return [parsed];
 }
 
 async function readOrdersReplayInput(options: CliOptions): Promise<unknown[]> {
+  if (options.marketplaceUrl) return readMarketplaceReplayInput(options);
   if (!options.ordersUrl) return readInput(options.file);
   const url = new URL("/api/orders/internal/order-affinity/replay-candidates", options.ordersUrl);
   if (options.limit) url.searchParams.set("limit", String(options.limit));
@@ -242,6 +249,31 @@ async function readOrdersReplayInput(options: CliOptions): Promise<unknown[]> {
 function positiveInteger(value: unknown, fallback: number): number {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+async function readMarketplaceReplayInput(options: CliOptions): Promise<unknown[]> {
+  const url = new URL("/internal/allegro/order-affinity/replay-candidates", options.marketplaceUrl);
+  if (options.limit) url.searchParams.set("limit", String(options.limit));
+  if (options.from) url.searchParams.set("from", options.from);
+  if (options.to) url.searchParams.set("to", options.to);
+  const response = await axios.get(url.toString(), {
+    timeout: positiveInteger(process.env.ORDER_AFFINITY_MARKETPLACE_TIMEOUT_MS, 10000),
+    headers: orderAffinityMarketplaceReplayHeaders()
+  });
+  const events = response.data?.data?.events;
+  if (!response.data?.success || !Array.isArray(events)) {
+    throw new Error("marketplace_replay_candidates_unavailable");
+  }
+  return events;
+}
+
+export function orderAffinityMarketplaceReplayHeaders(env: NodeJS.ProcessEnv = process.env): Record<string, string> | undefined {
+  const token = (env.ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN || env.ALLEGRO_INTERNAL_SERVICE_TOKEN || env.INTERNAL_SERVICE_TOKEN || "").trim();
+  if (!token) return undefined;
+  return {
+    "x-service-name": "marketing-microservice",
+    "x-internal-service-token": token.replace(/^Bearer\s+/i, "")
+  };
 }
 
 export function orderAffinityOrdersReplayHeaders(env: NodeJS.ProcessEnv = process.env): Record<string, string> | undefined {

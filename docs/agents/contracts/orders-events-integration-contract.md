@@ -163,3 +163,19 @@ git diff --check
 ```
 
 Catalog runtime ingestion validation exists in `catalog-microservice`; Marketing source now includes a guarded caller that remains disabled unless `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=true` and `CATALOG_INTERNAL_SERVICE_TOKEN` are configured.
+
+## Marketplace Order-Affinity Replay Envelopes
+
+Marketing now accepts marketplace-owned replay envelopes for order-affinity backfill without weakening the canonical Orders lifecycle event parser.
+
+Accepted first producer:
+
+- `source=allegro-service`
+- `type=marketplace.order_affinity_candidate.v1`
+- `eventVersion=1`
+- payload fields: `orderId`, `channel`, `currency`, `items[]`
+- item fields: `productId`, optional `sku`, `quantity`, optional `unitPrice`, optional `totalPrice`
+
+The parser normalizes accepted marketplace envelopes into the existing order-created signal used by `backfill:order-affinity`. Forbidden customer, address, billing, payment provider, token, credential, tracking, email, and phone fields still fail closed.
+
+Runtime scheduling remains blocked by `[MISSING: durable Marketing backfill run ledger and idempotency key registry]`.
