@@ -79,6 +79,88 @@ A read-only Orders aggregate/count check was run through the protected replay en
 }
 ```
 
+
+## Post-Deploy Token And Publish Evidence
+
+After deploying image `5637276`, `marketing-microservice-secret` contained the new `ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN` key. The running Marketing pod reported token presence by name only:
+
+```json
+{
+  "ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN": true,
+  "ALLEGRO_INTERNAL_SERVICE_TOKEN": false,
+  "INTERNAL_SERVICE_TOKEN": false,
+  "ORDERS_SERVICE_TOKEN": true,
+  "CATALOG_INTERNAL_SERVICE_TOKEN": true
+}
+```
+
+Protected Marketing-to-Allegro dry-run endpoint validation returned aggregate-only evidence:
+
+```json
+{
+  "tokenPresent": true,
+  "status": 200,
+  "success": true,
+  "contract": "marketplace.order_affinity_candidate.v1",
+  "channel": "allegro",
+  "count": 8,
+  "skippedRecords": 92,
+  "eventSampleCount": 8
+}
+```
+
+Marketing CLI dry-run aggregate summary:
+
+```json
+{
+  "mode": "dry-run",
+  "summary": {
+    "runId": "orders-history-2026-07-03",
+    "inputRecords": 8,
+    "acceptedCreatedEvents": 8,
+    "rejectedRecords": 0,
+    "skippedEvents": 0,
+    "aggregatePairs": 16,
+    "totalPairEvidence": 16
+  },
+  "ledgerRecord": {
+    "status": "disabled",
+    "reason": "ledger_disabled"
+  }
+}
+```
+
+Owner-approved live Catalog publish was then run from the qualified Allegro replay path with run id `allegro-affinity-live-2026-07-03`. Aggregate-only publish result:
+
+```json
+{
+  "mode": "publish",
+  "summary": {
+    "runId": "allegro-affinity-live-2026-07-03",
+    "inputRecords": 8,
+    "acceptedCreatedEvents": 8,
+    "rejectedRecords": 0,
+    "skippedEvents": 0,
+    "aggregatePairs": 16,
+    "totalPairEvidence": 16
+  },
+  "ledgerRecord": {
+    "status": "disabled",
+    "runId": "allegro-affinity-live-2026-07-03",
+    "idempotencyKeyCount": 1,
+    "reason": "ledger_disabled"
+  },
+  "publish": {
+    "status": "published",
+    "candidateCount": 16,
+    "batchCount": 1,
+    "endpoint": "http://catalog-microservice.statex-apps.svc.cluster.local:3200/api/internal/product-relations/order-affinity/batch"
+  }
+}
+```
+
+No customer, address, payment, provider, token value, raw marketplace order id, raw event payload, or raw Catalog relation payload was printed.
+
 ## Privacy Boundary
 
 No customer, address, payment, provider, token value, raw marketplace order id, raw event payload, or raw Catalog relation payload was printed in runtime validation evidence.
@@ -92,5 +174,4 @@ No new raw token value was created, printed, copied into code, or committed.
 
 ## Blockers
 
-- `[MISSING: post-deploy confirmation that ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN is present in the Marketing pod]`.
-- `[MISSING: post-deploy Marketing-to-Allegro marketplace replay dry-run with aggregate-only output]`.
+- `[MISSING: runtime order-affinity ledger enablement/migration for persisted run evidence]`; live publish intentionally kept ledger recording disabled and relied on Catalog batch idempotency.
