@@ -6,20 +6,24 @@ metadata:
   labels:
     app: marketing-microservice
     managed-by: k8s-migration
-    workflow: order-affinity
+    workload: order-affinity-backfill
 spec:
   schedule: "23 2 * * *"
+  timeZone: "Etc/UTC"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 1800
+  suspend: false
   jobTemplate:
     spec:
-      backoffLimit: 1
+      backoffLimit: 0
+      activeDeadlineSeconds: 900
       template:
         metadata:
           labels:
             app: marketing-microservice
-            workflow: order-affinity
+            workload: order-affinity-backfill
         spec:
           restartPolicy: Never
           securityContext:
