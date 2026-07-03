@@ -148,7 +148,7 @@ First version semantics:
 
 - `[MISSING: runtime Catalog internal service token secret mapping for Marketing-to-Catalog relation writes]`
 - Idempotency is source-implemented for replay batches as `marketing_order_affinity:<sourceOwner>:<channel>:<windowStart>:<windowEnd>:<runId>:<batchIndex>`; live replay evidence is still required after enabling the publisher.
-- `[MISSING: pruning/replacement semantics for stale affinity rows]`
+- Catalog source/window scoped replacement is available through Catalog-owned `POST /api/internal/product-relations/order-affinity/replace-window`; use only with complete source/window snapshot proof and owner retention policy.
 - `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`
 
 ## Validation
@@ -190,10 +190,18 @@ Runtime scheduling now has source support for an opt-in durable run ledger and i
 - Ledger rows store aggregate-safe counts, source/window/cursor metadata, rejection maps, channel maps, and idempotency keys only.
 - Raw events, raw order ids, customer/contact/address/payment/provider payloads, tokens, credentials, and marketplace JSON are forbidden from ledger rows.
 
-Runtime scheduling has an owner-approved central Orders FlipFlop CronJob activation policy in `k8s/order-affinity-backfill-cronjob.yaml`. Marketplace-wide scheduling remains blocked by `[MISSING: owner-approved activation policy for marketplace-wide CronJobs]` and `[MISSING: pruning/replacement semantics for stale affinity rows]`.
+Runtime scheduling has an owner-approved central Orders FlipFlop CronJob activation policy in `k8s/order-affinity-backfill-cronjob.yaml`. Marketplace-wide scheduling remains blocked by `[MISSING: owner-approved activation policy for marketplace-wide CronJobs]`.
 
 ## Allegro Scheduled Publish Activation
 
 The active marketplace schedule is Allegro-only: `marketing-order-affinity-allegro-daily` runs at `02:23 UTC` with a 120 minute delay, `sourceOwner=allegro-service`, `channel=allegro`, and `--record-ledger`. It uses the protected Allegro replay endpoint and remains subject to the scheduled publish ledger guard.
 
-Aukro and Bazos recurring schedules remain blocked until runtime dry-run validation proves their protected replay endpoints and token mappings. Bazos may return a fail-closed zero-event contract until a persisted order-item replay source exists.
+## Aukro Draft Scheduled Publish Activation
+
+Aukro has a source-only suspended draft in `k8s/order-affinity-cronjob.yaml` as `marketing-order-affinity-aukro-daily`. The normal Marketing deploy script applies that manifest, so the draft must remain `suspend: true` until an owner explicitly approves the Aukro source/window activation.
+
+The draft uses `04:23 UTC`, after the active Allegro `02:23 UTC` and central Orders `03:20 UTC` schedules. It runs the same ledger-gated scheduled publish path with `sourceOwner=aukro-service`, `channel=aukro`, `--schedule daily`, `--window-delay-minutes 120`, `--publish`, and mandatory `--record-ledger`.
+
+Aukro activation remains blocked by `[MISSING: non-empty Aukro multi-Catalog-product replay evidence]` and `[MISSING: owner-approved Aukro source/window recurring schedule activation policy]`. Unsuspending the draft requires explicit owner approval for the Aukro source/window and fresh validation that the scheduled publish ledger guard still blocks Catalog calls when ledger recording is not successful.
+
+Bazos recurring scheduling remains blocked until runtime dry-run validation proves its protected replay endpoint and token mapping. Bazos may return a fail-closed zero-event contract until a persisted order-item replay source exists.
