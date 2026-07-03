@@ -55,3 +55,7 @@ kubectl -n statex-apps get cronjob marketing-order-affinity-bazos-daily
 
 - `[MISSING: owner-reviewed future replace-window activation for Bazos]`.
 - `[RESOLVED: scheduled Bazos CronJob aggregate result after source/window alignment observed with published batch]`.
+
+## Post-validation steady schedule
+
+After the owner-requested same-day verification run completed, `marketing-order-affinity-bazos-daily` was restored to the morning schedule `15 10 * * *` with `Europe/Prague` timezone. Commit `PENDING` records the manifest change; Kubernetes server-side dry-run and live apply are recorded in command evidence.
