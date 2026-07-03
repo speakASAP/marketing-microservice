@@ -3607,13 +3607,13 @@ Deployment and runtime evidence:
 - Commits pushed: `e04d155` added the backfill CLI; `d293415` switched Orders fetches to internal-service auth and mapped `ORDERS_SERVICE_TOKEN`.
 - Current deployed image: `localhost:5000/marketing-microservice:d293415`.
 - ExternalSecret `marketing-microservice-secret` is `Ready=True`; pod environment includes `ORDERS_SERVICE_TOKEN` and `CATALOG_INTERNAL_SERVICE_TOKEN` key names only.
-- Live command succeeded: `node dist/order-affinity-backfill.js --orders-url http://orders-microservice.statex-apps.svc.cluster.local:3203 --limit=50 --dry-run --pretty`.
-- Dry-run result: `inputRecords=0`, `acceptedCreatedEvents=0`, `aggregatePairs=0`, `candidates=[]`; no Catalog publish was attempted.
+- Initial live command succeeded: `node dist/order-affinity-backfill.js --orders-url http://orders-microservice.statex-apps.svc.cluster.local:3203 --limit=50 --dry-run --pretty`; at that time Orders replay returned `inputRecords=0`, `acceptedCreatedEvents=0`, `aggregatePairs=0`, `candidates=[]`.
+- After the owner-approved FlipFlop paid multi-item checkout smoke reached central Orders payment status `paid`, `kubectl -n statex-apps exec deploy/marketing-microservice -- node dist/order-affinity-backfill.js --orders-url http://orders-microservice.statex-apps.svc.cluster.local:3203 --channel=flipflop --limit=20 --dry-run --pretty` returned `inputRecords=2`, `acceptedCreatedEvents=2`, `rejectedRecords=0`, `aggregatePairs=2`, `totalPairEvidence=4`, and two directed candidates for Catalog products `ce4a51aa-2d12-4ab7-a965-7a36609d01fc` and `dbc51dde-fc66-4511-b178-f929183f4647` with `score=2`, `confidence=0.65`, `source=marketing_order_affinity`.
+- No Catalog publish was attempted in the FlipFlop smoke dry-run.
 
 Remaining blockers:
 
-- `[MISSING: qualifying historical paid multi-product Orders rows for non-empty replay evidence]`.
-- `[MISSING: owner-reviewed publish window before running a future non-empty `--publish` backfill]`.
+- `[MISSING: owner-reviewed publish window before running a future non-empty `--publish` central Orders backfill]`.
 
 
 ## 2026-07-03 - Allegro Historical Order Affinity Backfill
