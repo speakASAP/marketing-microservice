@@ -296,5 +296,6 @@ Remaining blockers:
 - `[MISSING: Bazos paid order history source]`
 - `[MISSING: Bazos persisted order item replay source]`
 - `[MISSING: Bazos order item ingestion contract]`
-- `[MISSING: deployed FlipFlop replay endpoint/runtime smoke]`
-- `[MISSING: owner-approved FlipFlop marketplace replay activation policy]`
+- `[RESOLVED: deployed FlipFlop replay endpoint/runtime smoke]`
+- `[RESOLVED: owner-approved conservative FlipFlop marketplace replay activation policy - no recurring marketplace CronJob, publish, or replace-window activation without future explicit source/window approval]`
+- `[MISSING: owner-approved FlipFlop recurring marketplace publish/replace-window schedule activation]`
