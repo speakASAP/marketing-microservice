@@ -161,6 +161,79 @@ Owner-approved live Catalog publish was then run from the qualified Allegro repl
 
 No customer, address, payment, provider, token value, raw marketplace order id, raw event payload, or raw Catalog relation payload was printed.
 
+
+## Ledger Migration And Recording Evidence
+
+Owner approval received on 2026-07-03 to apply the Marketing order-affinity ledger migration and enable runtime ledger recording before scheduling recurring publishes.
+
+Migration/config evidence:
+
+- `DB_AUTO_CREATE=true` was already present in the Marketing runtime.
+- Live schema/count check printed aggregate metadata only:
+
+```json
+{
+  "runsTablePresent": true,
+  "keysTablePresent": true,
+  "runCount": 0,
+  "keyCount": 0,
+  "error": null
+}
+```
+
+- `k8s/configmap.yaml` now sets `ORDER_AFFINITY_RUN_LEDGER_ENABLED: "true"`.
+- `kubectl apply --dry-run=server -f k8s/configmap.yaml -n statex-apps` passed.
+- Marketing deployed image `470ce7a`; runtime presence check showed `ORDER_AFFINITY_RUN_LEDGER_ENABLED`, `ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN`, `CATALOG_INTERNAL_SERVICE_TOKEN`, and DB connection keys present by name only.
+
+Ledger recording validation:
+
+```json
+{
+  "mode": "dry-run",
+  "summary": {
+    "runId": "allegro-affinity-ledger-dry-run-2026-07-03",
+    "inputRecords": 8,
+    "acceptedCreatedEvents": 8,
+    "rejectedRecords": 0,
+    "skippedEvents": 0,
+    "aggregatePairs": 16,
+    "totalPairEvidence": 16
+  },
+  "ledgerRecord": {
+    "status": "recorded",
+    "runId": "allegro-affinity-ledger-dry-run-2026-07-03",
+    "idempotencyKeyCount": 1
+  }
+}
+```
+
+Persisted aggregate-only DB verification:
+
+```json
+{
+  "found": true,
+  "row": {
+    "run_id": "allegro-affinity-ledger-dry-run-2026-07-03",
+    "source_owner": "allegro-service",
+    "channel": "allegro",
+    "mode": "dry-run",
+    "status": "dry_run_passed",
+    "input_records": 8,
+    "accepted_created_events": 8,
+    "rejected_records": 0,
+    "skipped_events": 0,
+    "aggregate_pairs": 16,
+    "total_pair_evidence": 16,
+    "batch_count": 1,
+    "idempotency_key_count": 1
+  },
+  "keyRows": 1,
+  "totalRuns": 2
+}
+```
+
+No DSN, password, token value, customer, address, payment, provider, raw marketplace order id, raw event payload, or raw Catalog relation payload was printed.
+
 ## Privacy Boundary
 
 No customer, address, payment, provider, token value, raw marketplace order id, raw event payload, or raw Catalog relation payload was printed in runtime validation evidence.
@@ -174,4 +247,4 @@ No new raw token value was created, printed, copied into code, or committed.
 
 ## Blockers
 
-- `[MISSING: runtime order-affinity ledger enablement/migration for persisted run evidence]`; live publish intentionally kept ledger recording disabled and relied on Catalog batch idempotency.
+- `[MISSING: recurring affinity publish schedule/policy with ledger-required guard]`.
