@@ -1,5 +1,6 @@
 export const ORDERS_EVENTS_EXCHANGE = "orders.events";
 export const ORDERS_ORDER_CREATED_V1 = "orders.order.created.v1";
+export const MARKETPLACE_ORDER_AFFINITY_CANDIDATE_V1 = "marketplace.order_affinity_candidate.v1";
 export const ORDERS_ORDER_UPDATED_V1 = "orders.order.updated.v1";
 export const REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1 = "orders.order.status_changed.v1";
 export const APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY = ORDERS_ORDER_UPDATED_V1;
@@ -120,6 +121,8 @@ const FORBIDDEN_FIELD_PATTERN =
   /(customer|address|billing|street|postal|paymentMethod|providerSecret|bearer|token|jwt|password|credential|trackingNumber|trackingUrl|operatorEmail|approverEmail|email|phone)/i;
 
 const CREATED_PAYLOAD_FIELDS = new Set(["orderId", "channel", "leadAttribution", "items", "currency"]);
+const MARKETPLACE_AFFINITY_PAYLOAD_FIELDS = new Set(["orderId", "channel", "items", "currency"]);
+const MARKETPLACE_AFFINITY_SOURCES = new Set(["allegro-service"]);
 const UPDATED_PAYLOAD_FIELDS = new Set(["orderId", "status", "previousStatus", "approval"]);
 const APPROVAL_PAYLOAD_FIELDS = new Set(["approvalType", "reasonCode", "sideEffectsHandled", "approvedAt"]);
 const LEAD_ATTRIBUTION_PAYLOAD_FIELDS = new Set(["leadId", "source", "campaignId"]);
@@ -129,6 +132,10 @@ export function parseOrdersLifecycleEvent(input: unknown): ParsedEvent | Rejecte
   if (!isObject(input)) return reject("invalid_order_event_envelope");
 
   const type = readString(input, "type");
+  if (type === MARKETPLACE_ORDER_AFFINITY_CANDIDATE_V1) {
+    return parseMarketplaceOrderAffinityCandidate(input, type);
+  }
+
   if (type === REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1) {
     return reject(`unsupported_order_event_type:${REQUESTED_ORDERS_ORDER_STATUS_CHANGED_V1}`);
   }
@@ -188,6 +195,43 @@ export function parseOrdersLifecycleEvent(input: unknown): ParsedEvent | Rejecte
   return {
     ok: true,
     signal: { eventType: type, eventVersion: 1, eventId, occurredAt, orderId, status, previousStatus }
+  };
+}
+
+function parseMarketplaceOrderAffinityCandidate(input: Record<string, unknown>, type: string): ParsedEvent | RejectedEvent {
+  if (input.eventVersion !== 1) return reject("unsupported_marketplace_affinity_event_version");
+  const eventId = readString(input, "eventId");
+  if (!eventId) return reject("marketplace_affinity_event_id_missing");
+  const occurredAt = readString(input, "occurredAt");
+  if (!isIsoTimestamp(occurredAt)) return reject("marketplace_affinity_occurred_at_invalid");
+  const source = readString(input, "source");
+  if (!MARKETPLACE_AFFINITY_SOURCES.has(source)) return reject(`marketplace_affinity_source_invalid:${source || "missing"}`);
+  if (!isObject(input.payload)) return reject("marketplace_affinity_payload_invalid");
+  const forbiddenPath = findForbiddenField(input.payload);
+  if (forbiddenPath) return reject(`order_event_forbidden_field:${forbiddenPath}`);
+  for (const key of Object.keys(input.payload)) {
+    if (!MARKETPLACE_AFFINITY_PAYLOAD_FIELDS.has(key)) return reject(`marketplace_affinity_unexpected_payload_field:${key}`);
+  }
+  const orderId = readString(input.payload, "orderId");
+  if (!orderId) return reject("marketplace_affinity_order_id_missing");
+  const channel = readString(input.payload, "channel");
+  if (!channel) return reject("marketplace_affinity_channel_missing");
+  const productRefs = readProductRefs(input.payload.items);
+  if (productRefs === null) return reject("marketplace_affinity_items_invalid");
+  const currency = readOptionalCurrency(input.payload.currency);
+  if (currency === null) return reject("marketplace_affinity_currency_invalid");
+  return {
+    ok: true,
+    signal: {
+      eventType: ORDERS_ORDER_CREATED_V1,
+      eventVersion: 1,
+      eventId: `${type}:${eventId}`,
+      occurredAt,
+      orderId,
+      channel,
+      productRefs,
+      currency
+    }
   };
 }
 

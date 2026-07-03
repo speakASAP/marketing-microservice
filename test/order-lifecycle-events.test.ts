@@ -4,6 +4,7 @@ import {
   APPROVED_ORDERS_STATUS_CHANGE_ROUTING_KEY,
   ORDER_RUN_ATTRIBUTION_BLOCKER,
   ORDER_STATUS_CHANGED_ROUTING_KEY_DECISION,
+  MARKETPLACE_ORDER_AFFINITY_CANDIDATE_V1,
   ORDERS_ORDER_CREATED_V1,
   ORDERS_ORDER_UPDATED_V1,
   OrdersLifecycleAttributionAccumulator,
@@ -105,6 +106,55 @@ test("unapproved orders.order.status_changed.v1 alias is rejected while updated.
   assert.equal(result.blocker, undefined);
   assert.equal(result.stats.totals.rejectedEvents, 1);
   assert.equal(result.stats.bindings.orderStatusChanged, ORDERS_ORDER_UPDATED_V1);
+});
+
+
+test("marketplace affinity candidate envelopes normalize into bounded order-created signals", () => {
+  const parsed = parseOrdersLifecycleEvent({
+    type: MARKETPLACE_ORDER_AFFINITY_CANDIDATE_V1,
+    eventVersion: 1,
+    eventId: "allegro.order-affinity:abc123",
+    occurredAt: "2026-07-03T09:00:00.000Z",
+    source: "allegro-service",
+    payload: {
+      orderId: "allegro-replay:abc123",
+      channel: "allegro",
+      currency: "CZK",
+      items: [
+        { productId: "catalog-product-1001", quantity: 1, unitPrice: 100, totalPrice: 100 },
+        { productId: "catalog-product-2002", quantity: 2, unitPrice: 50, totalPrice: 100 }
+      ]
+    }
+  });
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.equal(parsed.signal.eventType, ORDERS_ORDER_CREATED_V1);
+  assert.equal(parsed.signal.eventId, `${MARKETPLACE_ORDER_AFFINITY_CANDIDATE_V1}:allegro.order-affinity:abc123`);
+  assert.equal(parsed.signal.channel, "allegro");
+  assert.deepEqual(parsed.signal.productRefs, [
+    "catalog:product:catalog-product-1001",
+    "catalog:product:catalog-product-2002"
+  ]);
+});
+
+test("marketplace affinity candidate envelopes reject sensitive fields", () => {
+  const parsed = parseOrdersLifecycleEvent({
+    type: MARKETPLACE_ORDER_AFFINITY_CANDIDATE_V1,
+    eventVersion: 1,
+    eventId: "allegro.order-affinity:abc123",
+    occurredAt: "2026-07-03T09:00:00.000Z",
+    source: "allegro-service",
+    payload: {
+      orderId: "allegro-replay:abc123",
+      channel: "allegro",
+      customerEmail: "buyer@example.invalid",
+      items: [{ productId: "catalog-product-1001", quantity: 1 }]
+    }
+  });
+
+  assert.equal(parsed.ok, false);
+  if (!parsed.ok) assert.equal(parsed.reason, "order_event_forbidden_field:payload.customerEmail");
 });
 
 test("order affinity relation candidates are deterministic and bounded", () => {

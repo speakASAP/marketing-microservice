@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ORDERS_ORDER_CREATED_V1 } from "../src/order-lifecycle-events";
-import { buildOrderAffinityBackfill, orderAffinityOrdersReplayHeaders } from "../src/order-affinity-backfill";
+import { buildOrderAffinityBackfill, orderAffinityMarketplaceReplayHeaders, orderAffinityOrdersReplayHeaders } from "../src/order-affinity-backfill";
 
 function created(eventId: string, productIds: string[], channel = "flipflop") {
   return {
@@ -77,4 +77,16 @@ test("order affinity Orders replay headers use internal service auth", () => {
     "x-internal-service-token": "wrapped-token",
   });
   assert.equal(orderAffinityOrdersReplayHeaders({}), undefined);
+});
+
+test("order affinity marketplace replay headers use internal service auth", () => {
+  assert.deepEqual(orderAffinityMarketplaceReplayHeaders({ ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN: "marketplace-token" }), {
+    "x-service-name": "marketing-microservice",
+    "x-internal-service-token": "marketplace-token",
+  });
+  assert.deepEqual(orderAffinityMarketplaceReplayHeaders({ ALLEGRO_INTERNAL_SERVICE_TOKEN: "Bearer wrapped-token" }), {
+    "x-service-name": "marketing-microservice",
+    "x-internal-service-token": "wrapped-token",
+  });
+  assert.equal(orderAffinityMarketplaceReplayHeaders({}), undefined);
 });
