@@ -68,3 +68,27 @@ After the owner-requested same-day verification run completed, `marketing-order-
 - Natural schedule proof: CronJob-owned Job `marketing-order-affinity-bazos-daily-29718487` completed with aggregate-only evidence `inputRecords=1`, `acceptedCreatedEvents=1`, `aggregatePairs=2`, `totalPairEvidence=2`, `publish.status=published`, `batchCount=1`, and `ledgerRecord.status=recorded`.
 - Steady-state schedule after validation: `15 10 * * *` `Europe/Prague`, `suspend=false`.
 - Remaining future gate: `[MISSING: owner-reviewed future replace-window activation for Bazos]`.
+
+
+## Owner-Requested Evening Schedule Rerun
+
+Date: 2026-07-03
+
+The owner rejected the restored morning schedule and requested a near-term non-morning CronJob run. The Bazos CronJob schedule is now `53 22 * * *` with `Europe/Prague` timezone.
+
+Evidence:
+
+- Commit `b6d9ff2` moved the schedule to `27 22 * * *`; CronJob-owned Job `marketing-order-affinity-bazos-daily-29718507` was created naturally but failed before workload execution because the pod was stuck in kubelet sandbox creation.
+- After owner approval, only the stuck pod was deleted; the Job had `backoffLimit=0` and remained failed, so no manual replacement Job was created.
+- Commit `d1b4216` moved the schedule to `43 22 * * *`; CronJob-owned Job `marketing-order-affinity-bazos-daily-29718523` was created naturally and started, but failed before processing with PostgreSQL `too many clients already`.
+- PostgreSQL then recovered through a pod replacement; no idle sessions were terminated because aggregate counts dropped to a safe level and `max_connections` read back as 200.
+- Commit `5cd2c02` moved the schedule to `53 22 * * *`; CronJob-owned Job `marketing-order-affinity-bazos-daily-29718533` completed successfully.
+- Live CronJob readback after completion: `schedule=53 22 * * *`, `timezone=Europe/Prague`, `suspend=false`, `lastScheduleTime=2026-07-03T20:53:00Z`, `lastSuccessfulTime=2026-07-03T20:53:16Z`, and `active=<none>`.
+- Aggregate CLI output reported `inputRecords=1`, `acceptedCreatedEvents=1`, `rejectedRecords=0`, `skippedEvents=0`, `aggregatePairs=2`, `totalPairEvidence=2`, `publish.status=published`, `candidateCount=2`, `batchCount=1`, and `ledgerRecord.status=recorded`.
+
+No manual Job was created, no replace-window path was used, and no raw replay payload, raw order ID, customer/address/payment/provider data, token value, or raw Catalog relation payload was recorded in this report.
+
+State update:
+
+- `[RESOLVED: owner-requested non-morning Bazos scheduled run completed with published aggregate batch]`.
+- `[MISSING: owner-reviewed future replace-window activation for Bazos]` remains future-gated.
