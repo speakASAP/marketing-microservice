@@ -8,7 +8,7 @@ Owner role: Marketing Aukro schedule/integration worker
 Vision -> Aukro marketplace purchase history can improve Catalog order-affinity relations without leaking buyer, address, payment, provider, token, credential, or raw marketplace payload data.
 Goal Impact -> The owner-approved Aukro validation evidence now activates the recurring Aukro ledger-gated batch publish schedule.
 System -> Aukro owns protected replay source; Marketing owns aggregation, scheduling, ledger evidence, and guarded Catalog batch publish orchestration; Catalog owns durable relation rows.
-Feature -> Active `marketing-order-affinity-aukro-daily` CronJob.
+Feature -> Active `marketing-order-affinity-aukro-daily` CronJob rescheduled for 14:50 Europe/Prague.
 Task -> Unsuspend the prepared Aukro schedule using approved validation evidence, without triggering an immediate job.
 Execution Plan -> Manifest and validation docs only, Kubernetes server dry-run before deploy/apply, no manual `Job` creation, no raw replay payloads, no secret output.
 Coding Prompt -> Keep publish ledger-gated, batch-only, source-specific, and aggregate-safe.
@@ -40,7 +40,7 @@ Owner-approved Aukro evidence from worker handoff:
 - Commit `ea1280f chore: activate aukro affinity schedule` was pushed to Marketing `main`.
 - `./scripts/deploy.sh` completed successfully and applied `marketing-order-affinity-aukro-daily`.
 - Marketing deployment was pinned to `localhost:5000/marketing-microservice:ea1280f` and rolled out healthy `1/1`.
-- Live CronJob readback: `schedule=23 4 * * *`, `timeZone=Etc/UTC`, `suspend=false`, `concurrencyPolicy=Forbid`, `active=<none>`, `lastScheduleTime=<none>`.
+- Live CronJob readback: `schedule=50 14 * * *`, `timeZone=Europe/Prague`, `suspend=false`, `concurrencyPolicy=Forbid`, `active=<none>`, `lastScheduleTime=<none>`.
 - Activation metadata readback: `activation-state=owner-approved-active`, `activation-evidence-run-id=owner-approved-aukro-affinity-recheck-20260703-001`, `activation-boundary=batch-publish-only-no-replace-window`.
 - Job readback found no existing `marketing-order-affinity-aukro-*` jobs, confirming activation did not create an immediate job.
 
@@ -54,5 +54,21 @@ Owner-approved Aukro evidence from worker handoff:
 
 - `kubectl -n statex-apps apply --dry-run=server -f k8s/order-affinity-cronjob.yaml` passed before commit: Allegro unchanged, Aukro configured.
 - The standard `./scripts/deploy.sh` applied the committed manifest: Allegro unchanged, Aukro configured.
-- Live readback: `marketing-order-affinity-allegro-daily suspend=false schedule=23 2 * * * active=<none>`; `marketing-order-affinity-aukro-daily suspend=false schedule=23 4 * * * active=<none>`.
+- Live readback: `marketing-order-affinity-allegro-daily suspend=false schedule=23 2 * * * active=<none>`; `marketing-order-affinity-aukro-daily suspend=false schedule=50 14 * * * timeZone=Europe/Prague active=<none>`.
 - No manual Job was created and no immediate run was triggered by this activation.
+
+
+## 14:50 Reschedule
+
+Owner requested the active Aukro schedule be moved to `14:50 Europe/Prague` on 2026-07-03, approximately three minutes after the request. Live CronJob was patched first to avoid missing the near-term schedule, then the Marketing manifest was updated to match. No manual Kubernetes Job was created.
+
+
+## 14:50 Run Evidence
+
+The rescheduled CronJob fired at `2026-07-03T14:50:00+02:00` / `2026-07-03T12:50:00Z`.
+
+- Job: `marketing-order-affinity-aukro-daily-29718050`.
+- Kubernetes job status: `succeeded=1`, `failed=<none>`, completion `2026-07-03T12:50:24Z`.
+- Aggregate-only parsed CLI output: `mode=publish`, `runId=order-affinity:aukro-service:aukro:daily:20260702T000000Z:20260703T000000Z`, `inputRecords=0`, `acceptedCreatedEvents=0`, `rejectedRecords=0`, `aggregatePairs=0`, `totalPairEvidence=0`, `ledgerRecord.status=recorded`, `idempotencyKeyCount=0`, `publish.status=skipped_no_candidates`, `publish.candidateCount=0`, `publish.batchCount=0`, `catalogPublishMode=batch`.
+- Ledger metadata readback: `status=failed`, `mode=publish`, `complete_snapshot=false`, `input_records=0`, `aggregate_pairs=0`, `batch_count=0`. The failed ledger status reflects no publishable candidates for the scheduled closed window, while Kubernetes completed successfully and no Catalog publish occurred.
+- No raw replay events, raw order rows, customer, address, payment, provider, token, credential, or marketplace payload data was printed.

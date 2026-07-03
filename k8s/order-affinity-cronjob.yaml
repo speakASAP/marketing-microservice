@@ -86,8 +86,8 @@ metadata:
     marketing.statex/activation-evidence-run-id: "owner-approved-aukro-affinity-recheck-20260703-001"
     marketing.statex/activation-boundary: "batch-publish-only-no-replace-window"
 spec:
-  schedule: "23 4 * * *"
-  timeZone: "Etc/UTC"
+  schedule: "50 14 * * *"
+  timeZone: "Europe/Prague"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
