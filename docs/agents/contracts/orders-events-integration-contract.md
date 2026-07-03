@@ -188,4 +188,4 @@ Runtime scheduling now has source support for an opt-in durable run ledger and i
 - Ledger rows store aggregate-safe counts, source/window/cursor metadata, rejection maps, channel maps, and idempotency keys only.
 - Raw events, raw order ids, customer/contact/address/payment/provider payloads, tokens, credentials, and marketplace JSON are forbidden from ledger rows.
 
-Runtime scheduling remains blocked by `[MISSING: owner-approved activation policy for recurring CronJob deployment]` and `[MISSING: pruning/replacement semantics for stale affinity rows]`.
+Runtime scheduling has an owner-approved central Orders FlipFlop CronJob activation policy in `k8s/order-affinity-backfill-cronjob.yaml`. Marketplace-wide scheduling remains blocked by `[MISSING: owner-approved activation policy for marketplace-wide CronJobs]` and `[MISSING: pruning/replacement semantics for stale affinity rows]`.

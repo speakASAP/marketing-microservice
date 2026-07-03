@@ -1,0 +1,54 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: marketing-order-affinity-central-orders-backfill
+  namespace: statex-apps
+  labels:
+    app: marketing-microservice
+    managed-by: k8s-migration
+    workload: order-affinity-backfill
+spec:
+  schedule: "20 3 * * *"
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 1800
+  suspend: false
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 900
+      template:
+        metadata:
+          labels:
+            app: marketing-microservice
+            workload: order-affinity-backfill
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+          containers:
+            - name: order-affinity-backfill
+              image: localhost:5000/marketing-microservice:latest
+              imagePullPolicy: Always
+              envFrom:
+                - configMapRef:
+                    name: marketing-microservice-config
+                - secretRef:
+                    name: marketing-microservice-secret
+              command:
+                - /bin/sh
+                - -c
+                - >-
+                  node dist/order-affinity-backfill.js
+                  --orders-url "$ORDER_AFFINITY_ORDERS_URL"
+                  --channel=flipflop
+                  --schedule=daily
+                  --window-delay-minutes=60
+                  --limit=500
+                  --publish
+                  --record-ledger
+                  --created-by=marketing-order-affinity-cron
