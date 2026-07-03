@@ -165,7 +165,7 @@ metadata:
     marketing.statex/activation-evidence-run-id: "goal24-bazos-budget-paid-source-20260703-001"
     marketing.statex/activation-boundary: "batch-publish-only-no-replace-window"
 spec:
-  schedule: "27 22 * * *"
+  schedule: "43 22 * * *"
   timeZone: "Europe/Prague"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
