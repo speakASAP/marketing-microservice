@@ -216,6 +216,39 @@ test("audit logger forwards sanitized payload to logging service when configured
   }
 });
 
+test("audit logger omits authorization header when logging token is unset", async () => {
+  const originalLoggingUrl = process.env.LOGGING_SERVICE_URL;
+  const originalLoggingToken = process.env.LOGGING_SERVICE_TOKEN;
+  const originalPost = axios.post;
+  const calls: Array<{ headers?: Record<string, string> }> = [];
+  process.env.LOGGING_SERVICE_URL = "http://logging-microservice:3367";
+  delete process.env.LOGGING_SERVICE_TOKEN;
+  (axios.post as unknown as typeof originalPost) = (async (_url: string, _payload: unknown, config?: unknown) => {
+    calls.push({ headers: (config as { headers?: Record<string, string> } | undefined)?.headers });
+    return { status: 200, data: {} } as never;
+  }) as typeof originalPost;
+
+  try {
+    logDecision("audit_forward_no_token_test", { campaignId: "camp-1" });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].headers?.Authorization, undefined);
+  } finally {
+    (axios.post as unknown as typeof originalPost) = originalPost;
+    if (originalLoggingUrl === undefined) {
+      delete process.env.LOGGING_SERVICE_URL;
+    } else {
+      process.env.LOGGING_SERVICE_URL = originalLoggingUrl;
+    }
+    if (originalLoggingToken === undefined) {
+      delete process.env.LOGGING_SERVICE_TOKEN;
+    } else {
+      process.env.LOGGING_SERVICE_TOKEN = originalLoggingToken;
+    }
+  }
+});
+
 test("enforces consent, unsubscribe and frequency cap", async () => {
   resetInMemoryState();
   const originalContacts = contacts.slice();
