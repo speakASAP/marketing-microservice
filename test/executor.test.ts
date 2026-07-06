@@ -147,12 +147,15 @@ test("audit logger sanitizes sensitive fields and adds duration", async () => {
       campaignId: "camp-1",
       message: "do not log",
       token: "secret-token",
-      nested: { authorization: "bearer-secret", safe: "ok" }
+      nested: { authorization: "bearer-secret", safe: "ok" },
+      level: "verbose"
     });
 
     assert.equal(captured.length, 1);
     assert.equal(captured[0].event, "audit_sanitization_test");
     assert.equal(typeof captured[0].timestamp, "string");
+    assert.equal(captured[0].level, "info");
+    assert.equal(captured[0].msg, "audit_sanitization_test");
     assert.equal(captured[0].duration_ms, 0);
     assert.equal(captured[0].message, "[redacted]");
     assert.equal(captured[0].token, "[redacted]");
@@ -165,10 +168,12 @@ test("audit logger sanitizes sensitive fields and adds duration", async () => {
 test("audit logger forwards sanitized payload to logging service when configured", async () => {
   const originalLoggingUrl = process.env.LOGGING_SERVICE_URL;
   const originalLoggingToken = process.env.LOGGING_SERVICE_TOKEN;
+  const originalLoggingPath = process.env.LOGGING_SERVICE_PATH;
   const originalPost = axios.post;
   const calls: Array<{ url: string; payload: Record<string, unknown>; headers?: Record<string, string> }> = [];
   process.env.LOGGING_SERVICE_URL = "http://logging-microservice:3367";
   process.env.LOGGING_SERVICE_TOKEN = "log-token";
+  delete process.env.LOGGING_SERVICE_PATH;
   (axios.post as unknown as typeof originalPost) = (async (url: string, payload: unknown, config?: unknown) => {
     calls.push({
       url,
@@ -179,13 +184,15 @@ test("audit logger forwards sanitized payload to logging service when configured
   }) as typeof originalPost;
 
   try {
-    logDecision("audit_forward_test", { campaignId: "camp-1", secret: "hidden", duration_ms: 7 });
+    logDecision("audit_forward_test", { campaignId: "camp-1", secret: "hidden", level: "warn", duration_ms: 7 });
     await new Promise((resolve) => setImmediate(resolve));
 
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].url, "http://logging-microservice:3367/logs");
+    assert.equal(calls[0].url, "http://logging-microservice:3367/api/logs");
     assert.equal(calls[0].payload.event, "audit_forward_test");
     assert.equal(calls[0].payload.secret, "[redacted]");
+    assert.equal(calls[0].payload.level, "warn");
+    assert.equal(calls[0].payload.msg, "audit_forward_test");
     assert.equal(calls[0].payload.duration_ms, 7);
     assert.equal(calls[0].headers?.Authorization, "Bearer log-token");
   } finally {
@@ -199,6 +206,11 @@ test("audit logger forwards sanitized payload to logging service when configured
       delete process.env.LOGGING_SERVICE_TOKEN;
     } else {
       process.env.LOGGING_SERVICE_TOKEN = originalLoggingToken;
+    }
+    if (originalLoggingPath === undefined) {
+      delete process.env.LOGGING_SERVICE_PATH;
+    } else {
+      process.env.LOGGING_SERVICE_PATH = originalLoggingPath;
     }
   }
 });
