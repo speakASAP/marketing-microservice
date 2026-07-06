@@ -1,13 +1,18 @@
 import axios from "axios";
 
 const SENSITIVE_KEY_PATTERN = /(token|authorization|password|secret|credential|message|body|recipientAddress|recipient_address)/i;
-const DEFAULT_LOGGING_PATH = "/logs";
+const DEFAULT_LOGGING_PATH = "/api/logs";
+const LOG_LEVELS = new Set(["error", "warn", "info", "debug"]);
+
+type LogLevel = "error" | "warn" | "info" | "debug";
 
 type AuditLogPayload = Record<string, unknown> & {
   event: string;
   timestamp: string;
   duration_ms: number;
   service: string;
+  level: LogLevel;
+  msg: string;
 };
 
 let auditSinkForTest: ((payload: AuditLogPayload) => void | Promise<void>) | null = null;
@@ -41,6 +46,10 @@ function sanitizeRecord(data: Record<string, unknown>): Record<string, unknown> 
   return sanitized;
 }
 
+function normalizeLogLevel(level: unknown): LogLevel {
+  return typeof level === "string" && LOG_LEVELS.has(level) ? (level as LogLevel) : "info";
+}
+
 function loggingEndpoint(): string | null {
   const base = process.env.LOGGING_SERVICE_URL;
   if (!base) return null;
@@ -55,8 +64,10 @@ export function logDecision(event: string, data: Record<string, unknown> = {}): 
     event,
     timestamp: new Date().toISOString(),
     service: process.env.SERVICE_NAME ?? "marketing-microservice",
-    duration_ms: typeof sanitized.duration_ms === "number" ? sanitized.duration_ms : 0,
-    ...sanitized
+    ...sanitized,
+    level: normalizeLogLevel(sanitized.level),
+    msg: event,
+    duration_ms: typeof sanitized.duration_ms === "number" ? sanitized.duration_ms : 0
   };
 
   console.log(JSON.stringify(payload));
@@ -68,13 +79,23 @@ export function logDecision(event: string, data: Record<string, unknown> = {}): 
   const endpoint = loggingEndpoint();
   if (!endpoint) return;
 
+  const centralPayload = {
+    level: payload.level,
+    msg: payload.msg,
+    service: payload.service,
+    timestamp: payload.timestamp,
+    duration_ms: payload.duration_ms,
+    metadata: payload
+  };
   const token = process.env.LOGGING_SERVICE_TOKEN;
   const headers = token ? { Authorization: "Bearer " + token } : undefined;
-  void axios.post(endpoint, payload, { timeout: 3000, headers }).catch((error) => {
+  void axios.post(endpoint, centralPayload, { timeout: 3000, headers }).catch((error) => {
     console.error(JSON.stringify({
       event: "audit_log_forward_failed",
       timestamp: new Date().toISOString(),
       service: process.env.SERVICE_NAME ?? "marketing-microservice",
+      level: "error",
+      msg: "audit_log_forward_failed",
       duration_ms: 0,
       reason: (error as Error).message
     }));
