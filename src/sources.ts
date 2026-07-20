@@ -144,12 +144,16 @@ function channelConsentFrom(record: UnknownRecord, campaign: Campaign, channel: 
     const direct = consentValueAt(candidate[channel], channel);
     if (direct !== undefined) return direct;
 
+    // Most specific first. Product (appId) must win over any broader scope.
+    //
+    // Tenant scopes are deliberately absent: tenantId is "statex", the company,
+    // so honouring it here would let one key opt a user into marketing for
+    // every app in the ecosystem. Withdrawal (channelUnsubscribedFrom) still
+    // honours tenant scope, because suppressing too much is the safe direction.
     for (const scoped of [
+      candidate[campaign.appId],
       candidate[campaign.purpose],
       candidate.marketing,
-      candidate[campaign.tenantId],
-      candidate[campaign.tenant],
-      candidate[campaign.appId],
       candidate["*"]
     ]) {
       const value = consentValueAt(scoped, channel);
@@ -159,7 +163,7 @@ function channelConsentFrom(record: UnknownRecord, campaign: Campaign, channel: 
   return undefined;
 }
 
-function hasMarketingConsent(record: UnknownRecord, campaign: Campaign): boolean {
+export function hasMarketingConsent(record: UnknownRecord, campaign: Campaign): boolean {
   const consents = record.marketingConsents;
   if (typeof record.marketingConsent === "boolean") {
     return record.marketingConsent;
@@ -170,11 +174,16 @@ function hasMarketingConsent(record: UnknownRecord, campaign: Campaign): boolean
   if (!isRecord(consents)) {
     return channelConsentFrom(record, campaign, campaign.primaryChannel) === true;
   }
+  // Consent is per product (campaign.appId). A tenant-level key must never
+  // grant consent across every app under that tenant: tenantId is "statex",
+  // the company, so { statex: true } would opt a user into everything.
+  const forProduct = consents[campaign.appId];
+  if (forProduct !== undefined) {
+    return truthyConsentValue(forProduct);
+  }
   return (
     truthyConsentValue(consents.marketing) ||
     truthyConsentValue(consents[campaign.purpose]) ||
-    truthyConsentValue(consents[campaign.tenantId]) ||
-    truthyConsentValue(consents[campaign.tenant]) ||
     truthyConsentValue(consents["*"]) ||
     channelConsentFrom(record, campaign, campaign.primaryChannel) === true
   );

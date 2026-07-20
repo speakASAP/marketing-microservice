@@ -1,4 +1,5 @@
 import axios from "axios";
+import { createHmac } from "node:crypto";
 import { getStore } from "./store";
 import { logDecision } from "./logger";
 import { Campaign, Contact, DeliveryResult, ExecutionRun } from "./types";
@@ -8,6 +9,57 @@ import { evaluateProductionGovernance } from "./production-governance";
 
 const PLATFORM_MAX_CHUNK_SIZE = 30;
 const DEFAULT_MAX_SEND_PER_RUN = 300;
+
+// Must stay in sync with auth-microservice UnsubscribeTokenService.
+const UNSUBSCRIBE_TTL_SECONDS = 365 * 24 * 3600;
+
+// Products whose marketing consent is tracked in auth-microservice and whose
+// privacy policies promise an unsubscribe link in every marketing message.
+const UNSUBSCRIBE_BASE_URLS: Record<string, string> = {
+  speakasap: "https://speakasap.alfares.cz",
+  marathon: "https://marathon.alfares.cz",
+};
+
+export function shouldAppendUnsubscribeLink(campaign: Campaign): boolean {
+  return campaign.purpose === "marketing" && campaign.appId in UNSUBSCRIBE_BASE_URLS;
+}
+
+/**
+ * Appends the unsubscribe link the published privacy policies promise.
+ *
+ * Throws rather than degrading: a marketing message that goes out with no way
+ * to opt out is the exact compliance failure this is here to prevent, so a
+ * missing secret or an unidentifiable recipient must stop the send.
+ */
+export function appendUnsubscribeLink(
+  body: string,
+  campaign: Campaign,
+  authUserId: string | undefined,
+): string {
+  const secret = process.env.MARKETING_UNSUBSCRIBE_SECRET;
+  if (!secret) {
+    throw new Error("MARKETING_UNSUBSCRIBE_SECRET is not configured");
+  }
+
+  const baseUrl = UNSUBSCRIBE_BASE_URLS[campaign.appId];
+  if (!baseUrl) {
+    throw new Error(`No unsubscribe base URL configured for appId ${campaign.appId}`);
+  }
+
+  if (!authUserId) {
+    throw new Error(
+      `Cannot build an unsubscribe link for a contact with no authUserId (appId ${campaign.appId})`,
+    );
+  }
+
+  const expiry = Math.floor(Date.now() / 1000) + UNSUBSCRIBE_TTL_SECONDS;
+  const payload = `${authUserId}|${campaign.appId}|${expiry}`;
+  const encoded = Buffer.from(payload).toString("base64url");
+  const signature = createHmac("sha256", secret).update(payload).digest("base64url");
+  const url = `${baseUrl}/unsubscribe?token=${encoded}.${signature}`;
+
+  return `${body}\n\n---\nTo stop receiving these e-mails: ${url}`;
+}
 
 let throttleWait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -157,7 +209,9 @@ async function sendOne(
 ): Promise<void> {
   const payload: Record<string, unknown> = {
     recipient: contact.email ?? contact.phone ?? "",
-    message: campaign.message.body,
+    message: shouldAppendUnsubscribeLink(campaign)
+      ? appendUnsubscribeLink(campaign.message.body, campaign, contact.identityLinks?.authUserId)
+      : campaign.message.body,
     type: "custom",
     channel: effectiveChannel,
     service: "marketing-microservice",
