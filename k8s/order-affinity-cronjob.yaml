@@ -11,8 +11,8 @@ spec:
   schedule: "23 2 * * *"
   timeZone: "Etc/UTC"
   concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
   startingDeadlineSeconds: 1800
   suspend: false
   jobTemplate:
@@ -89,8 +89,8 @@ spec:
   schedule: "50 14 * * *"
   timeZone: "Europe/Prague"
   concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
   startingDeadlineSeconds: 1800
   suspend: false
   jobTemplate:
@@ -168,8 +168,8 @@ spec:
   schedule: "0 23 * * *"
   timeZone: "Europe/Prague"
   concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
   startingDeadlineSeconds: 1800
   suspend: false
   jobTemplate:

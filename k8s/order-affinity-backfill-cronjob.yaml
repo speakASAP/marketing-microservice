@@ -11,8 +11,8 @@ spec:
   schedule: "20 3 * * *"
   timeZone: "Etc/UTC"
   concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
   startingDeadlineSeconds: 1800
   suspend: false
   jobTemplate:
