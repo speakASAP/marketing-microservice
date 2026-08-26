@@ -102,13 +102,16 @@ test("order affinity backfill normalizes FlipFlop protected replay response cand
 
 
 test("order affinity Orders replay headers use internal service auth", () => {
+  // The orders lane sends a per-pair RS256 principal as Bearer; orders verifies it
+  // via /auth/validate rather than string-matching a shared secret.
   assert.deepEqual(orderAffinityOrdersReplayHeaders({ ORDERS_SERVICE_TOKEN: "orders-token" }), {
     "x-service-name": "marketing-microservice",
-    "x-internal-service-token": "orders-token",
+    authorization: "Bearer orders-token",
   });
+  // An already-prefixed value must not end up as "Bearer Bearer ...".
   assert.deepEqual(orderAffinityOrdersReplayHeaders({ ORDERS_INTERNAL_SERVICE_TOKEN: "Bearer wrapped-token" }), {
     "x-service-name": "marketing-microservice",
-    "x-internal-service-token": "wrapped-token",
+    authorization: "Bearer wrapped-token",
   });
   assert.equal(orderAffinityOrdersReplayHeaders({}), undefined);
 });

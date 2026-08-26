@@ -508,12 +508,24 @@ export function orderAffinityMarketplaceReplayHeaders(env: NodeJS.ProcessEnv = p
   return orderAffinityMarketplaceReplayHeadersForSource("allegro-service", env);
 }
 
+/**
+ * ORDERS_SERVICE_TOKEN is a per-pair RS256 principal issued by auth
+ * (svc-marketing-microservice--orders-microservice, role
+ * internal:marketing-microservice:service). It is sent as `Authorization: Bearer`
+ * so orders verifies it via /auth/validate and reads the role from the token.
+ *
+ * It previously went out as `x-internal-service-token`, which orders compares
+ * byte-for-byte against MARKETING_INTERNAL_SERVICE_TOKEN and then grants the role
+ * itself. Under that contract the token's contents were never read — the value
+ * mapped here was in fact a roleless docs-rag token — so a leak could only be
+ * revoked by rotating the shared string on both sides at once.
+ */
 export function orderAffinityOrdersReplayHeaders(env: NodeJS.ProcessEnv = process.env): Record<string, string> | undefined {
   const token = (env.ORDERS_SERVICE_TOKEN || env.ORDERS_INTERNAL_SERVICE_TOKEN || "").trim();
   if (!token) return undefined;
   return {
     "x-service-name": "marketing-microservice",
-    "x-internal-service-token": token.replace(/^Bearer\s+/i, "")
+    authorization: `Bearer ${token.replace(/^Bearer\s+/i, "")}`
   };
 }
 
