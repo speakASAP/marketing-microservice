@@ -19,23 +19,17 @@ Read those first, then follow the repository-specific notes below and the curren
 
 ---
 
-## Knowledge Retrieval — docs-rag-microservice (MANDATORY, query before reading files)
+## Knowledge Retrieval
 
-**Query the RAG before reading source files** — saves 2000-5000 tokens per answer.
+Use `docs-rag-microservice` for bounded discovery when it is healthy, then
+verify deployment, security, database, integration and public-contract facts
+against the cited Git source. Git remains authoritative.
 
-```bash
-kubectl -n statex-apps exec deployment/marketing-microservice -- node -e '
-const fs = require("fs");
-const token = fs.readFileSync(process.env.HOME + "/.claude/rag-token", "utf8").trim();
-fetch("http://docs-rag-microservice:3397/retrieval/agent-context", {
-  method: "POST",
-  headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-  body: JSON.stringify({ query: "YOUR QUESTION HERE", maxTokens: 3000 }),
-}).then(async (r) => { console.log(await r.text()); process.exit(r.ok ? 0 : 1); });
-'
-```
+Authority and fallback rules:
+`/home/ssf/Documents/Github/shared/docs/DOCUMENTATION_AUTHORITY.md`.
 
----
+Do not generate tokens in documentation or assume an unconfident/failed RAG
+response means that source documentation does not exist.
 
 ## marketing-microservice
 
