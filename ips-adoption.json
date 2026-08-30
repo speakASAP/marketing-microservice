@@ -1,0 +1,165 @@
+{
+  "schemaVersion": 1,
+  "profile": "runtime-service",
+  "project": {
+    "name": "marketing-microservice",
+    "repository": "https://github.com/speakASAP/marketing-microservice.git"
+  },
+  "standard": {
+    "repository": "https://github.com/speakASAP/intent-preservation-system",
+    "revision": "3e36f64c11e31b878fd2fe09267426738b25ae7f"
+  },
+  "artifacts": {
+    "readme": "README.md",
+    "business": "BUSINESS.md",
+    "system": "SYSTEM.md",
+    "agents": "AGENTS.md",
+    "operations": "AGENT_OPERATIONS.md",
+    "claude": "CLAUDE.md",
+    "tasks": "TASKS.md",
+    "state": "STATE.json",
+    "constitution": "docs/00_constitution/CONSTITUTION.md",
+    "vision": "docs/01_vision/VISION.md",
+    "integrationContract": "docs/06_architecture/INTEGRATION_CONTRACT.md",
+    "projectInvariants": "docs/17_governance/PROJECT_INVARIANTS.md",
+    "validationDebt": "docs/orchestrator/VALIDATION_DEBT.md",
+    "bootstrapTask": "docs/11_tasks/TASK-001-bootstrap-service.md",
+    "bootstrapGoalImpact": "docs/22_goal_impact/GOAL-IMPACT-TASK-001.md",
+    "bootstrapExecutionPlan": "docs/21_execution_plans/EP-TASK-001-bootstrap-service.md",
+    "bootstrapValidation": "docs/12_validation/VAL-TASK-001-bootstrap-service.md"
+  },
+  "integrationReview": [
+    {
+      "capability": "auth",
+      "component": "auth-microservice",
+      "decision": "required",
+      "reason": "README.md and SYSTEM.md document AUTH_SERVICE_URL as required for user segments, preferences, and consent data.",
+      "contract": "Read registered-user identity, marketing preferences, preferred channel, and consents for segmentation",
+      "configuration": "AUTH_SERVICE_URL",
+      "failureMode": "Auth outage blocks auth-based segment resolution; campaigns targeting only leads/orders segments may still proceed.",
+      "validation": "Auth-backed segment resolution smoke checks."
+    },
+    {
+      "capability": "postgres",
+      "component": "database-server (db-server-postgres)",
+      "decision": "required",
+      "reason": "SYSTEM.md documents PostgreSQL via DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME for campaign and segment data.",
+      "contract": "Relational storage for campaigns, segments, and execution state",
+      "configuration": "DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME via database-server:5432",
+      "failureMode": "A database outage blocks all campaign/segment reads and writes.",
+      "validation": "Database connectivity and migration checks."
+    },
+    {
+      "capability": "redis",
+      "component": "database-server (db-server-redis)",
+      "decision": "not-applicable",
+      "reason": "No Redis environment variable or code reference was found in this repository's .env.example or src/."
+    },
+    {
+      "capability": "logging",
+      "component": "logging-microservice",
+      "decision": "required",
+      "reason": "README.md and SYSTEM.md document LOGGING_SERVICE_URL for centralized logging of campaign decisions and outcomes.",
+      "contract": "Structured log delivery with ISO timestamps and duration_ms for campaign creation, execution, skips, consent checks, and channel selection",
+      "configuration": "LOGGING_SERVICE_URL",
+      "failureMode": "Logging outage degrades audit trail and observability without blocking campaign execution.",
+      "validation": "Structured log delivery checks."
+    },
+    {
+      "capability": "notifications",
+      "component": "notifications-microservice",
+      "decision": "required",
+      "reason": "README.md/BUSINESS.md/SYSTEM.md document that all outbound delivery is delegated to notifications-microservice via NOTIFICATION_SERVICE_URL; marketing-microservice never sends directly.",
+      "contract": "Single sending layer for email, Telegram, WhatsApp via channel registry/channelKey",
+      "configuration": "NOTIFICATION_SERVICE_URL",
+      "failureMode": "Notifications outage blocks all campaign delivery; execution must fail closed rather than send directly.",
+      "validation": "Chunked notification-call contract tests (<=30 per batch)."
+    },
+    {
+      "capability": "ai",
+      "component": "ai-microservice",
+      "decision": "not-applicable",
+      "reason": "No AI-service integration is documented or referenced in this repository; BUSINESS.md's AI constraint governs human-in-the-loop approval of campaigns, not an AI-microservice API integration."
+    },
+    {
+      "capability": "payments",
+      "component": "payments-microservice",
+      "decision": "not-applicable",
+      "reason": "marketing-microservice does not process payments; it only orchestrates campaigns and segmentation."
+    },
+    {
+      "capability": "catalog",
+      "component": "catalog-microservice",
+      "decision": "not-applicable",
+      "reason": "No direct catalog-microservice integration is documented; product-related segmentation is described as order-based data via orders-microservice, not a direct catalog integration."
+    },
+    {
+      "capability": "orders",
+      "component": "orders-microservice",
+      "decision": "required",
+      "reason": "README.md/SYSTEM.md document optional ORDERS_SERVICE_URL for order-based segmentation, and src/orders-events-consumer.ts consumes Orders-domain events via RabbitMQ for segmentation.",
+      "contract": "Order-based segment resolution (e.g. 'bought product X', 'never purchased') and consumption of Orders-domain events",
+      "configuration": "ORDERS_SERVICE_URL (optional HTTP) and RABBITMQ_URL (event consumption)",
+      "failureMode": "When Orders integration is unavailable, order-based segments are unavailable but auth/lead-based segments still work.",
+      "validation": "orders-events-consumer.ts contract tests."
+    },
+    {
+      "capability": "warehouse",
+      "component": "warehouse-microservice",
+      "decision": "not-applicable",
+      "reason": "No warehouse/inventory integration exists in this repository."
+    },
+    {
+      "capability": "invoices",
+      "component": "invoices-microservice",
+      "decision": "not-applicable",
+      "reason": "No invoicing integration exists in this repository."
+    },
+    {
+      "capability": "object-storage",
+      "component": "minio-microservice",
+      "decision": "not-applicable",
+      "reason": "No object-storage usage was found in this repository's code or configuration."
+    },
+    {
+      "capability": "event-bus",
+      "component": "RabbitMQ",
+      "decision": "required",
+      "reason": "src/orders-events-consumer.ts consumes Orders-domain events over RabbitMQ, configured via RABBITMQ_URL in .env.example.",
+      "contract": "Consume Orders-domain events for order-based segmentation",
+      "configuration": "RABBITMQ_URL",
+      "failureMode": "When RabbitMQ is unavailable, order-based segment data goes stale but auth/lead-based segmentation and existing campaigns are unaffected.",
+      "validation": "orders-events-consumer.ts contract tests."
+    },
+    {
+      "capability": "docs-rag",
+      "component": "docs-rag-microservice",
+      "decision": "required",
+      "reason": "This service is a documentation-onboarded ecosystem repository and should be discoverable via docs-rag-microservice, consistent with other onboarded services (e.g. leads-microservice AGENTS.md).",
+      "contract": "Direct Git repository ingestion and repository-scoped retrieval",
+      "configuration": "Tracked in the canonical repository registry and docs-RAG index",
+      "failureMode": "When docs-RAG is unavailable, Git remains authoritative.",
+      "validation": "Repository documents resolve to the owning repository path and remain discoverable."
+    },
+    {
+      "capability": "monitoring",
+      "component": "monitoring-microservice",
+      "decision": "required",
+      "reason": "Runtime health and rollout readiness must be observable through the shared monitoring model, consistent with the documented GET /health endpoint and Kubernetes rollout restart procedure.",
+      "contract": "GET /health and Kubernetes readiness checks for rollout control",
+      "configuration": "Deployment probes and health endpoint in k8s manifests",
+      "failureMode": "An unhealthy service is prevented from passing rollout readiness and is reported to the owner.",
+      "validation": "The monitoring stack confirms health, readiness, and service availability."
+    },
+    {
+      "capability": "backups",
+      "component": "backups-microservice",
+      "decision": "required",
+      "reason": "This service's PostgreSQL database holds production campaign, segment, and execution state and requires backup coverage consistent with other ecosystem databases.",
+      "contract": "Scheduled/manual PostgreSQL backups for the marketing database",
+      "configuration": "backup-db.sh or equivalent invoked against the marketing database",
+      "failureMode": "Missed backups increase data-loss risk on failure; this must be flagged as an operational blocker if backup automation lapses.",
+      "validation": "Backup script execution and restore-drill evidence."
+    }
+  ]
+}

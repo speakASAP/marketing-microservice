@@ -1,50 +1,19 @@
 {
-  "v": 1,
+  "schemaVersion": 1,
   "project": "marketing-microservice",
-  "stage": "phase-7-goal-20-production-governance-enforced",
-  "health": "ok",
-  "cycle": 5,
-  "last_cycle_at": "2026-06-15T00:00:00Z",
-  "tasks_active": 0,
-  "tasks_failed_last_cycle": 0,
-  "open_task_ids": [],
-  "last_milestone": "tg-3.13-goal-20-production-governance-runtime-enforcement",
-  "next_focus": "Goal 20 runtime governance enforcement complete with conservative AI-approved defaults; monitor production deployment and future stricter external policy integration.",
+  "lifecycle": "active",
+  "health": "healthy",
+  "activeTask": "None active; monitoring Goal 20 production governance enforcement after deployment",
+  "lastUpdated": "2026-08-30",
+  "deployment": {
+    "status": "commit-triggered-auto-queue",
+    "image": null,
+    "revision": null
+  },
   "blockers": [],
-  "budget_units_used": 0,
-  "metrics": {
-    "custom": {
-      "phase_1_core_goals": "complete_through_goal_7",
-      "phase_2_roadmap": "docs/orchestrator/ROADMAP.md",
-      "next_goal": "Monitor Goal 20 production governance after deployment; future work is stricter external policy integration or admin evidence UX.",
-      "goal_8_contract_pack": "docs/agents/contracts/ecosystem-ownership-contract.md",
-      "goal_10_completed_chunks": "10.1,10.2,10.3,10.4,10.5",
-      "next_goal_chunk": "No active Goal 20 blocker remains.",
-      "goal_10_status": "complete",
-      "goal_11_completed_chunks": "11.1,11.2,11.3,11.4,11.5",
-      "goal_11_status": "complete",
-      "goal_12_completed_chunks": "12.1,12.2,12.3,12.4,12.5",
-      "goal_12_status": "complete",
-      "goal_13_completed_chunks": "13.1,13.2,13.3,13.4,13.5",
-      "goal_13_status": "complete",
-      "parallel_planning_standard": "enabled",
-      "parallel_startable_tracks": "No TG-3.13 implementation lanes remain. Future independent lanes: admin governance evidence UX, stricter external policy-service integration, and production monitoring.",
-      "goal_20_documentation_status": "complete_for_policy_contract_and_playbook",
-      "goal_20_completed_docs_chunks": "20.1,20.2,20.3,20.4,20.5,20.6",
-      "goal_20_enforcement_status": "complete: risk classification, approval evidence, source-failure, quiet-hour, readiness, rollback, high-risk, restricted, and emergency override gates are enforced before notification delegation.",
-      "goal_14_completed_chunks": "14.1,14.2,14.3,14.4,14.5",
-      "goal_14_status": "complete",
-      "goal_15_completed_chunks": "15.1,15.2,15.3,15.4,15.5",
-      "goal_15_status": "complete",
-      "goal_16_completed_chunks": "16.1,16.2,16.3,16.4,16.5",
-      "goal_16_status": "complete",
-      "goal_17_completed_chunks": "17.1,17.2,17.3,17.4,17.5",
-      "goal_17_status": "complete",
-      "goal_18_completed_chunks": "18.1,18.2,18.3,18.4,18.5",
-      "goal_18_status": "complete for Marketing-owned campaign analytics and externally supplied attribution facts; broader attribution ownership remains blocked by approved analytics/conversion owner contract",
-      "goal_19_completed_chunks": "19.1,19.2,19.3,19.4,19.5",
-      "goal_19_status": "complete; production CRM/account use remains disabled until source service URL and source-service auth are configured",
-      "goal_20_status": "complete_with_conservative_ai_approved_runtime_enforcement"
-    }
-  }
+  "followUps": [
+    "Broader campaign attribution ownership remains blocked pending an approved analytics/conversion owner contract",
+    "Production CRM/account use of the Goal 19 integration remains disabled until the source service URL and source-service auth are configured",
+    "IPS adoption profile completed 2026-08-30; run the planning validator before further scope changes"
+  ]
 }

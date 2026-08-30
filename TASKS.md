@@ -1,35 +1,27 @@
----
+# Tasks: Marketing Microservice
 
-# Tasks: marketing-microservice
+This file is the concise human-readable work queue. Detailed task contracts live under `docs/11_tasks/` and execution records remain linked there.
 
-## Backlog
-<!-- Human-managed -->
-None - TG-3.13 Goal 20 production governance enforcement is complete.
+## active
 
-## Active
-<!-- Coordinator-maintained -->
-None.
+- None active per STATE.json (tasks_active: 0).
 
-## Completed
-<!-- Coordinator-append-only -->
+## ready next
+
+- Monitor Goal 20 production governance after deployment; future independent lanes are admin governance evidence UX, stricter external policy-service integration, and production monitoring (STATE.json metrics).
+
+## blocked
+
+- Broader campaign attribution ownership remains blocked pending an approved analytics/conversion owner contract.
+- Production CRM/account use of the Goal 19 integration remains disabled until the source service URL and source-service auth are configured.
+
+## completed
+
 - 2026-06-21 tg-3.13-goal-20-production-governance-runtime-enforcement
-- 2026-06-13 tg-3.7-goal-14-landing-auth-entry-points
-- 2026-06-13 tg-3.8-goal-15-admin-auth-rbac-shell
-- 2026-06-13 tg-3.6-goal-13-lifecycle-journey-engine
-- 2026-06-13 tg-3.2-goal-9-tenant-app-registry-integration
-- 2026-04-05 documentation-standard-applied
-- 2026-05-05 sync-a-contracts-approved
-- 2026-05-05 tg-1.1-notifications-validator-approved
-- 2026-05-05 tg-1.2-auth-leads-validator-approved
-- 2026-05-05 tg-1.3-marketing-core-validator-approved
-- 2026-05-05 tg-1.4-integration-validator-approved
-- 2026-06-13 tg-2.x-api-token-runtime-wiring
-- 2026-06-13 tg-3.0-ecosystem-roadmap-created
-- 2026-06-13 tg-3.1-goal-8-ecosystem-ownership-contract-baseline
-- 2026-06-13 tg-3.3-goal-10-cross-service-recipient-consent-hardening
-- 2026-06-13 tg-3.4-goal-11-application-signal-segmentation-contracts
-- 2026-06-13 tg-3.5-goal-12-multi-application-campaign-catalog
-- 2026-06-14 tg-3.9-goal-16-campaign-segment-admin-console
-- 2026-06-14 tg-3.10-goal-17-runs-consent-channels-audit-views
-- 2026-06-14 tg-3.11-goal-18-analytics-attribution-dashboard
 - 2026-06-14 tg-3.12-goal-19-crm-account-service-integration
+- 2026-06-14 tg-3.11-goal-18-analytics-attribution-dashboard
+- 2026-06-13 tg-3.1..3.10 ecosystem ownership, consent hardening, segmentation, and admin console goals
+
+## handoff
+
+Current machine-readable state: [`STATE.json`](STATE.json). See `docs/orchestrator/ROADMAP.md` and `docs/agents/master-prompt.md` for the live goal cadence and the two open contract-gated follow-ups.
