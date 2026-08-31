@@ -2,13 +2,16 @@
 
 This file is the concise human-readable work queue. Detailed task contracts live under `docs/11_tasks/` and execution records remain linked there.
 
-## Active
+## active
+
 - None active per STATE.json (tasks_active: 0).
 
-## Ready Next
+## ready next
+
 - Monitor Goal 20 production governance after deployment; future independent lanes are admin governance evidence UX, stricter external policy-service integration, and production monitoring (STATE.json metrics).
 
-## Blocked
+## blocked
+
 - Broader campaign attribution ownership remains blocked pending an approved analytics/conversion owner contract.
 - Production CRM/account use of the Goal 19 integration remains disabled until the source service URL and source-service auth are configured.
 
