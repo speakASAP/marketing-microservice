@@ -7,6 +7,9 @@ This file is the concise human-readable work queue. Detailed task contracts live
 
 ## Ready Next
 - Monitor Goal 20 production governance after deployment; future independent lanes are admin governance evidence UX, stricter external policy-service integration, and production monitoring (STATE.json metrics).
+- Broader campaign attribution ownership remains blocked pending an approved analytics/conversion owner contract
+- Production CRM/account use of the Goal 19 integration remains disabled until the source service URL and source-service auth are configured
+- IPS adoption profile completed 2026-08-30; run the planning validator before further scope changes
 
 ## Blocked
 - Broader campaign attribution ownership remains blocked pending an approved analytics/conversion owner contract.

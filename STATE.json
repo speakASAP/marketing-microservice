@@ -1,21 +1,4 @@
 {
-  "schemaVersion": 1,
-  "project": "marketing-microservice",
-  "lifecycle": "active",
-  "health": "healthy",
-  "activeTask": "None active; monitoring Goal 20 production governance enforcement after deployment",
-  "lastUpdated": "2026-08-30",
-  "deployment": {
-    "status": "commit-triggered-auto-queue",
-    "image": null,
-    "revision": null
-  },
-  "blockers": [],
-  "followUps": [
-    "Broader campaign attribution ownership remains blocked pending an approved analytics/conversion owner contract",
-    "Production CRM/account use of the Goal 19 integration remains disabled until the source service URL and source-service auth are configured",
-    "IPS adoption profile completed 2026-08-30; run the planning validator before further scope changes"
-  ],
   "schema_version": "1.0",
   "repository": "marketing-microservice",
   "service": {
