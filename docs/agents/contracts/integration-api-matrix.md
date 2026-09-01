@@ -20,7 +20,7 @@
 | analytics/customer-insights service | Attribution, funnels, cohorts, LTV, cross-app read models | Consume analytics read models and emit campaign facts | Marketing campaign facts are not complete customer truth |
 | database-server | PostgreSQL storage | Persist campaigns, segments, runs, outcomes | Do not store secrets in application tables |
 | logging-microservice | Centralized logs | Send structured operational/audit logs | Do not log secrets or sensitive tokens |
-| nginx-microservice | Routing and ingress | Expose marketing API and frontend routes | Keep route ownership explicit |
+| Traefik ingress (automatic) | Routing and ingress | Expose marketing API and frontend routes through a correct Kubernetes `Ingress` manifest; no manual registration is required | Keep route ownership explicit |
 
 ## Contract Documents
 
