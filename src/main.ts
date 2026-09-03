@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { startCredentialSelfReporter } from "./credential-self-reporter";
 import fs from "node:fs";
 import path from "node:path";
 import express from "express";
@@ -1412,6 +1413,7 @@ export async function startServer(): Promise<void> {
   const port = Number(process.env.PORT || 4600);
   await initializeConfiguredStore();
   await startOrdersEventsConsumer();
+  startCredentialSelfReporter();
   app.listen(port, () => {
     console.log(JSON.stringify({ event: "service_started", timestamp: new Date().toISOString(), port }));
   });

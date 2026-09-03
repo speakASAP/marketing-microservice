@@ -11,7 +11,9 @@
     "check": "tsc --noEmit",
     "test": "tsx --test --test-concurrency=1 test/**/*.test.ts",
     "check:auth-static": "node scripts/check-hosted-auth-static.mjs",
-    "backfill:order-affinity": "tsx src/order-affinity-backfill.ts"
+    "backfill:order-affinity": "tsx src/order-affinity-backfill.ts",
+    "postbuild": "mkdir -p dist/vendor && cp src/vendor/credential-reporter.js dist/vendor/",
+    "verify:credential-self-report": "node scripts/verify-credential-self-report.js"
   },
   "dependencies": {
     "@types/amqplib": "^0.10.8",
