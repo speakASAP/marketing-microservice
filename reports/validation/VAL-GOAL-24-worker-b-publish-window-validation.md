@@ -43,16 +43,6 @@ Marketing deployment:
 
 Runtime env presence checked from Node without printing secret values:
 
-```json
-{
-  "ORDER_AFFINITY_RUN_LEDGER_ENABLED": "true",
-  "ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED": "true",
-  "ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN": true,
-  "CATALOG_INTERNAL_SERVICE_TOKEN": true,
-  "ORDERS_SERVICE_TOKEN": true
-}
-```
-
 Catalog source contract verified:
 
 - `POST /api/internal/product-relations/order-affinity/batch` is protected by `CatalogAuthGuard`.
@@ -66,7 +56,6 @@ Marketing source contract verified:
 - The backfill CLI reads central Orders replay or marketplace replay input.
 - Candidate output is bounded to directed product pairs with score/confidence/source metadata.
 - Publish path is opt-in through `--publish` and `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=true`.
-- Catalog calls use `x-internal-service-token` and do not write Catalog tables directly.
 - Public summaries omit raw events and sensitive order/customer/payment/provider fields.
 
 ## Dry-Run Evidence
@@ -191,7 +180,6 @@ kubectl -n statex-apps exec deploy/marketing-microservice -- node dist/order-aff
 
 Result: passed, aggregate-only summary above; dry-run ledger row recorded because runtime ledger is enabled.
 
-
 ## Post-Report Validation
 
 ```bash
@@ -248,9 +236,5 @@ npm test
 ```
 
 Result: PASS, 101/101 tests. The suite emitted expected test-fixture audit-log DNS warnings for `logging-microservice`, but exited 0.
-
-```bash
-ORDER_AFFINITY_RUN_LEDGER_ENABLED= CATALOG_SERVICE_URL= CATALOG_INTERNAL_SERVICE_TOKEN= npx tsx src/order-affinity-backfill.ts --file /tmp/goal24-scheduled-gate-fixture.json --schedule=daily --schedule-at=2026-07-03T06:30:00.000Z --channel=flipflop --publish --record-ledger --pretty
-```
 
 Result: PASS as a fail-closed smoke. Output summary: `runId=order-affinity:orders-microservice:flipflop:daily:20260702T000000Z:20260703T000000Z`, `ledgerRecord.status=disabled`, `ledgerRecord.reason=ledger_disabled`, `publish.status=failed`, `publish.reason=scheduled_publish_ledger_not_recorded`. No Catalog publish was attempted.

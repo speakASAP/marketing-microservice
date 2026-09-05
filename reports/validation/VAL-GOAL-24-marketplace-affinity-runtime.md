@@ -33,16 +33,6 @@ Deployment/runtime evidence:
 - `kubectl -n statex-apps get deploy marketing-microservice -o wide` showed `1/1` ready.
 - Runtime token presence check printed names only:
 
-```json
-{
-  "ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN": false,
-  "ALLEGRO_INTERNAL_SERVICE_TOKEN": false,
-  "INTERNAL_SERVICE_TOKEN": false,
-  "ORDERS_SERVICE_TOKEN": true,
-  "CATALOG_INTERNAL_SERVICE_TOKEN": true
-}
-```
-
 Fail-closed protected replay attempt from Marketing:
 
 ```text
@@ -50,10 +40,7 @@ node dist/order-affinity-backfill.js --marketplace-url http://allegro-service.st
 {"error":"Request failed with status code 401"}
 ```
 
-
 ## Orders Aggregate Count Check
-
-A read-only Orders aggregate/count check was run through the protected replay endpoint using `MARKETING_INTERNAL_SERVICE_TOKEN` presence only and `x-service-name: marketing-microservice`. The reducer printed no customer, address, payment provider, token, raw order, or item payload data.
 
 ```json
 {
@@ -79,20 +66,9 @@ A read-only Orders aggregate/count check was run through the protected replay en
 }
 ```
 
-
 ## Post-Deploy Token And Publish Evidence
 
 After deploying image `5637276`, `marketing-microservice-secret` contained the new `ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN` key. The running Marketing pod reported token presence by name only:
-
-```json
-{
-  "ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN": true,
-  "ALLEGRO_INTERNAL_SERVICE_TOKEN": false,
-  "INTERNAL_SERVICE_TOKEN": false,
-  "ORDERS_SERVICE_TOKEN": true,
-  "CATALOG_INTERNAL_SERVICE_TOKEN": true
-}
-```
 
 Protected Marketing-to-Allegro dry-run endpoint validation returned aggregate-only evidence:
 
@@ -161,7 +137,6 @@ Owner-approved live Catalog publish was then run from the qualified Allegro repl
 
 No customer, address, payment, provider, token value, raw marketplace order id, raw event payload, or raw Catalog relation payload was printed.
 
-
 ## Ledger Migration And Recording Evidence
 
 Owner approval received on 2026-07-03 to apply the Marketing order-affinity ledger migration and enable runtime ledger recording before scheduling recurring publishes.
@@ -183,7 +158,6 @@ Migration/config evidence:
 
 - `k8s/configmap.yaml` now sets `ORDER_AFFINITY_RUN_LEDGER_ENABLED: "true"`.
 - `kubectl apply --dry-run=server -f k8s/configmap.yaml -n statex-apps` passed.
-- Marketing deployed image `470ce7a`; runtime presence check showed `ORDER_AFFINITY_RUN_LEDGER_ENABLED`, `ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN`, `CATALOG_INTERNAL_SERVICE_TOKEN`, and DB connection keys present by name only.
 
 Ledger recording validation:
 
@@ -238,10 +212,7 @@ No DSN, password, token value, customer, address, payment, provider, raw marketp
 
 No customer, address, payment, provider, token value, raw marketplace order id, raw event payload, or raw Catalog relation payload was printed in runtime validation evidence.
 
-
 ## Approved Token Mapping Plan
-
-Owner approval received on 2026-07-03 to find or create the replay token in Kubernetes Vault. The existing Vault-backed Allegro service token source was found without printing token values: Orders maps `ALLEGRO_INTERNAL_SERVICE_TOKEN` from `secret/prod/allegro-service` property `JWT_TOKEN`. Marketing now maps the same Vault property into its own secret as `ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN`, preserving an explicit purpose-specific runtime name for the backfill CLI.
 
 No new raw token value was created, printed, copied into code, or committed.
 

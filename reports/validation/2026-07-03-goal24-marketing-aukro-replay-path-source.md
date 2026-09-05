@@ -19,7 +19,6 @@ State Update -> Aukro is now path-compatible in Marketing source; runtime redepl
 ## Validation Scope
 
 - Confirmed parser source allowlist already accepts `aukro-service` for `marketplace.order_affinity_candidate.v1`.
-- Confirmed source-specific token mapping already prefers `ORDER_AFFINITY_AUKRO_REPLAY_TOKEN`, then `AUKRO_INTERNAL_SERVICE_TOKEN`, then shared marketplace/internal fallbacks without printing token values.
 - Corrected Marketing Aukro replay path from the legacy prefixed form to `/internal/aukro/order-affinity/replay-candidates`.
 - Added a source-to-path regression test for Aukro, Bazos, and Allegro.
 

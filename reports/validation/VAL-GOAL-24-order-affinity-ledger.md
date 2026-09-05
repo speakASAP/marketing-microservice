@@ -53,7 +53,6 @@ Result: PASS, no whitespace errors.
 
 ## Remaining Blockers
 
-- `[MISSING: runtime Catalog internal service token secret mapping for Marketing-to-Catalog relation writes]`
 - `[MISSING: scheduled dry-run matrix across Allegro, Aukro, Bazos, FlipFlop, and central Orders]`
 - `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`
 

@@ -31,7 +31,6 @@ No deployed CRM/account service exists in the current remote repositories. Marke
 Generated runtime facts:
 
 - Base URL: `CRM_ACCOUNT_SERVICE_URL` with no source-code default.
-- Auth method: optional bearer token from `CRM_ACCOUNT_SERVICE_TOKEN`; if unset, no authorization header is sent.
 - Read endpoint path: `CRM_ACCOUNT_SIGNAL_PATH`, default `/marketing/account-signals`.
 - Pagination: cursor pagination with `limit` and `cursor`; Marketing requests `CRM_ACCOUNT_SIGNAL_LIMIT` or `100` and follows up to `CRM_ACCOUNT_SIGNAL_MAX_PAGES` or `1` page by default.
 - Rate-limit behavior: HTTP `429` and other source errors fail safely before notification delegation; Marketing does not retry inside campaign execution.

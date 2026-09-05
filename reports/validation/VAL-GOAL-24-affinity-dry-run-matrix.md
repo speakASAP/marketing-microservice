@@ -23,20 +23,6 @@ State Update -> central Orders, FlipFlop, and Allegro dry-run paths are usable; 
 
 Token values were not printed. After rollout to image `5637276`, Marketing reported:
 
-```json
-{
-  "ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN": true,
-  "ALLEGRO_INTERNAL_SERVICE_TOKEN": false,
-  "INTERNAL_SERVICE_TOKEN": false,
-  "ORDERS_SERVICE_TOKEN": true,
-  "ORDERS_INTERNAL_SERVICE_TOKEN": false,
-  "MARKETING_INTERNAL_SERVICE_TOKEN": false,
-  "CATALOG_INTERNAL_SERVICE_TOKEN": true,
-  "ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED": true,
-  "ORDER_AFFINITY_RUN_LEDGER_ENABLED": false
-}
-```
-
 ## Dry-Run Matrix
 
 Commands were run inside the Marketing pod with `node dist/order-affinity-backfill.js`, always with `--dry-run`, and output was reduced to aggregate counts before recording.

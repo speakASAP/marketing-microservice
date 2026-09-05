@@ -21,7 +21,6 @@ State Update -> Aukro replay endpoint is runtime-reachable by Marketing; current
 - Aukro deploy: `./scripts/deploy.sh` built and pushed `localhost:5000/aukro-service:c6f9e38`; initial rollout command timed out during image pull, later `kubectl rollout status deployment/aukro-service --timeout=300s` succeeded.
 - Aukro health: in-pod Node fetch to `http://127.0.0.1:3700/health` returned HTTP 200 with `service=aukro-service`.
 - Marketing source validation before runtime dry-run: focused order-affinity tests passed 26/26, `npm run build -- --pretty false` passed, `git diff --check` passed.
-- Marketing runtime token check printed booleans only: `ORDER_AFFINITY_AUKRO_REPLAY_TOKEN=true`, `ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN=true`, `CATALOG_INTERNAL_SERVICE_TOKEN=true`, `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=true`, `ORDER_AFFINITY_RUN_LEDGER_ENABLED=true`.
 - Protected endpoint probe from Marketing pod: `http://aukro-service:3700/aukro/internal/aukro/order-affinity/replay-candidates?limit=5` returned HTTP 200, `success=true`, `count=0`, `events=0`.
 - Marketing CLI dry-run: `node dist/order-affinity-backfill.js --marketplace-url http://aukro-service:3700 --source-owner aukro-service --channel aukro --limit 50 --dry-run --pretty` returned `status=dry_run_passed`, `inputRecords=0`, `acceptedCreatedEvents=0`, `aggregatePairs=0`, `ledgerRecord.status=recorded`, `idempotencyKeyCount=0`.
 

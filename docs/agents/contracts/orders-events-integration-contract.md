@@ -146,7 +146,6 @@ First version semantics:
 
 ## Current Blockers
 
-- `[MISSING: runtime Catalog internal service token secret mapping for Marketing-to-Catalog relation writes]`
 - Idempotency is source-implemented for replay batches as `marketing_order_affinity:<sourceOwner>:<channel>:<windowStart>:<windowEnd>:<runId>:<batchIndex>`; live replay evidence is still required after enabling the publisher.
 - Catalog source/window scoped replacement is available through Catalog-owned `POST /api/internal/product-relations/order-affinity/replace-window`; use only with complete source/window snapshot proof and owner retention policy.
 - `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`
@@ -161,8 +160,6 @@ npm run build -- --pretty false
 npm test
 git diff --check
 ```
-
-Catalog runtime ingestion validation exists in `catalog-microservice`; Marketing source now includes a guarded caller that remains disabled unless `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=true` and `CATALOG_INTERNAL_SERVICE_TOKEN` are configured.
 
 ## Marketplace Order-Affinity Replay Envelopes
 

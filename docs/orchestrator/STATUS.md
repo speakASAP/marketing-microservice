@@ -37,13 +37,9 @@
 
 2026-07-03: Approved Goal 24 Marketing-to-Allegro replay token mapping prepared. IPS chain: Vision -> marketplace purchase history can improve product relations without leaking sensitive data; Goal Impact -> Marketing can authenticate to Allegro protected replay after deploy; System -> Vault/ExternalSecret-backed service-token mapping; Feature -> `ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN`; Task -> map existing Allegro Vault token source into Marketing runtime; Execution Plan -> reuse `secret/prod/allegro-service` `JWT_TOKEN` without printing values; Coding Prompt -> no raw token in code/docs; Code -> `k8s/external-secret.yaml`; Validation -> pending deploy and aggregate-only dry-run; State Update -> blocker moves from missing mapping to pending runtime confirmation.
 
-2026-07-03: Goal 24 W3 Marketing order-affinity run ledger implemented source-only. IPS chain: Vision -> purchase-history signals improve Catalog relations without copying buyer/address/payment/provider payloads; Goal Impact -> replay batches now have dry-run-first ledger evidence and idempotency keys before runtime mutation; System -> Marketing owns affinity aggregation and run evidence while Catalog remains durable relation owner; Feature -> opt-in run ledger plus Catalog batch idempotency-key registry; Task -> add guarded ledger construction/persistence, migration, CLI output, tests, and validation report; Execution Plan -> source/test/docs only, no deploy/live DB mutation; Coding Prompt -> fail closed without explicit ledger enablement and keep ledger aggregate-safe; Code -> src/order-affinity-ledger.ts, src/order-affinity-backfill.ts, migrations/0013_order_affinity_run_ledger.sql, focused tests, contract docs; Validation -> targeted order-affinity tests, full npm test, build, diff check. Remaining blockers: [MISSING: runtime Catalog internal service token secret mapping for Marketing-to-Catalog relation writes], [MISSING: scheduled dry-run matrix across Allegro, Aukro, Bazos, FlipFlop, and central Orders], [MISSING: owner-approved runtime mutation window for first real batch/backfill].
-
 2026-07-03: Read-only Orders aggregate/count check for paid multi-product order-affinity candidates returned HTTP 200 with `count=2`, `filterLimit=200`, `paymentStatuses=[paid]`, statuses `[confirmed, processing, shipped, delivered]`, and channel summary `[flipflop]`; no customer, address, payment provider, token, raw order, or item payload data was printed.
 
 2026-07-03: Goal 24 Marketplace affinity runtime deployed and fail-closed validation completed. IPS chain: Vision -> marketplace purchase history can improve product relations without copying sensitive order data; Goal Impact -> Marketing parser/backfill support is live but protected Allegro replay remains gated; System -> Marketing parses/aggregates while Allegro owns replay source and Catalog owns persisted relation writes; Feature -> `marketplace.order_affinity_candidate.v1` and `--marketplace-url`; Task -> deploy and validate runtime readiness; Execution Plan -> passive deploy, token-name-only presence check, fail-closed dry-run; Coding Prompt -> do not invent service-token contracts; Code -> deployed image `6ad9d3f`; Validation -> deploy passed, token mapping absent, marketplace dry-run returned HTTP 401; State Update -> add token mapping before live replay.
-
-Blocker remains: `[MISSING: Marketing runtime token mapping for ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN or ALLEGRO_INTERNAL_SERVICE_TOKEN]`.
 
 2026-07-03: Goal 24 W2 Marketing marketplace affinity parser support implemented source-only. IPS chain: Vision -> marketplace purchase history can improve Catalog relations without copying buyer/address/payment/provider data; Goal Impact -> Allegro-owned replay envelopes can be dry-run aggregated without temporary Orders-compatible exports; System -> Marketing owns parser/aggregation and Catalog publishing stays guarded; Feature -> `marketplace.order_affinity_candidate.v1` normalization and `--marketplace-url` backfill input; Task -> accept bounded Allegro envelopes and preserve fail-closed sensitive-field checks; Execution Plan -> source/test/docs only, no publish/deploy/runtime mutation; Coding Prompt -> do not weaken `orders-microservice` source validation for canonical Orders events; Code -> `src/order-lifecycle-events.ts`, `src/order-affinity-backfill.ts`, focused tests, contract docs; Validation -> focused parser/backfill tests, build, diff check.
 
@@ -78,7 +74,6 @@ Boundary decision:
 
 Remaining blockers:
 
-- `[MISSING: runtime Catalog internal service token secret mapping for Marketing-to-Catalog relation writes]`.
 - `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`.
 
 # Marketing Orchestrator Status
@@ -140,7 +135,6 @@ Implementation evidence:
 - Auth recipient mapping reads auth-owned `email`, `phone`, `preferredChannel`, `fallbackChannels`, `marketingConsents`, and unsubscribe/transactional-only indicators.
 - Runtime auth source failures produce failed execution evidence with `auth_source_unavailable:*` and do not call notifications.
 - Existing in-memory auth contacts remain only as an explicit fallback when `AUTH_SERVICE_URL` is not configured, preserving current tests/local behavior while removing the configured runtime dependency on hardcoded auth contacts.
-- Added `AUTH_SERVICE_TOKEN` to `.env.example` as an optional key for auth bearer authentication.
 - Added tests for configured auth service recipient resolution and auth source failure without notification delivery.
 
 Validation:
@@ -182,7 +176,6 @@ Implementation evidence:
 - Lead recipient mapping reads lead-owned `contactMethods`, top-level contact fields, `preferredChannel`, `fallbackChannels`, `marketingConsent`, and unsubscribe indicators.
 - Runtime leads source failures produce failed execution evidence with `leads_source_unavailable:*` and do not call notifications when no leads can be resolved.
 - Existing in-memory lead contacts remain only as an explicit fallback when `LEADS_SERVICE_URL` is not configured, preserving current tests/local behavior while removing the configured runtime dependency on hardcoded lead contacts.
-- Added `LEADS_SERVICE_TOKEN`, `LEADS_SEGMENT_PATH`, and `LEADS_SEGMENT_LIMIT` to `.env.example` as optional leads resolver configuration keys.
 - Added tests for configured leads service recipient resolution and leads source failure without notification delivery.
 
 Validation:
@@ -229,7 +222,6 @@ Implementation evidence:
 - Order/catalog signals filter auth/leads recipients; they do not create contact records and do not bypass consent, unsubscribe, frequency-cap, or notification delegation checks.
 - Runtime orders failures produce failed execution evidence with `orders_source_unavailable:*` and do not call notifications.
 - Runtime catalog failures produce failed execution evidence with `catalog_source_unavailable:*` and do not call notifications.
-- Added optional order/catalog resolver keys to `.env.example`: `ORDERS_SERVICE_TOKEN`, `ORDER_SIGNAL_PATH`, `ORDER_SIGNAL_LIMIT`, `CATALOG_SERVICE_URL`, `CATALOG_SERVICE_TOKEN`, `CATALOG_PRODUCTS_PATH`, and `CATALOG_PRODUCT_LIMIT`.
 - Added tests for configured order/catalog signal filtering, orders API failure without notification delivery, and catalog API failure without notification delivery.
 
 Validation:
@@ -375,7 +367,6 @@ Completed chunk:
 Next unfinished step:
 
 - Goal 2 acceptance review: confirm all Goal 2 chunks satisfy runtime external-source integration criteria before moving to Goal 3.
-
 
 ## 2026-06-13 - Goal 2 Acceptance Review
 
@@ -666,12 +657,10 @@ Implementation evidence:
 
 - Reworked `src/logger.ts` into a centralized audit logger that emits structured JSON with ISO timestamp, service name, and `duration_ms` on every `logDecision` event.
 - Added sanitization for sensitive keys including tokens, authorization, credentials, secrets, message bodies, and recipient addresses before stdout emission or logging-service forwarding.
-- Added optional forwarding to `LOGGING_SERVICE_URL` using `LOGGING_SERVICE_PATH` or default `/logs`, with optional `LOGGING_SERVICE_TOKEN` bearer auth.
 - Added test-only audit sink for deterministic logger validation without relying on a live logging service.
 - Added API audit events for segment create/update/delete and campaign create/update/approval/delete/manual execution/dry-run/scheduler invocation.
 - Added cross-service notification correlation IDs through the `x-correlation-id` header.
 - Added `correlationId` to delivery outcomes and persisted it in `marketing_delivery_outcomes.correlation_id` through `migrations/0004_audit_logging_compliance.sql`.
-- Updated `.env.example` with `LOGGING_SERVICE_TOKEN` and `LOGGING_SERVICE_PATH` keys.
 - Updated the marketing campaign contract with the audit logging contract.
 - Added tests for audit sanitization, logging-service forwarding, and notification correlation headers.
 
@@ -792,7 +781,6 @@ Preserved intent and ownership boundary:
 Implementation evidence:
 
 - Updated `k8s/external-secret.yaml` so the Kubernetes secret exposes `MARKETING_API_TOKEN` from the existing Vault `JWT_TOKEN` property.
-- Updated `k8s/secret.yaml.example` to include `MARKETING_API_TOKEN`, `NOTIFICATION_SERVICE_TOKEN`, and `JWT_TOKEN` placeholders for local/manual secret creation.
 - Updated `README.md` configuration guidance to document that protected write/execution APIs require `MARKETING_API_TOKEN` or `SERVICE_API_TOKEN`, with Kubernetes mapping `MARKETING_API_TOKEN` from the service secret.
 - Updated `TASKS.md` to close the selected TG-2.x hardening item.
 
@@ -914,7 +902,6 @@ Next unfinished step:
 
 - Goal 9 - Tenant/App Registry Integration.
 
-
 ## 2026-06-13 - Goal 9 Tenant/App Registry Integration
 
 Current focus: Goal 9 - Tenant/App Registry Integration.
@@ -958,7 +945,6 @@ Next unfinished step:
 
 - Goal 10 - Cross-Service Recipient And Consent Contract Hardening.
 
-
 ## 2026-06-13 - Goal 10.1 Auth Recipient Contract Hardening
 
 Current focus: Goal 10 - Cross-Service Recipient And Consent Contract Hardening, chunk 10.1.
@@ -1000,7 +986,6 @@ Completed chunk:
 Next unfinished step:
 
 - Goal 10.2 - Define leads recipient contract by tenant/app/purpose/channel.
-
 
 ## 2026-06-13 - Goal 10.2 Leads Recipient Contract Hardening
 
@@ -1178,7 +1163,6 @@ Completed goal:
 Next unfinished step:
 
 - Goal 11.1 - Define common application signal envelope.
-
 
 ## 2026-06-13 - Goal 11.1 Common Application Signal Envelope
 
@@ -1586,7 +1570,6 @@ Next unfinished step:
 
 - Goal 12.5 - Add migration and tests.
 
-
 ## 2026-06-13 - Goal 12.5 Migration And Tests
 
 Current focus: Goal 12 - Multi-Application Campaign Catalog.
@@ -1628,7 +1611,6 @@ Completed goal:
 Next unfinished step:
 
 - Goal 13 - Lifecycle Journey Engine.
-
 
 ## 2026-06-13 - Goal 13.1 Journey Definitions
 
@@ -1677,7 +1659,6 @@ Completed chunk:
 Next unfinished step:
 
 - Goal 13.2 - Add approval gate for journey activation.
-
 
 ## 2026-06-13 - Goal 13.2 Journey Activation Approval Gate
 
@@ -1768,7 +1749,6 @@ Next unfinished step:
 
 - Goal 13.3 - Add scheduler/idempotency integration for journey steps.
 
-
 ## 2026-06-13 - Goal 13.3 Journey Step Scheduler And Idempotency
 
 Current focus: Goal 13 - Lifecycle Journey Engine.
@@ -1812,7 +1792,6 @@ Next unfinished step:
 
 - Goal 13.4 - Add dry-run preview for journey enrollment and next actions.
 
-
 ## 2026-06-13 - Goal 13.4 Journey Dry-Run Preview
 
 Current focus: Goal 13 - Lifecycle Journey Engine.
@@ -1852,7 +1831,6 @@ Completed chunk:
 Next unfinished step:
 
 - Goal 13.5 - Add audit evidence for step decisions.
-
 
 ## 2026-06-13 - Goal 13.3 Delegated Track A Verification
 
@@ -1986,7 +1964,6 @@ Next unfinished step:
 
 - Owner confirmation required for missing production policy decisions before enforcement code or production deployment.
 
-
 ## 2026-06-13 - Goal 14.1-14.2 Public Landing And Static Pipeline
 
 Current focus: Goal 14 - Landing Page And Auth Entry Points, Track B partial implementation.
@@ -2008,7 +1985,6 @@ Implementation evidence:
 - Added Express static serving for /assets plus anonymous GET / and GET /landing routes in src/main.ts.
 - Register and Log in are intentionally disabled placeholder buttons because final auth login/register URLs and return URL format remain blocked pending auth-microservice contract confirmation.
 - Admin navigation is intentionally not linked because the Goal 15 protected admin shell route is not defined yet.
-- Added API smoke coverage proving the public landing and CSS are anonymous static content and do not expose MARKETING_API_TOKEN, SERVICE_API_TOKEN, x-service-token, campaign execution paths, or scheduler execution paths.
 
 Validation:
 
@@ -2224,7 +2200,6 @@ Blocked next chunks:
 
 - Goal 18 protected analytics dashboard UI remains blocked by `[MISSING: conclusive Goal 15 completion/reconciliation]` and `[MISSING: stable shared Goal 16/17 admin navigation integration]`.
 - Goal 18 runtime analytics-service integration remains blocked by `[MISSING: approved analytics-service ingestion/read endpoint contract]`, `[MISSING: analytics-service auth method]`, and `[MISSING: delivery/conversion/value sample fact responses]`.
-
 
 ## 2026-06-13 - Goal 13.5 Journey Step Decision Audit Evidence
 
@@ -2538,7 +2513,6 @@ Preserved intent and ownership boundary:
 Implementation evidence:
 
 - Added `crm_accounts` as a supported read-only segment source in `src/types.ts` and `src/api-contracts.ts`.
-- Added CRM/account source env keys to `.env.example`: `CRM_ACCOUNT_SERVICE_URL`, `CRM_ACCOUNT_SERVICE_TOKEN`, `CRM_ACCOUNT_SIGNAL_PATH`, `CRM_ACCOUNT_SIGNAL_LIMIT`, `CRM_ACCOUNT_SIGNAL_MAX_PAGES`, and `CRM_ACCOUNT_SIGNAL_TIMEOUT_MS`.
 - Added a read-only CRM/account signal client in `src/sources.ts` using `GET {CRM_ACCOUNT_SERVICE_URL}{CRM_ACCOUNT_SIGNAL_PATH:-/marketing/account-signals}`.
 - The client sends tenant/app/brand scope plus account, company, owner, opportunity, lifecycle, health, onboarding, renewal, and source-updated predicates derived from segment rules.
 - The client validates `marketing.crm_account_signal.v1` and `marketing.crm_opportunity_signal.v1` envelopes, tenant/app scope, required source IDs, and ISO `sourceUpdatedAt` before using a signal.
@@ -2710,7 +2684,6 @@ Intent Compliance Report:
 - Browser-facing routes do not expose service tokens.
 - No deployment and no real campaign or journey execution were performed.
 
-
 ## 2026-06-13 - Goal 14/15 Reconciliation And Admin Shell Completion Review
 
 Current focus: Goal 14 public landing/auth entry and Goal 15 admin auth/RBAC shell reconciliation.
@@ -2806,7 +2779,6 @@ Intent Compliance Report:
 - Dry-run uses the existing campaign executor with `dryRun: true`; it does not call notifications or record sent history.
 - Real delivery remains behind existing backend approval, consent, unsubscribe, frequency-cap, throttling, max-send, max-30 chunking, idempotency, registry validation, and notification delegation gates.
 - No journey scheduler/runtime files, notification provider implementation, auth/leads source-of-truth models, CRM runtime client files, analytics dashboard files, or direct execution bypasses were changed by this Goal 16 session.
-
 
 ## 2026-06-14 - Marketing Gating Optimization Review
 
@@ -3234,7 +3206,6 @@ Preflight and source verification:
 - Verified Orders created routing key: `orders.order.created.v1`.
 - Verified Orders status-change routing key: `orders.order.updated.v1`.
 - Requested `orders.order.status_changed.v1` was not found in Orders docs/source: `[MISSING: Orders producer routing key orders.order.status_changed.v1; current source publishes orders.order.updated.v1 for status changes]`.
-- Marketing runtime config key scan printed names only: `.env.example` has `ORDERS_SERVICE_URL`, `ORDERS_SERVICE_TOKEN`, `ORDER_SIGNAL_PATH`, and `ORDER_SIGNAL_LIMIT`; `.env` has `ORDERS_SERVICE_URL`; `k8s/configmap.yaml` has no Orders/broker event keys.
 - No Marketing RabbitMQ/AMQP/Kafka/NATS consumer infrastructure or dependency was found in the current source/package surface.
 
 Implementation evidence:
@@ -3371,7 +3342,6 @@ Intent Preservation Chain:
 Runtime evidence:
 
 - Existing namespace ExternalSecret evidence showed `RABBITMQ_URL` mapped from Vault path `secret/prod/runlayer` property `RABBITMQ_URL` through `runlayer-secret`; value was not printed.
-- Existing `marketing-microservice-secret` exposed only key names `DB_PASSWORD`, `JWT_TOKEN`, `MARKETING_API_TOKEN`, and `NOTIFICATION_SERVICE_TOKEN` before this change; no values were printed.
 - `k8s/external-secret.yaml` now maps Marketing secret key `RABBITMQ_URL` from `secret/prod/runlayer` property `RABBITMQ_URL`.
 - `k8s/configmap.yaml` now sets `ORDERS_EVENTS_CONSUMER_ENABLED="true"` and carries non-secret queue/exchange/dead-letter defaults.
 
@@ -3480,7 +3450,6 @@ Remaining blocker:
 
 - `[MISSING: Orders event payload runId/correlationId or approved attribution join contract for run-level attribution]`.
 
-
 ## 2026-07-02 - Order Affinity Catalog Publisher Source
 
 Current focus: Connect Marketing's bounded Orders co-purchase candidates to Catalog's protected relation batch endpoint without enabling live writes by default.
@@ -3492,8 +3461,6 @@ Intent Preservation Chain:
 - System: Orders owns order events, Marketing derives bounded co-purchase signals, Catalog owns product relation persistence and validation, marketplaces read Catalog relations.
 - Feature: Guarded Marketing-to-Catalog order affinity publisher.
 - Task: Add publisher env contract, service-auth POST payload, consumer integration, disabled-by-default Kubernetes config, and unit coverage for disabled/missing-config/published paths.
-- Execution Plan: Marketing repo only; do not mutate Catalog data; do not print secret values; keep `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=false` in runtime config; require `CATALOG_INTERNAL_SERVICE_TOKEN` before enabling live writes.
-- Coding Prompt: Build directed order-affinity candidates from accepted `orders.order.created.v1` signals, POST bounded batches to `/api/internal/product-relations/order-affinity/batch` with `x-internal-service-token`, and skip safely when disabled or missing config.
 - Code: `src/order-affinity-catalog-publisher.ts`, `src/orders-events-consumer.ts`, `test/order-lifecycle-events.test.ts`, `.env.example`, `k8s/configmap.yaml`, `docs/agents/contracts/orders-events-integration-contract.md`, and this status entry.
 - Validation: `npm test` passed with 87 tests; `npm run build` passed; `git diff --check` passed.
 
@@ -3501,16 +3468,13 @@ Runtime contract:
 
 - Default publish switch: `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=false`.
 - Catalog URL key: `CATALOG_SERVICE_URL`.
-- Secret token key: `CATALOG_INTERNAL_SERVICE_TOKEN`; value must come from secret management and must not be logged.
 - Batch endpoint key: `CATALOG_ORDER_AFFINITY_BATCH_ENDPOINT`, default `/api/internal/product-relations/order-affinity/batch`.
 - Timeout and batch sizing keys: `CATALOG_ORDER_AFFINITY_TIMEOUT_MS`, `CATALOG_ORDER_AFFINITY_BATCH_SIZE`.
 - Idempotency key: `marketing_order_affinity:<ordersEventId>:<batchIndex>`.
 
 Remaining blockers:
 
-- `[MISSING: runtime Catalog internal service token secret mapping for Marketing-to-Catalog relation writes]`.
 - `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`.
-
 
 ## 2026-07-02 - Order Affinity Catalog Publisher Deploy Evidence
 
@@ -3538,9 +3502,7 @@ Deployment evidence:
 
 Remaining blockers:
 
-- `[MISSING: runtime Catalog internal service token secret mapping for Marketing-to-Catalog relation writes]`.
 - `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`.
-
 
 ## 2026-07-02 - Marketing Catalog Internal Token Secret Mapping
 
@@ -3550,13 +3512,10 @@ Intent Preservation Chain:
 
 - Vision: Purchase-derived related products can be enabled through controlled service-to-service writes while keeping Catalog as relation owner.
 - Goal Impact: Marketing can receive the same internal Catalog service token key name used by Catalog's protected internal API guard, but the writer remains disabled until the explicit publish switch and mutation window are approved.
-- System: Auth/Vault owns the shared internal token material, Kubernetes ExternalSecret maps it by key name only, Marketing consumes it only when `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=true`, and Catalog validates it.
 - Feature: Runtime secret readiness for guarded order-affinity publisher.
-- Task: Map `CATALOG_INTERNAL_SERVICE_TOKEN` into `marketing-microservice-secret` from the existing Vault property used by Catalog, with no secret value printed and no writer enablement.
 - Execution Plan: Inspect secret key names only, update `k8s/external-secret.yaml`, keep ConfigMap publish switch false, validate source, deploy manifest, and verify the key name exists in Kubernetes without exposing the value.
 - Coding Prompt: Do not enable live relation writes; only make the protected token available for a later controlled rollout.
 - Code: `k8s/external-secret.yaml` and this status entry.
-- Validation: `npm run build` passed; `git diff --check` passed; server-side dry-run for `k8s/external-secret.yaml` passed; deploy completed; ExternalSecret reported `Ready=True:SecretSynced`; `marketing-microservice-secret` contains key name `CATALOG_INTERNAL_SERVICE_TOKEN`; pod env contains key name `CATALOG_INTERNAL_SERVICE_TOKEN`; health returned `200` with `status=ok`; publisher switch remains `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=false`.
 
 Deployment evidence:
 
@@ -3570,7 +3529,6 @@ Remaining blockers:
 
 - `[MISSING: owner-approved runtime mutation window for first real batch/backfill]`.
 - `[MISSING: live publisher enablement evidence with ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=true]`.
-
 
 ## 2026-07-02 - Order Affinity Publisher Controlled Write Window
 
@@ -3609,7 +3567,6 @@ Rollback:
 
 - Set `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=false` and redeploy Marketing if ongoing live publishing needs to be paused.
 
-
 ## 2026-07-03 - BPCP Holiday Discount Marketing Content Refs
 
 Current focus: Add the Marketing-owned Holiday Discount campaign/content refs lane without delivery, pricing, cart, checkout, deployment, or production data changes.
@@ -3632,7 +3589,6 @@ Remaining blockers:
 - `[MISSING: notification template provider contract for Holiday Discount template refs]`.
 - `[MISSING: localized copy approval and template asset source of truth]`.
 
-
 ## 2026-07-03 - Order Affinity Historical Backfill CLI
 
 Current focus: Marketing-owned historical order-affinity aggregation from the Orders replay export.
@@ -3651,9 +3607,7 @@ Intent Preservation Chain:
 
 Deployment and runtime evidence:
 
-- Commits pushed: `e04d155` added the backfill CLI; `d293415` switched Orders fetches to internal-service auth and mapped `ORDERS_SERVICE_TOKEN`.
 - Current deployed image: `localhost:5000/marketing-microservice:d293415`.
-- ExternalSecret `marketing-microservice-secret` is `Ready=True`; pod environment includes `ORDERS_SERVICE_TOKEN` and `CATALOG_INTERNAL_SERVICE_TOKEN` key names only.
 - Initial live command succeeded: `node dist/order-affinity-backfill.js --orders-url http://orders-microservice.statex-apps.svc.cluster.local:3203 --limit=50 --dry-run --pretty`; at that time Orders replay returned `inputRecords=0`, `acceptedCreatedEvents=0`, `aggregatePairs=0`, `candidates=[]`.
 - After the owner-approved FlipFlop paid multi-item checkout smoke reached central Orders payment status `paid`, `kubectl -n statex-apps exec deploy/marketing-microservice -- node dist/order-affinity-backfill.js --orders-url http://orders-microservice.statex-apps.svc.cluster.local:3203 --channel=flipflop --limit=20 --dry-run --pretty` returned `inputRecords=2`, `acceptedCreatedEvents=2`, `rejectedRecords=0`, `aggregatePairs=2`, `totalPairEvidence=4`, and two directed candidates for Catalog products `ce4a51aa-2d12-4ab7-a965-7a36609d01fc` and `dbc51dde-fc66-4511-b178-f929183f4647` with `score=2`, `confidence=0.65`, `source=marketing_order_affinity`.
 - No Catalog publish was attempted in the FlipFlop smoke dry-run.
@@ -3661,7 +3615,6 @@ Deployment and runtime evidence:
 Remaining blockers:
 
 - `[MISSING: owner-reviewed publish window before running a future non-empty `--publish` central Orders backfill]`.
-
 
 ## 2026-07-03 - Central Orders FlipFlop Order Affinity Publish Window
 
@@ -3694,7 +3647,6 @@ Remaining blockers:
 
 - `[MISSING: scheduled/idempotent central Orders backfill policy for future runs beyond this owner-reviewed window]`.
 
-
 ## 2026-07-03 - Allegro Historical Order Affinity Backfill
 
 Current focus: Execute a bounded operational backfill from Allegro paid multi-product orders into Catalog product relations.
@@ -3726,8 +3678,6 @@ Remaining blockers:
 - `[MISSING: scheduled/idempotent marketplace-wide backfill orchestration across Allegro, Aukro, Bazos, FlipFlop, and central Orders]`.
 
 Goal 24 reconciliation after owner approval: treated approval as source-lane reconciliation only, not as approval for a new live Catalog publish. Scheduled backfill policy now derives closed UTC windows, requires explicit channel, uses publisher-compatible idempotency keys, and blocks scheduled publishes unless a planned ledger record succeeds before the Catalog call. Validation passed: `git diff --check`; focused order-affinity tests 25/25; `npm run build`; full `npm test` 101/101. Synthetic scheduled publish-gate smoke with ledger disabled returned `publish.status=failed` and `publish.reason=scheduled_publish_ledger_not_recorded`, with no Catalog publish attempted. Remaining blockers: [MISSING: owner-approved activation policy for recurring CronJob deployment], [MISSING: owner-approved source/window for any future live publish beyond already-recorded 2026-07-03 windows].
-
-2026-07-03: Goal 24 branch rollout approved and deployed. IPS chain: Vision -> order-affinity replay can improve Catalog relations while preserving Marketing/Catalog/Orders ownership boundaries; Goal Impact -> validated scheduled ledger guard and affinity scheduling commits are now live in Marketing runtime; System -> Marketing owns aggregation/scheduling/run evidence, Catalog owns relation persistence, Orders/marketplaces own replay sources; Feature -> scheduled affinity backfill guard rollout; Task -> deploy `main` containing `11e7a99` and later schedule commits through `6816a35`; Execution Plan -> validate clean `main`, run focused tests/build/diff check, deploy with `./scripts/deploy.sh 6816a35`, then verify rollout and health without printing secrets; Coding Prompt -> do not run live publish as part of deployment validation; Code -> deployed image `localhost:5000/marketing-microservice:6816a35` (deployment field uses `latest` after script image set); Validation -> `git diff --check` passed, focused order-affinity tests 25/25 passed, `npm run build` passed, deploy completed in 71.56s, rollout succeeded, pod `marketing-microservice-7544f448fd-mnbb7` ready 1/1 with zero restarts, in-pod health returned HTTP 200 `{status: ok, service: marketing-microservice}`, runtime booleans confirmed `ORDER_AFFINITY_RUN_LEDGER_ENABLED=true`, `ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED=true`, `ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN=true`, `CATALOG_INTERNAL_SERVICE_TOKEN=true`, and `ORDERS_SERVICE_TOKEN=true` without printing token values. Boundary decision: no `--publish`, direct Catalog mutation, DB migration, raw replay payload logging, secret output, or marketplace action was run during rollout validation. Remaining blockers: [MISSING: owner-approved source/window for any future live publish beyond already-recorded 2026-07-03 windows].
 
 2026-07-03: Goal 24 Aukro/Bazos marketplace replay support prepared for rollout. IPS chain: Vision -> marketplace purchase history can improve Catalog relations without leaking buyer/address/payment/provider data; Goal Impact -> Marketing can authenticate and parse additional marketplace-owned affinity replay producers beyond Allegro; System -> Aukro/Bazos own local replay sources, Marketing owns parser/aggregation/scheduling, Catalog owns relation persistence; Feature -> marketplace replay source expansion; Task -> add Aukro/Bazos source acceptance, source-specific replay paths/token selection, external-secret key mappings, tests, and contract docs; Execution Plan -> source/config/docs only, validate locally, deploy only after owner approval, keep runtime validation read-only/dry-run; Coding Prompt -> do not run live `--publish` for Aukro/Bazos without explicit source/window approval; Code -> `src/order-affinity-backfill.ts`, `src/order-lifecycle-events.ts`, `test/order-affinity-backfill.test.ts`, `test/order-lifecycle-events.test.ts`, `k8s/external-secret.yaml`, and `docs/agents/contracts/orders-events-integration-contract.md`; Validation -> `git diff --check` passed, focused order-affinity tests passed 26/26, `npm run build` passed, full `npm test` passed 102/102. Boundary decision: no live publish, direct Catalog mutation, DB migration, raw replay payload logging, or secret output was run in source validation.
 
