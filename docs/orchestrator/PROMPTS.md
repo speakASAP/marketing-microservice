@@ -84,7 +84,7 @@ Implement the next unfinished chunk of "Goal 14 - Landing Page And Auth Entry Po
 
 ## Goal 15 Prompt
 
-Implement the next unfinished chunk of "Goal 15 - Admin Auth And RBAC Shell." Add browser admin access through auth-microservice session verification and server-side RBAC. The frontend must never receive `MARKETING_API_TOKEN` or `SERVICE_API_TOKEN`.
+Implement the next unfinished chunk of "Goal 15 - Admin Auth And RBAC Shell." Add browser admin access through auth-microservice session verification and server-side RBAC. The frontend must never receive machine credentials.
 
 ## Goal 16 Prompt
 

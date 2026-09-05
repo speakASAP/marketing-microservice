@@ -28,7 +28,7 @@ marketing-microservice is an active production service (STATE.json: phase-7-goal
 - Campaign execution endpoint (scheduled or on-demand, batched, <=30 items per request)
 - Unsubscribe and preference endpoints
 - `GET /health`
-- Protected write/execution APIs require `MARKETING_API_TOKEN` or `SERVICE_API_TOKEN`
+- Machine callers of protected APIs must follow the [Service Identity Consumer Standard](https://github.com/speakASAP/auth-microservice/blob/main/docs/SERVICE_IDENTITY_CONSUMER_STANDARD.md).
 - Domain: https://marketing.alfares.cz, Port: 4600/4601 (blue/green)
 
 ## development
@@ -40,7 +40,7 @@ marketing-microservice is an active production service (STATE.json: phase-7-goal
 ## configuration
 
 - All configuration via `.env`; do not hardcode values; see `.env.example` for required keys
-- Protected APIs require MARKETING_API_TOKEN or SERVICE_API_TOKEN, mapped from the service secret in Kubernetes
+- Machine authentication is defined only by the [Service Identity Consumer Standard](https://github.com/speakASAP/auth-microservice/blob/main/docs/SERVICE_IDENTITY_CONSUMER_STANDARD.md).
 - HMAC secret for marketing unsubscribe links stored in Vault at secret/prod/marketing-microservice
 - Before any `.env` change, create a backup and add new variable names (keys only) to `.env.example`
 

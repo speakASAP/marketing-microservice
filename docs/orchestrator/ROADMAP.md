@@ -67,7 +67,7 @@ Required actions: Register, Login, and Admin. Register/login must delegate to au
 
 Admin access must be available only to authenticated users with roles granted by `auth-microservice`. Recommended roles are `marketing_viewer`, `marketing_operator`, `marketing_admin`, and future `marketing_owner`.
 
-The browser must never receive `MARKETING_API_TOKEN` or `SERVICE_API_TOKEN`. Admin APIs should verify auth sessions server-side and call Marketing functions through RBAC-aware handlers.
+The browser must never receive machine credentials. Admin APIs should verify auth sessions server-side and call Marketing functions through RBAC-aware handlers.
 
 Core admin views: overview, campaigns, segments, runs, journeys, applications, channels, consent, audit, analytics, and settings. These views expose Marketing-owned state, read-only external ownership metadata, and safe actions such as dry-run and approval. They must not expose provider credentials, message secrets, service tokens, or direct provider delivery controls.
 

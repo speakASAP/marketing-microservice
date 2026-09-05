@@ -46,8 +46,7 @@ marketing-microservice owns campaigns, segments, execution state, and delivery o
 
 ## authentication and authorization
 
-- Protected write and execution APIs require MARKETING_API_TOKEN or SERVICE_API_TOKEN.
-- Kubernetes maps MARKETING_API_TOKEN from the service secret.
+- Every machine caller and protected machine route follows the sole [Service Identity Consumer Standard](https://github.com/speakASAP/auth-microservice/blob/main/docs/SERVICE_IDENTITY_CONSUMER_STANDARD.md). This contract does not define a separate token format, credential, header, or role model.
 
 ## synchronous dependencies
 
