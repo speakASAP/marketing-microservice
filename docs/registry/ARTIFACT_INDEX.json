@@ -1,8 +1,56 @@
 {
   "schema_version": "1.0",
   "repository": "marketing-microservice",
-  "generated_at": "2026-08-31T18:25:00Z",
-  "artifacts": [],
+  "generated_at": "2026-09-05T18:09:33Z",
+  "artifacts": [
+    {
+      "id": "GOAL-MKT-018",
+      "type": "goal",
+      "status": "blocked",
+      "title": "Goal 18 follow-up: broader campaign attribution ownership",
+      "path": "TASKS.md",
+      "parent_ids": [],
+      "updated_at": "2026-09-05T18:09:33Z"
+    },
+    {
+      "id": "GOAL-MKT-019",
+      "type": "goal",
+      "status": "blocked",
+      "title": "Goal 19 follow-up: production CRM/account integration runtime enablement",
+      "path": "TASKS.md",
+      "parent_ids": [],
+      "updated_at": "2026-09-05T18:09:33Z"
+    },
+    {
+      "id": "GOAL-MKT-020",
+      "type": "goal",
+      "status": "done",
+      "title": "Goal 20: production governance runtime enforcement",
+      "path": "TASKS.md",
+      "parent_ids": [],
+      "updated_at": "2026-06-21T00:00:00Z"
+    },
+    {
+      "id": "TASK-MKT-001",
+      "type": "task",
+      "status": "done",
+      "title": "TASK-001-bootstrap-service \u2014 IPS adoption bootstrap",
+      "path": "TASKS.md",
+      "parent_ids": [],
+      "updated_at": "2026-08-30T00:00:00Z"
+    },
+    {
+      "id": "TASK-MKT-020-MONITOR",
+      "type": "task",
+      "status": "ready",
+      "title": "Monitor Goal 20 production governance after deployment",
+      "path": "TASKS.md",
+      "parent_ids": [
+        "GOAL-MKT-020"
+      ],
+      "updated_at": "2026-09-05T18:09:33Z"
+    }
+  ],
   "warnings": [
     "MISSING_RUNLAYER_PROJECT_MAPPING: RunLayer mapping is not yet verified for marketing-microservice."
   ]
