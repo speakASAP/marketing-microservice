@@ -182,7 +182,7 @@ Approval is recorded through `POST /campaigns/:id/approve`. Direct campaign upda
 
 ## API Authorization And Validation Contract
 
-Every protected machine route and caller must follow the sole [Service Identity Consumer Standard](https://github.com/speakASAP/auth-microservice/blob/main/docs/SERVICE_IDENTITY_CONSUMER_STANDARD.md). This contract defines no separate machine credential, authorization header, minting procedure, or role model. Public health/list endpoints and public preference/unsubscribe contract endpoints remain public only where their route contract explicitly says so.
+Every protected machine route and caller must follow the sole [Service Identity Consumer Standard](../../../../auth-microservice/docs/SERVICE_IDENTITY_CONSUMER_STANDARD.md). This contract defines no separate machine credential, authorization header, minting procedure, or role model. Public health/list endpoints and public preference/unsubscribe contract endpoints remain public only where their route contract explicitly says so.
 
 Invalid request bodies return stable JSON errors with an `error` code and, where applicable, a `fields` object keyed by invalid field name. Campaign and segment APIs validate required fields, enum values, positive numeric limits, read-only IDs/approval fields, and ISO 8601 UTC schedule values before mutating state. Real execution requires an idempotency key through `x-idempotency-key` or request body.
 
