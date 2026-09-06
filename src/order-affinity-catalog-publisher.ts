@@ -42,7 +42,14 @@ export function orderAffinityCatalogPublisherOptionsFromEnv(env: NodeJS.ProcessE
   return {
     enabled: env.ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED === "true",
     catalogServiceUrl: env.CATALOG_SERVICE_URL,
-    internalServiceToken: env.CATALOG_INTERNAL_SERVICE_TOKEN,
+    // Per-pair principal for marketing-microservice -> catalog-microservice,
+    // role internal:catalog-microservice:relations, sent as a bearer. No
+    // fallback to CATALOG_INTERNAL_SERVICE_TOKEN: that was one shared static
+    // secret held by seven services with a self-asserted x-service-name header,
+    // the shape SERVICE_IDENTITY_CONSUMER_STANDARD.md prohibits. Catalog still
+    // accepts it until the last caller migrates, so a fallback would
+    // authenticate successfully and hide the regression.
+    internalServiceToken: env.CATALOG_SERVICE_TOKEN,
     endpoint: env.CATALOG_ORDER_AFFINITY_BATCH_ENDPOINT || CATALOG_ORDER_AFFINITY_BATCH_ENDPOINT,
     replaceWindowEndpoint: env.CATALOG_ORDER_AFFINITY_REPLACE_WINDOW_ENDPOINT || "/api/internal/product-relations/order-affinity/replace-window",
     timeoutMs: positiveInteger(env.CATALOG_ORDER_AFFINITY_TIMEOUT_MS, 5000),
@@ -105,8 +112,7 @@ export async function publishOrderAffinityCandidatesToCatalog(
         timeout: options.timeoutMs,
         headers: {
           "content-type": "application/json",
-          "x-internal-service-token": options.internalServiceToken,
-          "x-service-name": "marketing-microservice"
+          authorization: `Bearer ${options.internalServiceToken}`
         }
       });
     }

@@ -332,8 +332,13 @@ test("order affinity catalog publisher posts bounded batch payload with service 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "http://catalog-microservice:3200/api/internal/product-relations/order-affinity/batch");
   assert.equal(calls[0].config.timeout, 1234);
-  assert.equal(calls[0].config.headers["x-internal-service-token"], "catalog-write-token");
-  assert.equal(calls[0].config.headers["x-service-name"], "marketing-microservice");
+  // Per-pair principal as a bearer; the prohibited shared-secret headers must
+  // not be sent. Asserted explicitly because catalog still accepts the legacy
+  // header until the last caller migrates, so a regression would authenticate
+  // successfully and be invisible.
+  assert.equal(calls[0].config.headers.authorization, "Bearer catalog-write-token");
+  assert.equal(calls[0].config.headers["x-internal-service-token"], undefined);
+  assert.equal(calls[0].config.headers["x-service-name"], undefined);
   assert.equal(calls[0].payload.source, CATALOG_ORDER_AFFINITY_SOURCE);
   assert.equal(calls[0].payload.idempotencyKey, "marketing_order_affinity:00000000-0000-4000-8000-000000000001:1");
   assert.equal(calls[0].payload.items.length, 2);
@@ -351,7 +356,7 @@ test("order affinity catalog publisher env config is explicit and disabled by de
   const configured = orderAffinityCatalogPublisherOptionsFromEnv({
     ORDER_AFFINITY_CATALOG_PUBLISH_ENABLED: "true",
     CATALOG_SERVICE_URL: "http://catalog-microservice:3200",
-    CATALOG_INTERNAL_SERVICE_TOKEN: "catalog-write-token",
+    CATALOG_SERVICE_TOKEN: "catalog-write-token",
     CATALOG_ORDER_AFFINITY_TIMEOUT_MS: "1234",
     CATALOG_ORDER_AFFINITY_BATCH_SIZE: "7"
   });

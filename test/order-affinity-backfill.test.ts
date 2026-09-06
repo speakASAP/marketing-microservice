@@ -335,8 +335,8 @@ test("order affinity replace-window publish mode sends complete source window pa
     replaceWindowEndpoint: "/api/internal/product-relations/order-affinity/replace-window",
     timeoutMs: 5000,
     batchSize: 1,
-  }, async (url, payload) => {
-    calls.push({ url, payload });
+  }, async (url, payload, config) => {
+    calls.push({ url, payload, config });
   }, {
     idempotencyKeys: ledger.catalogIdempotencyKeys,
     replaceWindow: {
@@ -351,6 +351,13 @@ test("order affinity replace-window publish mode sends complete source window pa
   assert.equal(result.status, "published");
   assert.equal(result.batchCount, 1);
   assert.equal(calls[0].url, "http://catalog-microservice:3200/api/internal/product-relations/order-affinity/replace-window");
+  // The publisher carries the per-pair principal as a bearer and carries the
+  // prohibited shared-secret headers nowhere. Asserted explicitly because
+  // catalog still accepts the legacy header until the last caller is migrated,
+  // so a regression would authenticate successfully and be invisible.
+  assert.equal(calls[0].config.headers.authorization, "Bearer catalog-write-token");
+  assert.equal(calls[0].config.headers["x-internal-service-token"], undefined);
+  assert.equal(calls[0].config.headers["x-service-name"], undefined);
   assert.equal(calls[0].payload.completeSnapshot, true);
   assert.equal(calls[0].payload.sourceOwner, "allegro-service");
   assert.equal(calls[0].payload.channel, "allegro");
