@@ -481,26 +481,21 @@ export function marketplaceReplayPath(sourceOwner: string): string {
 }
 
 export function orderAffinityMarketplaceReplayHeadersForSource(sourceOwner: string, env: NodeJS.ProcessEnv = process.env): Record<string, string> | undefined {
+  // Per-target Auth RS256 only. No fallback to *_INTERNAL_SERVICE_TOKEN /
+  // FLIPFLOP_INTERNAL_SERVICE_SECRET — those were shared static secrets.
   const token = (
     sourceOwner === "aukro-service"
-      ? env.ORDER_AFFINITY_AUKRO_REPLAY_TOKEN || env.AUKRO_INTERNAL_SERVICE_TOKEN
+      ? env.AUKRO_SERVICE_TOKEN || env.ORDER_AFFINITY_AUKRO_REPLAY_TOKEN
       : sourceOwner === "bazos-service"
-        ? env.ORDER_AFFINITY_BAZOS_REPLAY_TOKEN || env.BAZOS_INTERNAL_SERVICE_TOKEN
+        ? env.BAZOS_SERVICE_TOKEN || env.ORDER_AFFINITY_BAZOS_REPLAY_TOKEN
         : sourceOwner === "flipflop-service"
-          ? env.ORDER_AFFINITY_FLIPFLOP_REPLAY_TOKEN || env.FLIPFLOP_INTERNAL_SERVICE_SECRET || env.FLIPFLOP_INTERNAL_SERVICE_TOKEN
-          : undefined
-  ) || env.ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN || env.ALLEGRO_INTERNAL_SERVICE_TOKEN || env.INTERNAL_SERVICE_TOKEN || "";
+          ? env.FLIPFLOP_SERVICE_TOKEN || env.ORDER_AFFINITY_FLIPFLOP_REPLAY_TOKEN
+          : env.ALLEGRO_SERVICE_TOKEN || env.ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN
+  ) || "";
   const cleanToken = token.trim().replace(/^Bearer\s+/i, "");
   if (!cleanToken) return undefined;
-  if (sourceOwner === "flipflop-service") {
-    return {
-      "x-service-name": "marketing-microservice",
-      "x-flipflop-internal-key": cleanToken
-    };
-  }
   return {
-    "x-service-name": "marketing-microservice",
-    "x-internal-service-token": cleanToken
+    authorization: `Bearer ${cleanToken}`,
   };
 }
 
@@ -513,19 +508,12 @@ export function orderAffinityMarketplaceReplayHeaders(env: NodeJS.ProcessEnv = p
  * (svc-marketing-microservice--orders-microservice, role
  * internal:marketing-microservice:service). It is sent as `Authorization: Bearer`
  * so orders verifies it via /auth/validate and reads the role from the token.
- *
- * It previously went out as `x-internal-service-token`, which orders compares
- * byte-for-byte against MARKETING_INTERNAL_SERVICE_TOKEN and then grants the role
- * itself. Under that contract the token's contents were never read — the value
- * mapped here was in fact a roleless docs-rag token — so a leak could only be
- * revoked by rotating the shared string on both sides at once.
  */
 export function orderAffinityOrdersReplayHeaders(env: NodeJS.ProcessEnv = process.env): Record<string, string> | undefined {
-  const token = (env.ORDERS_SERVICE_TOKEN || env.ORDERS_INTERNAL_SERVICE_TOKEN || "").trim();
+  const token = (env.ORDERS_SERVICE_TOKEN || "").trim();
   if (!token) return undefined;
   return {
-    "x-service-name": "marketing-microservice",
-    authorization: `Bearer ${token.replace(/^Bearer\s+/i, "")}`
+    authorization: `Bearer ${token.replace(/^Bearer\s+/i, "")}`,
   };
 }
 

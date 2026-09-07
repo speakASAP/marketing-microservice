@@ -101,18 +101,14 @@ test("order affinity backfill normalizes FlipFlop protected replay response cand
 });
 
 
-test("order affinity Orders replay headers use internal service auth", () => {
-  // The orders lane sends a per-pair RS256 principal as Bearer; orders verifies it
-  // via /auth/validate rather than string-matching a shared secret.
+test("order affinity Orders replay headers use Auth Bearer only", () => {
   assert.deepEqual(orderAffinityOrdersReplayHeaders({ ORDERS_SERVICE_TOKEN: "orders-token" }), {
-    "x-service-name": "marketing-microservice",
     authorization: "Bearer orders-token",
   });
-  // An already-prefixed value must not end up as "Bearer Bearer ...".
-  assert.deepEqual(orderAffinityOrdersReplayHeaders({ ORDERS_INTERNAL_SERVICE_TOKEN: "Bearer wrapped-token" }), {
-    "x-service-name": "marketing-microservice",
+  assert.deepEqual(orderAffinityOrdersReplayHeaders({ ORDERS_SERVICE_TOKEN: "Bearer wrapped-token" }), {
     authorization: "Bearer wrapped-token",
   });
+  assert.equal(orderAffinityOrdersReplayHeaders({ ORDERS_INTERNAL_SERVICE_TOKEN: "legacy" }), undefined);
   assert.equal(orderAffinityOrdersReplayHeaders({}), undefined);
 });
 
@@ -123,27 +119,23 @@ test("order affinity marketplace replay paths match approved source endpoints", 
   assert.equal(marketplaceReplayPath("allegro-service"), "/internal/allegro/order-affinity/replay-candidates");
 });
 
-test("order affinity marketplace replay headers use internal service auth", () => {
+test("order affinity marketplace replay headers use Auth Bearer per target", () => {
+  assert.deepEqual(orderAffinityMarketplaceReplayHeaders({ ALLEGRO_SERVICE_TOKEN: "allegro-token" }), {
+    authorization: "Bearer allegro-token",
+  });
   assert.deepEqual(orderAffinityMarketplaceReplayHeaders({ ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN: "marketplace-token" }), {
-    "x-service-name": "marketing-microservice",
-    "x-internal-service-token": "marketplace-token",
+    authorization: "Bearer marketplace-token",
   });
-  assert.deepEqual(orderAffinityMarketplaceReplayHeaders({ ALLEGRO_INTERNAL_SERVICE_TOKEN: "Bearer wrapped-token" }), {
-    "x-service-name": "marketing-microservice",
-    "x-internal-service-token": "wrapped-token",
+  assert.deepEqual(orderAffinityMarketplaceReplayHeadersForSource("aukro-service", { AUKRO_SERVICE_TOKEN: "aukro-token", ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN: "fallback" }), {
+    authorization: "Bearer aukro-token",
   });
-  assert.deepEqual(orderAffinityMarketplaceReplayHeadersForSource("aukro-service", { ORDER_AFFINITY_AUKRO_REPLAY_TOKEN: "aukro-token", ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN: "fallback" }), {
-    "x-service-name": "marketing-microservice",
-    "x-internal-service-token": "aukro-token",
+  assert.deepEqual(orderAffinityMarketplaceReplayHeadersForSource("bazos-service", { BAZOS_SERVICE_TOKEN: "bazos-token" }), {
+    authorization: "Bearer bazos-token",
   });
-  assert.deepEqual(orderAffinityMarketplaceReplayHeadersForSource("bazos-service", { ORDER_AFFINITY_BAZOS_REPLAY_TOKEN: "bazos-token", ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN: "fallback" }), {
-    "x-service-name": "marketing-microservice",
-    "x-internal-service-token": "bazos-token",
+  assert.deepEqual(orderAffinityMarketplaceReplayHeadersForSource("flipflop-service", { FLIPFLOP_SERVICE_TOKEN: "flipflop-token" }), {
+    authorization: "Bearer flipflop-token",
   });
-  assert.deepEqual(orderAffinityMarketplaceReplayHeadersForSource("flipflop-service", { ORDER_AFFINITY_FLIPFLOP_REPLAY_TOKEN: "flipflop-token", ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN: "fallback" }), {
-    "x-service-name": "marketing-microservice",
-    "x-flipflop-internal-key": "flipflop-token",
-  });
+  assert.equal(orderAffinityMarketplaceReplayHeaders({ ALLEGRO_INTERNAL_SERVICE_TOKEN: "static" }), undefined);
   assert.equal(orderAffinityMarketplaceReplayHeaders({}), undefined);
 });
 
