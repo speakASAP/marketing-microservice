@@ -133,7 +133,7 @@ test("order affinity marketplace replay headers use Auth Bearer per target", () 
     authorization: "Bearer bazos-token",
   });
   assert.deepEqual(orderAffinityMarketplaceReplayHeadersForSource("flipflop-service", { ORDERS_SERVICE_TOKEN: "orders-token" }), {
-    authorization: "Bearer flipflop-token",
+    authorization: "Bearer orders-token",
   });
   assert.equal(orderAffinityMarketplaceReplayHeaders({ ALLEGRO_INTERNAL_SERVICE_TOKEN: "static" }), undefined);
   assert.equal(orderAffinityMarketplaceReplayHeaders({}), undefined);
