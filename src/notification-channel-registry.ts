@@ -20,9 +20,14 @@ function registryPath(): string {
   return configured.startsWith("/") ? configured : "/" + configured;
 }
 
-function registryHeaders(): Record<string, string> | undefined {
-  const token = process.env.NOTIFICATION_SERVICE_TOKEN;
-  return token ? { Authorization: "Bearer " + token } : undefined;
+function registryHeaders(): Record<string, string> {
+  const token = (process.env.NOTIFICATION_SERVICE_TOKEN || "").trim();
+  if (!token) {
+    throw new Error(
+      "NOTIFICATION_SERVICE_TOKEN is not set. marketing→notifications requires an Auth-issued per-pair RS256 Bearer.",
+    );
+  }
+  return { Authorization: "Bearer " + token };
 }
 
 function timeoutMs(): number {
@@ -71,10 +76,24 @@ export async function readNotificationChannelRegistry(): Promise<ChannelRegistry
     };
   }
 
+  let headers: Record<string, string>;
+  try {
+    headers = registryHeaders();
+  } catch {
+    return {
+      status: "unconfigured",
+      owner: "notifications-microservice",
+      source: "notifications-channel-registry",
+      endpointPath,
+      channels: [],
+      reason: "notification_service_token_missing"
+    };
+  }
+
   try {
     const response = await axios.get(baseUrl.replace(/\/$/, "") + endpointPath, {
       timeout: timeoutMs(),
-      headers: registryHeaders()
+      headers
     });
     const normalized = normalizeChannels(response.data);
     return {

@@ -22,9 +22,9 @@ const TARGET = "orders-microservice";
 
 /**
  * The ingest credential is read from CREDENTIAL_INGEST_TOKEN here, NOT from
- * NOTIFICATION_SERVICE_TOKEN as in every other reporter.
+ * MONITORING_INGEST_SERVICE_TOKEN as in every other reporter.
  *
- * This service already sets NOTIFICATION_SERVICE_TOKEN to a different
+ * This service already sets MONITORING_INGEST_SERVICE_TOKEN to a different
  * credential — its notifications-service token, verified distinct from
  * monitoring's ingest value in production. Reusing the name would either
  * clobber a working credential or send the wrong one to the ingest guard, so

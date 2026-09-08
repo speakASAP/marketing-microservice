@@ -241,7 +241,12 @@ async function sendChunk(
 ): Promise<DeliveryResult[]> {
   const started = Date.now();
   const notificationUrl = process.env.NOTIFICATION_SERVICE_URL;
-  const notificationServiceToken = process.env.NOTIFICATION_SERVICE_TOKEN;
+  const notificationServiceToken = (process.env.NOTIFICATION_SERVICE_TOKEN || "").trim();
+  if (notificationUrl && !notificationServiceToken) {
+    throw new Error(
+      "NOTIFICATION_SERVICE_TOKEN is not set. marketing→notifications requires an Auth-issued per-pair RS256 Bearer.",
+    );
+  }
   const requestHeaders = notificationServiceToken
     ? { Authorization: `Bearer ${notificationServiceToken}` }
     : undefined;
