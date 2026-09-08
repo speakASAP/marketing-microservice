@@ -483,13 +483,16 @@ export function marketplaceReplayPath(sourceOwner: string): string {
 export function orderAffinityMarketplaceReplayHeadersForSource(sourceOwner: string, env: NodeJS.ProcessEnv = process.env): Record<string, string> | undefined {
   // Per-target Auth RS256 only. No fallback to *_INTERNAL_SERVICE_TOKEN /
   // FLIPFLOP_INTERNAL_SERVICE_SECRET — those were shared static secrets.
+  // flipflop-service replay is served by orders-microservice (see
+  // marketplaceReplayPath), so use ORDERS_SERVICE_TOKEN — not the
+  // flipflop:order-affinity principal, which orders rejects with 403.
   const token = (
     sourceOwner === "aukro-service"
       ? env.AUKRO_SERVICE_TOKEN || env.ORDER_AFFINITY_AUKRO_REPLAY_TOKEN
       : sourceOwner === "bazos-service"
         ? env.BAZOS_SERVICE_TOKEN || env.ORDER_AFFINITY_BAZOS_REPLAY_TOKEN
         : sourceOwner === "flipflop-service"
-          ? env.FLIPFLOP_SERVICE_TOKEN || env.ORDER_AFFINITY_FLIPFLOP_REPLAY_TOKEN
+          ? env.ORDERS_SERVICE_TOKEN || env.ORDER_AFFINITY_FLIPFLOP_REPLAY_TOKEN
           : env.ALLEGRO_SERVICE_TOKEN || env.ORDER_AFFINITY_MARKETPLACE_REPLAY_TOKEN
   ) || "";
   const cleanToken = token.trim().replace(/^Bearer\s+/i, "");
