@@ -22,7 +22,7 @@ spec:
       template:
         metadata:
           labels:
-            app: marketing-microservice
+            app: marketing-microservice-job
             workload: order-affinity-backfill
         spec:
           restartPolicy: Never
@@ -100,7 +100,7 @@ spec:
       template:
         metadata:
           labels:
-            app: marketing-microservice
+            app: marketing-microservice-job
             workload: order-affinity-backfill
             source-owner: aukro-service
         spec:
@@ -179,7 +179,7 @@ spec:
       template:
         metadata:
           labels:
-            app: marketing-microservice
+            app: marketing-microservice-job
             workload: order-affinity-backfill
             source-owner: bazos-service
         spec:

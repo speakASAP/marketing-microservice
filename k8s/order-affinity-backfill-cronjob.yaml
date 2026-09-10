@@ -22,7 +22,7 @@ spec:
       template:
         metadata:
           labels:
-            app: marketing-microservice
+            app: marketing-microservice-job
             workload: order-affinity-backfill
         spec:
           restartPolicy: Never
